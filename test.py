@@ -36,7 +36,7 @@ class Prepare(object):
         _,kmap,_ = self.fc.power2d(observed)
         return kmap/self.flsims.kbeam
         
-nsims = 20
+nsims = 5
 njobs = nsims
 comm,rank,my_tasks = mpi.distribute(njobs)
 sobj = Prepare(nsims=nsims)
@@ -48,26 +48,30 @@ feed_dict['tC_T_T'] = sobj.theory.lCl('TT',modlmap) + sobj.flsims.ps_noise[0,0]/
 feed_dict['uC_T_T'] = sobj.theory.lCl('TT',modlmap)
 qe = symlens.QE(shape,wcs,feed_dict,estimator="hu_ok",XY="TT",
                 xmask=tmask,ymask=tmask)
-def qfunc(dummy,x,y):
-    feed_dict['X'] = x
-    feed_dict['Y'] = y
-    return qe.reconstruct(feed_dict,xname='X_l1',yname='Y_l2')
+
+qfunc = lambda dummy,x,y : qe.reconstruct(feed_dict={'X':x,'Y':y},xname='X_l1',yname='Y_l2')
+
+Nlkk = symlens.N_l_from_A_l_optimal(shape, wcs, Al=qe.Al)
 
 icov = 0
 alpha = "TT"
 beta = "TT"
 power =  lambda x,y : sobj.fc.f2power(x,y)
-#n1 = bias.mcn1(icov,alpha,beta,qfunc,sobj,comm,power)
-n1 = bias.rdn0(icov,alpha,beta,qfunc,sobj,comm,power)
+n1 = bias.mcn1(icov,alpha,beta,qfunc,sobj.get_prepared_kmap,comm,power,nsims)
+n0 = bias.rdn0(icov,alpha,beta,qfunc,sobj.get_prepared_kmap,comm,power,nsims)
 
-bin_edges = np.arange(100,3000,40)
+bin_edges = np.arange(100,2000,40)
 binner = stats.bin2D(modlmap,bin_edges)
 cents,n11d = binner.bin(n1)
+cents,n01d = binner.bin(n0)
+cents,nlkk = binner.bin(Nlkk)
 
-ells = np.arange(2,3000,1)
+ells = np.arange(2,2000,1)
 clkk = sobj.theory.gCl('kk',ells)
 pl = io.Plotter(xyscale='linlin',scalefn = lambda x: x)
 pl.add(ells,clkk,lw=3,color='k')
 pl.add(cents,n11d)
+pl.add(cents,n01d)
+pl.add(cents,nlkk,ls="--")
 pl.hline(y=0)
 pl.done("n1.png")
