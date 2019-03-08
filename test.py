@@ -20,6 +20,9 @@ class Prepare(object):
         
     def get_prepared_kmap(self,X,seed):
         icov,iset,i = seed
+        if i==0:
+            iset = 0
+            icov = 0
         if iset==0 or iset==1:
             seed_cmb = (icov,iset,i)+(0,)
             seed_kappa = (icov,iset,i)+(1,)
@@ -53,7 +56,9 @@ def qfunc(dummy,x,y):
 icov = 0
 alpha = "TT"
 beta = "TT"
-n1 = bias.mcn1(icov,alpha,beta,qfunc,sobj,comm,power = lambda x,y : sobj.fc.f2power(x,y))
+power =  lambda x,y : sobj.fc.f2power(x,y)
+#n1 = bias.mcn1(icov,alpha,beta,qfunc,sobj,comm,power)
+n1 = bias.rdn0(icov,alpha,beta,qfunc,sobj,comm,power)
 
 bin_edges = np.arange(100,3000,40)
 binner = stats.bin2D(modlmap,bin_edges)

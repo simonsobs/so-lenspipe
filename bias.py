@@ -41,7 +41,7 @@ elif set==2 or set==3:
 =================
 """
     
-def rdn0(icov,alpha,beta,qfunc,sobj,comm):
+def rdn0(icov,alpha,beta,qfunc,sobj,comm,power):
     """
     RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
@@ -54,7 +54,6 @@ def rdn0(icov,alpha,beta,qfunc,sobj,comm):
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
-    power = lambda x,y: x*y.conj()
     # Data
     X = sobj.get_prepared_kmap(eX,(0,0,0))
     Y = sobj.get_prepared_kmap(eY,(0,0,0))
@@ -73,6 +72,7 @@ def rdn0(icov,alpha,beta,qfunc,sobj,comm):
         rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
             + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+    from pixell import utils
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
@@ -101,7 +101,9 @@ def mcn1(icov,alpha,beta,qfunc,sobj,comm,power):
         Asp   = sobj.get_prepared_kmap(eA,(icov,1,i))
         Bs    = sobj.get_prepared_kmap(eB,(icov,0,i))
         mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)) # FIXME: make mpi aware
+    from pixell import utils
+    totmcn1 = utils.allreduce(mcn1,comm) 
     return mcn1/nsims
 
 
@@ -121,6 +123,7 @@ def mcmf(icov,alpha,qfunc,sobj,comm):
             ky   = sobj.get_prepared_kmap(eY,(icov,j,i))
             mf += qe(kx,ky)
             ntot += 1.
+    from pixell import utils
     mftot = utils.allreduce(mf,comm) 
     totnot = utils.allreduce(ntot,comm) 
     return mftot/totntot
