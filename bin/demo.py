@@ -47,6 +47,7 @@ ch = Channel('LA',args.freq)
 lmin = args.lmin
 lmax = args.lmax
 polcomb = args.polcomb
+config = io.config_from_yaml("input/config.yml")
 
 mask = initialize_mask(nside,smooth_deg)
 solint = SOLensInterface(mask)
