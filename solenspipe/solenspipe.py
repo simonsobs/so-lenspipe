@@ -108,7 +108,7 @@ def initialize_mask(nside,smooth_deg):
         return mask
 
 
-def initialize_norm(ch,lmin,lmax):
+def initialize_norm(solint,ch,lmin,lmax):
     onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     try:
         return np.loadtxt(onormfname,unpack=True)

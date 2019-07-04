@@ -57,7 +57,7 @@ theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 # norm dict
 Als = {}
 with bench.show("norm"):
-    ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(ch,lmin,lmax)
+    ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]

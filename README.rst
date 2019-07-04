@@ -23,6 +23,9 @@ To install, run:
    $ pip install -e . --user
 
 
+Then copy `input/config_template.yml` to `input/config.yml` and edit it to match paths on your system.
+
+
 Demo
 ----
 
