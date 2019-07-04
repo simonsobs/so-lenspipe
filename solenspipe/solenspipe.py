@@ -9,21 +9,21 @@ from mapsims import noise,Channel,SOStandalonePrecomputedCMB
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 
-opath = "/global/cscratch1/sd/msyriac/data/depot/solenspipe/"
+
+config = io.config_from_yaml("input/config.yml")
+opath = config['data_path']
 
 
-def get_cmb_alm(alex_i,alex_set,path="/global/cscratch1/sd/engelen/simsS1516_v0.4/data/"):
-    sstr = str(alex_set).zfill(2)
-    istr = str(alex_i).zfill(5)
+def get_cmb_alm(i,iset,path=config['signal_path']):
+    sstr = str(iset).zfill(2)
+    istr = str(i).zfill(5)
     fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
     return hp.read_alm(fname,hdu=(1,2,3))
 
-def get_kappa_alm(alex_i,path="/global/cscratch1/sd/engelen/simsS1516_v0.4/data/"):
-    istr = str(alex_i).zfill(5)
+def get_kappa_alm(i,path=config['signal_path']):
+    istr = str(i).zfill(5)
     fname = path + "fullskyPhi_alm_%s.fits" % istr
     return plensing.phi_to_kappa(hp.read_alm(fname))
-
-
 
 
 class SOLensInterface(object):
@@ -31,7 +31,8 @@ class SOLensInterface(object):
         self.mask = mask
         self.nside = hp.npix2nside(mask.size)
         self.nsim = noise.SONoiseSimulator(nside=self.nside,apply_beam_correction=True)    
-        theory = cosmology.default_theory()
+        thloc = "data/" + config['theory_root']
+        theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         self.cltt = lambda x: theory.lCl('TT',x) 
         self.clee = lambda x: theory.lCl('EE',x) 
         self.clbb = lambda x: theory.lCl('BB',x) 
@@ -51,15 +52,15 @@ class SOLensInterface(object):
         ndiv = 4
         nstep = nsims//ndiv
         if cmb_set==0 or cmb_set==1:
-            alex_i = i + cmb_set*nstep
-            alex_set = 0
+            s_i = i + cmb_set*nstep
+            s_set = 0
             noise_seed = (icov,cmb_set,i)+(2,)
         elif cmb_set==2 or cmb_set==3:
-            alex_i = i + nstep*2
-            alex_set = cmb_set - 2
+            s_i = i + nstep*2
+            s_set = cmb_set - 2
             noise_seed = (icov,cmb_set,i)+(2,)
 
-        cmb_alm = get_cmb_alm(alex_i,alex_set).astype(np.complex128)
+        cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = hp.alm2map(cmb_alm,nside=self.nside)
         noise_map = self.nsim.simulate(channel,seed=noise_seed+(channel.band,))
         noise_map[noise_map<-1e24] = 0
@@ -87,18 +88,6 @@ class SOLensInterface(object):
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
         return self.cache[seed][xs[X]] if filtered else self.cache[seed][xs[X]+3]
 
-    def qfunc(self,XY,Xalm,Yalm):
-        mlmax = 2*self.nside
-        X,Y = XY
-        alms = {}
-        alms['T'] = None
-        alms['E'] = None
-        alms['B'] = None
-        alms
-        # talm_y,ealm_y,balm_y,_,_,_ = self.
-        qe.qe_all(shape,wcs,lambda x,y: self.theory.lCl(x,y),mlmax,alms['T'],alms['E'],alms['B'],estimators=[XY])
-
-        
     def get_mv_kappa(self,polcomb,talm,ealm,balm):
         shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(0.5*8192/self.nside/60.))
         mlmax = 2*self.nside
@@ -106,14 +95,12 @@ class SOLensInterface(object):
         return res[polcomb]
         
 
-
-
 def initialize_mask(nside,smooth_deg):
-    omaskfname = "simonsobs_noise_mask_x_mask_V3_bool_nside_%d_apodized_%.1f.fits" % (nside,smooth_deg)
+    omaskfname = "lensing_mask_nside_%d_apodized_%.1f.fits" % (nside,smooth_deg)
     try:
         return hp.read_map(opath + omaskfname)
     except:
-        mask = hp.ud_grade(hp.read_map(opath + "simonsobs_noise_mask_x_mask_V3_bool.fits"),nside)
+        mask = hp.ud_grade(hp.read_map(opath + config['mask_name']),nside)
         mask[mask<0] = 0
         mask = hp.smoothing(mask,np.deg2rad(smooth_deg))
         mask[mask<0] = 0
@@ -126,7 +113,8 @@ def initialize_norm(ch,lmin,lmax):
     try:
         return np.loadtxt(onormfname,unpack=True)
     except:
-        theory = cosmology.default_theory()
+        thloc = "data/" + config['theory_root']
+        theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         ells = np.arange(lmax+100)
         uctt = theory.lCl('TT',ells)
         ucee = theory.lCl('EE',ells)
