@@ -104,7 +104,7 @@ def initialize_mask(nside,smooth_deg):
         mask[mask<0] = 0
         mask = hp.smoothing(mask,np.deg2rad(smooth_deg))
         mask[mask<0] = 0
-        hp.write_map(opath + omaskfname,mask)
+        hp.write_map(opath + omaskfname,mask,overwrite=True)
         return mask
 
 

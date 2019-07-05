@@ -100,7 +100,7 @@ pl.add(ells,xcls,alpha=0.4,label='input x recon')
 pl.add(ells,icls,alpha=0.4,label='input x input')
 pl.add(ls,nls,ls="--",label='theory noise per mode')
 pl._ax.set_xlim(20,4000)
-pl.done("xcls_%s.png" % polcomb)
+pl.done(config['data_path']+"xcls_%s.png" % polcomb)
 
 
 # Filtered input
@@ -113,16 +113,16 @@ dmask[dmask<0] = 0
 
 
 # Mollview plots
-io.mollview(frmap*dmask,"wrmap.png",xsize=1600,lim=8e-6)
-io.mollview(fimap*dmask,"wimap.png",xsize=1600,lim=8e-6)
+io.mollview(frmap*dmask,config['data_path']+"wrmap.png",xsize=1600,lim=8e-6)
+io.mollview(fimap*dmask,config['data_path']+"wimap.png",xsize=1600,lim=8e-6)
 
 # CAR plots
 shape,wcs = enmap.band_geometry(np.deg2rad((-70,30)),res=np.deg2rad(0.5*8192/512/60.))
 omask = reproject.enmap_from_healpix(dmask, shape, wcs,rot=None)
 omap = cs.alm2map(fkalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,"cwrmap",grid=True,ticks=20,color='gray')
+io.hplot(omap*omask,config['data_path']+"cwrmap",grid=True,ticks=20,color='gray')
 omap = cs.alm2map(fikalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,"cwimap",grid=True,ticks=20,color='gray')
+io.hplot(omap*omask,config['data_path']+"cwimap",grid=True,ticks=20,color='gray')
 
 
 
