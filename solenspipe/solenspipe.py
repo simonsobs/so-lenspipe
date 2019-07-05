@@ -10,7 +10,7 @@ from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 
 
-config = io.config_from_yaml("input/config.yml")
+config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
 
@@ -31,7 +31,7 @@ class SOLensInterface(object):
         self.mask = mask
         self.nside = hp.npix2nside(mask.size)
         self.nsim = noise.SONoiseSimulator(nside=self.nside,apply_beam_correction=True)    
-        thloc = "data/" + config['theory_root']
+        thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         self.cltt = lambda x: theory.lCl('TT',x) 
         self.clee = lambda x: theory.lCl('EE',x) 
@@ -113,7 +113,7 @@ def initialize_norm(solint,ch,lmin,lmax):
     try:
         return np.loadtxt(onormfname,unpack=True)
     except:
-        thloc = "data/" + config['theory_root']
+        thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         ells = np.arange(lmax+100)
         uctt = theory.lCl('TT',ells)
