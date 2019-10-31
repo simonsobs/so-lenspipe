@@ -27,7 +27,7 @@ def get_kappa_alm(i,path=config['signal_path']):
 
 
 class SOLensInterface(object):
-    def __init__(self,mask):
+    def __init__(self,mask,data_mode=None):
         self.mask = mask
         self.nside = hp.npix2nside(mask.size)
         self.nsim = noise.SONoiseSimulator(nside=self.nside,apply_beam_correction=True)    
@@ -38,14 +38,20 @@ class SOLensInterface(object):
         self.clbb = lambda x: theory.lCl('BB',x) 
         self.cache = {}
         self.theory = theory
-        
+        self.set_data_map(data_mode)
+
+    def set_data_map(self,data_mode=None):
+        if data_mode is None:
+            print('WARNING: No data mode specified. Defaulting to simulation iset=0,i=0 at 150GHz.')
+            data_mode = 'sim'
+        # if data_mode=='sim':
+        #     self.
 
     def prepare_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-
         icov,cmb_set,i = seed
         assert icov==0, "Covariance from sims not yet supported."
         nsims = 2000
@@ -62,14 +68,15 @@ class SOLensInterface(object):
 
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = hp.alm2map(cmb_alm,nside=self.nside)
-        noise_map = self.nsim.simulate(channel,seed=noise_seed+(channel.band,))
+        noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
         noise_map[noise_map<-1e24] = 0
+        # io.mollview(noise_map[0],"noisemap.png",lim=1000)
+        # sys.exit()
         imap = (cmb_map + noise_map)*self.mask
         oalms = hp.map2alm(imap)
 
-
-        nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel])
-        nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel])
+        nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
+        nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
         filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
         filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
         filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))

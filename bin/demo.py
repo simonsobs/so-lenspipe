@@ -24,7 +24,7 @@ import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-from mapsims import noise,Channel
+from mapsims import noise,SOChannel
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 from solenspipe import initialize_mask, initialize_norm, SOLensInterface,get_kappa_alm
@@ -33,7 +33,7 @@ import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
 parser.add_argument("polcomb", type=str,help='Polarization combination. Possibilities include mv (all), mvpol (all pol), TT, EE, TE, EB or TB.')
-parser.add_argument("--nside",     type=int,  default=32,help="nside")
+parser.add_argument("--nside",     type=int,  default=2048,help="nside")
 parser.add_argument("--smooth-deg",     type=float,  default=4.,help="Gaussian smoothing sigma for mask in degrees.")
 parser.add_argument("--lmin",     type=int,  default=300,help="lmin")
 parser.add_argument("--lmax",     type=int,  default=3000,help="lmax")
@@ -43,7 +43,7 @@ args = parser.parse_args()
 
 nside = args.nside
 smooth_deg = args.smooth_deg
-ch = Channel('LA',args.freq)
+ch = SOChannel('LA',args.freq)
 lmin = args.lmin
 lmax = args.lmax
 polcomb = args.polcomb
@@ -78,6 +78,8 @@ balm  = solint.get_kmap(ch,"B",(0,0,0),lmin,lmax,filtered=True)
 # Reconstruction
 with bench.show("recon"):
     rkalm = hp.almxfl(solint.get_mv_kappa(polcomb,talm,ealm,balm)[0],al_mv)
+hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_map.fits",hp.alm2map(rkalm,nside),overwrite=True)
+hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_mask.fits",mask,overwrite=True)
 
 # Filtered reconstruction
 fkalm = hp.almxfl(rkalm,wfilt)
