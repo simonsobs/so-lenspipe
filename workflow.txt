@@ -33,3 +33,9 @@ Subtract RDN0 and MCN1
 
 
 
+Produce maps TT, mvpol, mv
+Make kmap of each polcomb alpha
+Calculate MCMF of each polcomb alpha
+Calculate RDN0, MCN1 of each acomb alpha,beta
+
+

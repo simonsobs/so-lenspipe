@@ -14,6 +14,9 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 
 
+
+
+
 def get_cmb_alm(i,iset,path=config['signal_path']):
     sstr = str(iset).zfill(2)
     istr = str(i).zfill(5)
@@ -127,8 +130,8 @@ def initialize_norm(solint,ch,lmin,lmax):
         ucee = theory.lCl('EE',ells)
         ucte = theory.lCl('TE',ells)
         ucbb = theory.lCl('BB',ells)
-        ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch]
-        ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch]
+        ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
+        ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
         tctt = uctt + maps.interp(ls,nells)(ells)
         tcee = ucee + maps.interp(ls,nells_P)(ells)
         tcte = ucte 

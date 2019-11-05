@@ -10,6 +10,7 @@ Dependencies
 ------------
 
 * simonsobs/mapsims, simonsobs/pixell, simonsobs/falafel, simonsobs/symlens
+* simonsobs/mapsims requires simonsobs/so_pysm_models and healpy/pysm
 * msyriac/orphics, amaurea/enlib (just bench.py for benchmarking)
 * healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow (Python Image Library)
 
