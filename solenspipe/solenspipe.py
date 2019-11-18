@@ -8,6 +8,14 @@ from enlib import bench
 from mapsims import noise,Channel,SOStandalonePrecomputedCMB
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
+from LensingBiases_f import lensingbiases as lensingbiases_f
+from LensingBiases_f import checkproc as checkproc_f
+import os
+import glob
+import matplotlib
+matplotlib.use("Agg")
+import pylab as pl
+pl.ioff()
 
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -140,4 +148,156 @@ def initialize_norm(solint,ch,lmin,lmax):
         io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
         return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
 
+        
+	
+def checkproc_py():
+    '''
+    Routine to check the number of processors involved
+    in the computation (Fortran routines use openmp).
+    '''
+    nproc = checkproc_f.get_threads()
+    if nproc > 1:
+        print ('You are using ', nproc, ' processors')
+    else:
+        print ('###################################')
+        print ('You are using ', nproc, ' processor')
+        print ('If you want to speed up the computation,')
+        print ('set up correctly your number of task.')
+        print ('e.g in bash, if you want to use n procs,')
+        print ('add this line to your bashrc:')
+        print ('export OMP_NUM_THREADS=n')
+        print ('###################################')
+
+
+
+
+def compute_n0_py(
+	from_args=None,
+	phifile=None,
+	lensedcmbfile=None,
+	FWHM=None,
+	noise_level=None,
+	lmin=None,
+	lmaxout=None,
+	lmax=None,
+	lmax_TT=None,
+	lcorr_TT=None,
+	tmp_output=None):
+	    
+	if from_args is not None:
+		lensingbiases_f.compute_n0(
+			from_args.phifile,
+			from_args.lensedcmbfile,
+			from_args.FWHM/60.,
+			from_args.noise_level,
+			from_args.lmin,
+			from_args.lmaxout,
+			from_args.lmax,
+			from_args.lmax_TT,
+			from_args.lcorr_TT,
+			from_args.tmp_output)
+		n0 = np.loadtxt(os.path.join(from_args.tmp_output, 'N0_analytical.dat')).T
+	else:
+		lensingbiases_f.compute_n0(
+			phifile,
+			lensedcmbfile,
+			FWHM/60.,
+			noise_level,
+			lmin,
+			lmaxout,
+			lmax,
+			lmax_TT,
+			lcorr_TT,
+			tmp_output)
+		n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
+
+
+	indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+	bins = n0[0]
+	phiphi = n0[1]
+	n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
+
+	return bins, phiphi, n0_mat, indices
+
+def compute_n1_py(
+    from_args=None,
+    phifile=None,
+    lensedcmbfile=None,
+    FWHM=None,
+    noise_level=None,
+    lmin=None,
+    lmaxout=None,
+    lmax=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+
+    if from_args is not None:
+        lensingbiases_f.compute_n1(
+            from_args.phifile,
+            from_args.lensedcmbfile,
+            from_args.FWHM/60.,
+            from_args.noise_level,
+            from_args.lmin,
+            from_args.lmaxout,
+            from_args.lmax,
+            from_args.lmax_TT,
+            from_args.lcorr_TT,
+            from_args.tmp_output)
+        n1 = np.loadtxt(os.path.join(from_args.tmp_output, 'N1_All_analytical.dat')).T
+    else:
+        lensingbiases_f.compute_n1(
+            phifile,lensedcmbfile,
+            FWHM/60.,
+            noise_level,
+            lmin,
+            lmaxout,
+            lmax,
+            lmax_TT,
+            lcorr_TT,
+            tmp_output)
+        n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
+
+    indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+    bins = n1[0]
+    n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+
+    return bins, n1_mat, indices
+
+
+def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
+    '''
+    Quick plot for inspection
+    '''
+    tphi = lambda l: (l + 0.5)**4 / (2. * np.pi) # scaling to apply to cl_phiphi when plotting.
+    colors = lambda i: matplotlib.cm.jet(i * 60)
+
+    ## Plot lensing
+    pl.loglog(bins, phiphi, color='grey', label='Lensing')
+
+
+    ## Plot N1
+    if MV_n1 is not None:
+        pl.loglog(bins, MV_n1 * tphi(bins), color='black', lw=2, ls='--', label='N1 bias')
+    if N1_array is not None:
+        indices = ['TT','EE','EB','TE','TB','BB']
+        for i in range(len(N1_array)):
+            pl.loglog(
+                bins,
+                N1_array[i][i][:] * tphi(bins),
+                color=colors(i),
+                ls='--',
+                lw=2,
+                alpha=1,
+                label=indices[i]+indices[i])
+
+    pl.xlabel('$\ell$', fontsize=20)
+    pl.ylabel(r"$[\ell(\ell+1)]^2/(2\pi)C_\ell^{\phi^{XY} \phi^{ZW}}$", fontsize=20)
+    leg=pl.legend(loc='best', ncol=2, fontsize=12.5)
+    leg.get_frame().set_alpha(0.0)
+    pl.savefig('Biases.pdf')
+    pl.clf()
+	
+
+            
 
