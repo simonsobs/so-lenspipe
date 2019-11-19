@@ -23,7 +23,7 @@ contains
         real(dp), intent(out) :: dPhi_Sample(lmaxmax)
         integer(I4B), intent(out) :: nPhiSample
 
-        integer(I4B) :: Lstep = 20
+        integer(I4B) :: Lstep = 1
         integer i,ix, dL,Lix, L
         real :: acc=1
 
@@ -403,12 +403,12 @@ contains
         character(LEN=50), intent(in) :: dir
         character(LEN=50), intent(in) :: vartag
         integer ell, file_id, L,i
-        real(dp) N0(n_est,n_est), dum
+        real(dp) N0(n_est,n_est), dum !array size 5
 
 
         open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
         do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0
+            read(file_id,*) ell, dum, N0! ell, TT, TE,TB,EB,ET
             if (L/=ell) stop 'wrong N0 file'
             do i=1,n_est
                 Norms(L,i) = N0(i,i)
@@ -417,6 +417,7 @@ contains
         close(file_id)
     end subroutine loadNorm
     !
+    
     subroutine loadNormCurl(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,NormsCurl,vartag,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Load N0 bias (curl) from the disk
@@ -433,16 +434,9 @@ contains
         real(dp) N0(n_est,n_est), dum
 
 
-        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'_Curl.dat', newunit = file_id, form='formatted', status='old')
-        do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0
-            if (L/=ell) stop 'wrong N0 file'
-            do i=1,n_est
-                NormsCurl(L,i) = N0(i,i)
-            end do
-        end do
-        close(file_id)
+
     end subroutine loadNormCurl
+    
     !
     subroutine WriteRanges(LMin, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,name,vartag,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -633,7 +627,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 20, dL = 20
+        integer(I4B), parameter :: Lstep = 1, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
@@ -865,7 +859,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 20, dL = 20
+        integer(I4B), parameter :: Lstep = 1, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
@@ -1093,7 +1087,7 @@ contains
         root = 'analytical'
         vartag = '_'//root
 
-        call getNorm( .false. , .false. ,doCurl,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+        call getNorm( .false. , .false. ,.False.,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                             & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag)
 
     end subroutine compute_n0
@@ -1218,3 +1212,4 @@ contains
   end function get_threads
 
 end module checkproc
+! Copyright (C) 2016 Lewis, Peloton
