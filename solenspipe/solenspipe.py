@@ -172,44 +172,29 @@ def checkproc_py():
 
 
 def compute_n0_py(
-	from_args=None,
 	phifile=None,
 	lensedcmbfile=None,
 	FWHM=None,
 	noise_level=None,
 	lmin=None,
 	lmaxout=None,
-	lmax=None,
+	#lmax=None,
 	lmax_TT=None,
 	lcorr_TT=None,
 	tmp_output=None):
 	    
-	if from_args is not None:
-		lensingbiases_f.compute_n0(
-			from_args.phifile,
-			from_args.lensedcmbfile,
-			from_args.FWHM/60.,
-			from_args.noise_level,
-			from_args.lmin,
-			from_args.lmaxout,
-			from_args.lmax,
-			from_args.lmax_TT,
-			from_args.lcorr_TT,
-			from_args.tmp_output)
-		n0 = np.loadtxt(os.path.join(from_args.tmp_output, 'N0_analytical.dat')).T
-	else:
-		lensingbiases_f.compute_n0(
-			phifile,
-			lensedcmbfile,
-			FWHM/60.,
-			noise_level,
-			lmin,
-			lmaxout,
-			lmax,
-			lmax_TT,
-			lcorr_TT,
-			tmp_output)
-		n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
+	lensingbiases_f.compute_n0(
+		phifile,
+		lensedcmbfile,
+		FWHM/60.,
+		noise_level,
+		lmin,
+		lmaxout,
+		#lmax,
+		lmax_TT,
+		lcorr_TT,
+		tmp_output)
+	n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
 
 
 	indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
@@ -220,43 +205,28 @@ def compute_n0_py(
 	return bins, phiphi, n0_mat, indices
 
 def compute_n1_py(
-    from_args=None,
     phifile=None,
     lensedcmbfile=None,
     FWHM=None,
     noise_level=None,
     lmin=None,
     lmaxout=None,
-    lmax=None,
+    #lmax=None,
     lmax_TT=None,
     lcorr_TT=None,
     tmp_output=None):
 
-    if from_args is not None:
-        lensingbiases_f.compute_n1(
-            from_args.phifile,
-            from_args.lensedcmbfile,
-            from_args.FWHM/60.,
-            from_args.noise_level,
-            from_args.lmin,
-            from_args.lmaxout,
-            from_args.lmax,
-            from_args.lmax_TT,
-            from_args.lcorr_TT,
-            from_args.tmp_output)
-        n1 = np.loadtxt(os.path.join(from_args.tmp_output, 'N1_All_analytical.dat')).T
-    else:
-        lensingbiases_f.compute_n1(
-            phifile,lensedcmbfile,
-            FWHM/60.,
-            noise_level,
-            lmin,
-            lmaxout,
-            lmax,
-            lmax_TT,
-            lcorr_TT,
-            tmp_output)
-        n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
+    lensingbiases_f.compute_n1(
+        phifile,
+        lensedcmbfile,
+        FWHM/60.,
+        noise_level,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
 
     indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
     bins = n1[0]

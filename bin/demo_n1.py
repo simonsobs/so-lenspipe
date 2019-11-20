@@ -34,7 +34,7 @@ solint = SOLensInterface(mask)
 thloc = "../data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
-"""
+
 # norm dict
 Als = {}
 with bench.show("norm"):
@@ -42,11 +42,16 @@ with bench.show("norm"):
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
-
+l=ls.astype(int)
+a=[l,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB']]
+#y=np.transpose(a)
+#np.savetxt('testall.txt',y)
 #why use filter?
 #The observed sky maps are cut by a galactic mask and have noise.
 # Wiener filter
 nls = al_mv * ls**2./4.  #theory noise per mode
+NOISE_LEVEL=nls
+"""
 tclkk = theory.gCl('kk',ls)
 wfilt = tclkk/(tclkk+nls)/ls**2.
 wfilt[ls<50] = 0
@@ -71,20 +76,19 @@ frmap = hp.alm2map(fkalm,nside=256)
 # Input kappa
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
 """
-s.checkproc_py()
+
 phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
 lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
 FWHM=1.5
-NOISE_LEVEL=1.0
 LMIN=2
-LMAXOUT=4000
-LMAX=4000
-LMAX_TT=4000
+LMAXOUT=2990
+LMAX=2990
+LMAX_TT=2990
 TMP_OUTPUT='./output'
 LCORR_TT=0
 
-bins, phiphi, n0_mat, indices = s.compute_n0_py(from_args=None,phifile=phi,lensedcmbfile=lensed,FWHM=FWHM,noise_level=NOISE_LEVEL,lmin=LMIN,lmaxout=LMAXOUT,lmax=LMAX,lmax_TT=LMAX_TT,lcorr_TT=LCORR_TT,tmp_output=TMP_OUTPUT)
-bins, n1_mat, indices = s.compute_n1_py(from_args=None,phifile=phi,lensedcmbfile=lensed,FWHM=FWHM,noise_level=NOISE_LEVEL,lmin=LMIN,lmaxout=LMAXOUT,lmax=LMAX,lmax_TT=LMAX_TT,lcorr_TT=LCORR_TT,tmp_output=TMP_OUTPUT)
+bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 tphi = lambda l: (l + 0.5)**4 / (2. * np.pi)
 N1_array=n1_mat
 indices = ['TT','EE','EB','TE','TB']
