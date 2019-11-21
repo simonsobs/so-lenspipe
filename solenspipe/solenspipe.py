@@ -22,8 +22,21 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 
 
+def convert_seeds(seed,nsims=2000,ndiv=4):
+    # Convert the solenspipe convention to the Alex convention
+    icov,cmb_set,i = seed
+    assert icov==0, "Covariance from sims not yet supported."
+    nstep = nsims//ndiv
+    if cmb_set==0 or cmb_set==1:
+        s_i = i + cmb_set*nstep
+        s_set = 0
+        noise_seed = (icov,cmb_set,i)+(2,)
+    elif cmb_set==2 or cmb_set==3:
+        s_i = i + nstep*2
+        s_set = cmb_set - 2
+        noise_seed = (icov,cmb_set,i)+(2,)
 
-
+    return s_i,s_set,noise_seed
 
 def get_cmb_alm(i,iset,path=config['signal_path']):
     sstr = str(iset).zfill(2)
@@ -63,19 +76,8 @@ class SOLensInterface(object):
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-        icov,cmb_set,i = seed
-        assert icov==0, "Covariance from sims not yet supported."
-        nsims = 2000
-        ndiv = 4
-        nstep = nsims//ndiv
-        if cmb_set==0 or cmb_set==1:
-            s_i = i + cmb_set*nstep
-            s_set = 0
-            noise_seed = (icov,cmb_set,i)+(2,)
-        elif cmb_set==2 or cmb_set==3:
-            s_i = i + nstep*2
-            s_set = cmb_set - 2
-            noise_seed = (icov,cmb_set,i)+(2,)
+        # Convert the solenspipe convention to the Alex convention
+        s_i,s_set,noise_seed = convert_seeds(seed)
 
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = hp.alm2map(cmb_alm,nside=self.nside)
@@ -126,26 +128,39 @@ def initialize_mask(nside,smooth_deg):
         return mask
 
 
-def initialize_norm(solint,ch,lmin,lmax):
-    onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
+
+
+def initialize_generic_norm(lmin,lmax,ls=None,nells=None,nells_P=None,tag='generic',thloc=None):
+    onormfname = opath+"norm_%s_lmin_%d_lmax_%d.txt" % (tag,lmin,lmax)
     try:
         return np.loadtxt(onormfname,unpack=True)
     except:
-        thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
+        if thloc is None: thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         ells = np.arange(lmax+100)
         uctt = theory.lCl('TT',ells)
         ucee = theory.lCl('EE',ells)
         ucte = theory.lCl('TE',ells)
         ucbb = theory.lCl('BB',ells)
-        ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
-        ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
-        tctt = uctt + maps.interp(ls,nells)(ells)
-        tcee = ucee + maps.interp(ls,nells_P)(ells)
+        if nells is not None:
+            ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
+            tctt = uctt + maps.interp(ls,nells)(ells)
+        else:
+            tctt = uctt
+        if nells_P is not None:
+            ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
+            tcee = ucee + maps.interp(ls,nells_P)(ells)
+            tcbb = ucbb + maps.interp(ls,nells_P)(ells)
+        else:
+            tcee = ucee
+            tcbb = ucbb
         tcte = ucte 
+<<<<<<< HEAD
         tcbb = ucbb + maps.interp(ls,nells_P)(ells)
         ntn=maps.interp(ls,nells)(ells)
         npn=maps.interp(ls,nells_P)(ells)
+=======
+>>>>>>> master
         ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
         io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
         return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
@@ -277,3 +292,7 @@ def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
 
             
 
+def initialize_norm(solint,ch,lmin,lmax,tag='SO'):
+    ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
+    ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
+    return initialize_generic_norm(lmin,lmax,ls=ls,nells=nells,nells_P=nells_P,tag=tag)
