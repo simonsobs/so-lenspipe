@@ -10,16 +10,16 @@ else ifeq (${NERSC_HOST}, cori)
         F90FLAGS = "-fopenmp"
         OPT = --opt=-O3 -lgfortran -lifcore
 else
-        FF = gfortran
-        FPY = f2py-2.7
-        F90FLAGS = "-fopenmp"
-        OPT = --opt=-ffixed-line-length-none --opt=-O3
+        FF = intelem
+        FPY = f2py
+        F90FLAGS = "-fopenmp -Wno-conversion -Wno-tabs"
+        OPT = --opt=-O3
 endif
 
 all: biases
 
 biases:
-		${FPY} --fcompiler=${FF} --f90flags=${F90FLAGS} -lgomp -c LensingBiases.f90 -m LensingBiases_f ${OPT}
+		${FPY} --fcompiler=${FF} --f90flags=${F90FLAGS} -c LensingBiases.f90 -m LensingBiases_f ${OPT}
 
 clean:
 		-rm *.so

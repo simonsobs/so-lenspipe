@@ -8,8 +8,8 @@ from enlib import bench
 from mapsims import noise,Channel,SOStandalonePrecomputedCMB
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
-from LensingBiases_f import lensingbiases as lensingbiases_f
-from LensingBiases_f import checkproc as checkproc_f
+from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
+from solenspipe._lensing_biases import checkproc as checkproc_f
 import os
 import glob
 import matplotlib
