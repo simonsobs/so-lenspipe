@@ -403,20 +403,36 @@ contains
         real(dp),intent(out) :: Norms(lmaxmax,n_est)
         character(LEN=50), intent(in) :: dir
         character(LEN=50), intent(in) :: vartag
-        integer ell, file_id, L,i
-        real(dp) N0(n_est,n_est), dum !array size 5
-
+        integer  file_id, L,i
+        real(dp) ell,TT,EE,EB,TE,TB,BB
+        real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
         open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
+        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
         do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0! ell, TT, TE,TB,EB,ET
+            read(file_id,*) ell, dum, N0
+            !read(file_id,*) ell, TT, EE,EB,TE,TB
             if (L/=ell) stop 'wrong N0 file'
             do i=1,n_est
                 Norms(L,i) = N0(i,i)
             end do
+            !read(file_id,*) ell,
+            
+            
+            
+            !Norms(L,1) = TT
+            !Norms(L,2)=EE
+            !Norms(L,3)=EB
+            !Norms(L,4)=TE
+            !Norms(L,5)=TB
+            !Norms(L,6)=BB
+                
+                
+    
         end do
         close(file_id)
     end subroutine loadNorm
+    !
     !
     
     subroutine loadNormCurl(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,NormsCurl,vartag,dir)
@@ -1044,7 +1060,7 @@ contains
 
     end subroutine GetN1MatrixGeneral
     !
-    subroutine compute_n0(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
+    subroutine compute_n0(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N0 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1054,7 +1070,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1069,12 +1085,12 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(dp),dimension(lmax), intent(in) :: muKArcmin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  muKArcmin  !muKArcmin becomes the input array
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
         LMin = lmin_filter
 
         call system('mkdir -p '//dir)
@@ -1095,7 +1111,7 @@ contains
 
     end subroutine compute_n0
 
-    subroutine compute_n1(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
+    subroutine compute_n1(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N1 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1105,7 +1121,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1119,12 +1135,12 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(dp),dimension(lmax), intent(in) :: muKArcmin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  muKArcmin  !muKArcmin becomes the input array
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
         LMin = lmin_filter
         LMin = lmin_filter
 
@@ -1158,7 +1174,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT

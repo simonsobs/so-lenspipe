@@ -144,6 +144,8 @@ def initialize_norm(solint,ch,lmin,lmax):
         tcee = ucee + maps.interp(ls,nells_P)(ells)
         tcte = ucte 
         tcbb = ucbb + maps.interp(ls,nells_P)(ells)
+        ntn=maps.interp(ls,nells)(ells)
+        npn=maps.interp(ls,nells_P)(ells)
         ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
         io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
         return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
@@ -176,6 +178,7 @@ def compute_n0_py(
 	lensedcmbfile=None,
 	FWHM=None,
 	noise_level=None,
+	noisep=None,
 	lmin=None,
 	lmaxout=None,
 	#lmax=None,
@@ -188,6 +191,7 @@ def compute_n0_py(
 		lensedcmbfile,
 		FWHM/60.,
 		noise_level,
+		noisep,
 		lmin,
 		lmaxout,
 		#lmax,
@@ -197,7 +201,7 @@ def compute_n0_py(
 	n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
 
 
-	indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+	indices = ['TT', 'EE', 'EB', 'TE', 'TB']
 	bins = n0[0]
 	phiphi = n0[1]
 	n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
@@ -209,6 +213,7 @@ def compute_n1_py(
     lensedcmbfile=None,
     FWHM=None,
     noise_level=None,
+    noisep=None,
     lmin=None,
     lmaxout=None,
     #lmax=None,
@@ -221,6 +226,7 @@ def compute_n1_py(
         lensedcmbfile,
         FWHM/60.,
         noise_level,
+        noisep,
         lmin,
         lmaxout,
         lmax_TT,
@@ -228,7 +234,7 @@ def compute_n1_py(
         tmp_output)
     n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
 
-    indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+    indices = ['TT', 'EE', 'EB', 'TE', 'TB']
     bins = n1[0]
     n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
 
