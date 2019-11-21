@@ -31,7 +31,7 @@ polcomb = args.polcomb
 config = io.config_from_yaml("input/config.yml")
 mask = initialize_mask(nside,smooth_deg) #solenspipe code that creates the mask
 solint = SOLensInterface(mask)
-thloc = "../data/" + config['theory_root']
+thloc = "data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
 """
@@ -72,15 +72,15 @@ frmap = hp.alm2map(fkalm,nside=256)
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
 """
 s.checkproc_py()
-phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
-lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
+phi='data/cosmo2017_10K_acc3_lenspotentialCls.dat'
+lensed='data/cosmo2017_10K_acc3_lensedCls.dat'
 FWHM=1.5
 NOISE_LEVEL=1.0
 LMIN=2
 LMAXOUT=4000
 LMAX=4000
 LMAX_TT=4000
-TMP_OUTPUT='./output'
+TMP_OUTPUT=config['data_path']
 LCORR_TT=0
 
 bins, phiphi, n0_mat, indices = s.compute_n0_py(from_args=None,phifile=phi,lensedcmbfile=lensed,FWHM=FWHM,noise_level=NOISE_LEVEL,lmin=LMIN,lmaxout=LMAXOUT,lmax=LMAX,lmax_TT=LMAX_TT,lcorr_TT=LCORR_TT,tmp_output=TMP_OUTPUT)
