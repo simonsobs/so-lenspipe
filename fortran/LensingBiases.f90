@@ -79,7 +79,8 @@ contains
         integer, parameter :: I4B = 4
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         integer, intent(in) :: lmax, lmax_TT,lcorr_TT,lmaxmax
-        real(dp), intent(in) :: AN, ANP, noise_fwhm_deg
+        real(dp), intent(in) ::noise_fwhm_deg
+        real(dp),dimension(lmaxmax), intent(in) :: AN, ANP 
         real(dp), intent(out) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) xlc, sigma2
         integer l
@@ -87,10 +88,10 @@ contains
         xlc= 180*sqrt(8.*log(2.))/pi
         sigma2 = (noise_fwhm_deg/xlc)**2
         do l=2, lmax
-            NT(L) = AN*exp(l*(l+1)*sigma2)
+            NT(L) = AN(l)*exp(l*(l+1)*sigma2)
             if (l>lmax_TT) NT(L) = NT(L) + ( 0.000001*pi/180/60.)**2 *exp(l*(l+1)*(15./60./xlc)**2)
             if (l<lcorr_TT) NT(L) = NT(L) * (1 + (real(lcorr_TT,dp)/real(l,dp))**4)
-            NP(L) = ANP*exp(l*(l+1)*sigma2)
+            NP(L) = ANP(l)*exp(l*(l+1)*sigma2)
         end do
 
     end subroutine NoiseInit
@@ -402,20 +403,36 @@ contains
         real(dp),intent(out) :: Norms(lmaxmax,n_est)
         character(LEN=50), intent(in) :: dir
         character(LEN=50), intent(in) :: vartag
-        integer ell, file_id, L,i
-        real(dp) N0(n_est,n_est), dum !array size 5
-
+        integer  file_id, L,i
+        real(dp) ell,TT,EE,EB,TE,TB,BB
+        real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
         open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
+        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
         do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0! ell, TT, TE,TB,EB,ET
+            read(file_id,*) ell, dum, N0
+            !read(file_id,*) ell, TT, EE,EB,TE,TB
             if (L/=ell) stop 'wrong N0 file'
             do i=1,n_est
                 Norms(L,i) = N0(i,i)
             end do
+            !read(file_id,*) ell,
+            
+            
+            
+            !Norms(L,1) = TT
+            !Norms(L,2)=EE
+            !Norms(L,3)=EB
+            !Norms(L,4)=TE
+            !Norms(L,5)=TB
+            !Norms(L,6)=BB
+                
+                
+    
         end do
         close(file_id)
     end subroutine loadNorm
+    !
     !
     
     subroutine loadNormCurl(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,NormsCurl,vartag,dir)
@@ -659,13 +676,13 @@ contains
 
         outtag = 'N1_All'
         call loadNorm(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
-        call loadNormCurl(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,NormsCurl,vartag,dir)
+        !call loadNormCurl(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,NormsCurl,vartag,dir)
 
         call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted',&
         & status='replace')
-        open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'_Curl.dat', newunit = file_id_Curl, form='formatted',&
-        & status='replace')
+        !open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'_Curl.dat', newunit = file_id_Curl, form='formatted',&
+        !& status='replace')
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'_PS.dat', newunit = file_id_PS, form='formatted',&
         & status='replace')
 
@@ -679,14 +696,14 @@ contains
             Lvec(1) = L
             LVec(2)= 0
             N1=0
-            N1_Curl = 0
+            !N1_Curl = 0
             N1_PS=0
-            N1_PS_Curl=0
+            !N1_PS_Curl=0
             do L1=max(lmin_filter,dL/2), lmax, dL
                 N1_L1 = 0
-                N1_L1_Curl = 0
+                !N1_L1_Curl = 0
                 N1_L1_PS = 0
-                N1_L1_PS_Curl = 0
+                !N1_L1_PS_Curl = 0
 
 
                 nphi=(2*L1+1)
@@ -766,46 +783,46 @@ contains
                                         this13 = responseFor(n_est,ij(1),pq(1),f13,f31)
                                         this24 = responseFor(n_est,ij(2),pq(2),f24,f42)
                                         tmp(est1,est2)=tmp(est1,est2)+this13*this24*Win34(est2)
-                                        tmpCurl(est1,est2)=tmpCurl(est1,est2)+this13*this24*WinCurl34(est2)
+                                        !tmpCurl(est1,est2)=tmpCurl(est1,est2)+this13*this24*WinCurl34(est2)
 
                                         this13 = responseFor(n_est,ij(1),pq(2),f13,f31)
                                         this24 = responseFor(n_est,ij(2),pq(1),f24,f42)
                                         tmp(est1,est2)=tmp(est1,est2)+this13*this24*Win43(est2)
-                                        tmpCurl(est1,est2)=tmpCurl(est1,est2)+this13*this24*WinCurl43(est2)
+                                        !tmpCurl(est1,est2)=tmpCurl(est1,est2)+this13*this24*WinCurl43(est2)
                                     end do
                                 end do
                                 tmpPS = tmpPS + Win43(1) + Win34(1)
-                                tmpPSCurl = tmpPSCurl + WinCurl43(1) + WinCurl34(1)
+                                !tmpPSCurl = tmpPSCurl + WinCurl43(1) + WinCurl34(1)
                             end if
                         end if
                     end do
                     if (phiIx/=0) tmp=tmp*2 !integrate 0-Pi for phi_L1
-                    if (phiIx/=0) tmpCurl=tmpCurl*2 !integrate 0-Pi for phi_L1
+                    !if (phiIx/=0) tmpCurl=tmpCurl*2 !integrate 0-Pi for phi_L1
                     if (phiIx/=0) tmpPS=tmpPS*2 !integrate 0-Pi for phi_L1
-                    if (phiIx/=0) tmpPSCurl=tmpPSCurl*2 !integrate 0-Pi for phi_L1
+                    !if (phiIx/=0) tmpPSCurl=tmpPSCurl*2 !integrate 0-Pi for phi_L1
                     fact = tmp* PhiL_phi_dphi* PhiL
-                    factCurl = tmpCurl* PhiL_phi_dphi* PhiL
+                    !factCurl = tmpCurl* PhiL_phi_dphi* PhiL
                     N1_PhiL= N1_PhiL + fact * Cphi(PhiL)*dPh
-                    N1_PhiL_Curl= N1_PhiL_Curl + factCurl * Cphi(PhiL)*dPh
+                    !N1_PhiL_Curl= N1_PhiL_Curl + factCurl * Cphi(PhiL)*dPh
 
                     N1_PhiL_PS = N1_PhiL_PS + tmpPS* PhiL_phi_dphi* PhiL*dPh  !/ PhiL**2
-                    N1_PhiL_PS_Curl = N1_PhiL_PS_CUrl + tmpPSCurl* PhiL_phi_dphi* PhiL*dPh  !/ PhiL**2
+                    !N1_PhiL_PS_Curl = N1_PhiL_PS_CUrl + tmpPSCurl* PhiL_phi_dphi* PhiL*dPh  !/ PhiL**2
 
                 end do
                 do est1=1,n_est
                     N1_PhiL(est1,:)=N1_PhiL(est1,:)*Win12(est1)
-                    N1_PhiL_Curl(est1,:)=N1_PhiL_Curl(est1,:)*WinCurl12(est1)
+                    !N1_PhiL_Curl(est1,:)=N1_PhiL_Curl(est1,:)*WinCurl12(est1)
                 end do
                 N1_L1 = N1_L1+N1_PhiL
-                N1_L1_Curl = N1_L1_Curl+N1_PhiL_Curl
+                !N1_L1_Curl = N1_L1_Curl+N1_PhiL_Curl
                 N1_L1_PS = N1_L1_PS + N1_PhiL_PS * Win12(1)
-                N1_L1_PS_Curl = N1_L1_PS_Curl + N1_PhiL_PS_Curl * WinCurl12(1)
+                !N1_L1_PS_Curl = N1_L1_PS_Curl + N1_PhiL_PS_Curl * WinCurl12(1)
             end do
             !$OMP END PARALLEL DO
             N1= N1 + N1_L1 * dphi* L1*dL
-            N1_Curl= N1_Curl + N1_L1_Curl * dphi* L1*dL
+            !N1_Curl= N1_Curl + N1_L1_Curl * dphi* L1*dL
             N1_PS = N1_PS + N1_L1_PS *dphi*L1*dL
-            N1_PS_Curl = N1_PS_Curl + N1_L1_PS_Curl *dphi*L1*dL
+            !N1_PS_Curl = N1_PS_Curl + N1_L1_PS_Curl *dphi*L1*dL
 
         end do
 
@@ -813,17 +830,17 @@ contains
             do est2=est1,n_est
                 N1(est1,est2) = norms(L,est1)*norms(L,est2)*N1(est1,est2) / (twopi**4)
                 N1(est2,est1) = N1(est1,est2)
-                N1_Curl(est1,est2) = normsCurl(L,est1)*normsCurl(L,est2)*N1_Curl(est1,est2) / (twopi**4)
-                N1_Curl(est2,est1) = N1_Curl(est1,est2)
+                !N1_Curl(est1,est2) = normsCurl(L,est1)*normsCurl(L,est2)*N1_Curl(est1,est2) / (twopi**4)
+                !N1_Curl(est2,est1) = N1_Curl(est1,est2)
             end do
         end do
         N1_PS = norms(L,1)*norms(L,1)*N1_PS / (twopi**4)
-        N1_PS_Curl = normsCurl(L,1)*normsCurl(L,1)*N1_PS_Curl / (twopi**4)
+        !N1_PS_Curl = normsCurl(L,1)*normsCurl(L,1)*N1_PS_Curl / (twopi**4)
 
         write(file_id,'(1I5)',advance='NO') L
         call WriteMatrixLine(file_id, N1,n_est)
-        write(file_id_Curl,'(1I5)',advance='NO') L
-        call WriteMatrixLine(file_id_Curl, N1_Curl,n_est)
+        !write(file_id_Curl,'(1I5)',advance='NO') L
+        !call WriteMatrixLine(file_id_Curl, N1_Curl,n_est)
 
         write(file_id_PS,*) L, N1_PS, N1_PS_Curl
 
@@ -835,7 +852,7 @@ contains
         end do
         print *,''
         close(file_id)
-        close(file_id_Curl)
+        !close(file_id_Curl)
         close(file_id_PS)
 
     end subroutine GetN1General
@@ -1043,7 +1060,7 @@ contains
 
     end subroutine GetN1MatrixGeneral
     !
-    subroutine compute_n0(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
+    subroutine compute_n0(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N0 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1053,9 +1070,9 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
-        real(dp), intent(in)     :: noise_fwhm_deg, muKArcmin
+        real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
         character(LEN=200), intent(in) :: phifile, lensedcmbfile
@@ -1068,10 +1085,12 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(DP) :: NoiseVar, NoiseVarP
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+ 
 
-        NoiseVar =  ( muKArcmin * pi/ 180 / 60.) ** 2
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
         LMin = lmin_filter
 
         call system('mkdir -p '//dir)
@@ -1092,7 +1111,7 @@ contains
 
     end subroutine compute_n0
 
-    subroutine compute_n1(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
+    subroutine compute_n1(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N1 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1102,9 +1121,9 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
-        real(dp), intent(in)     :: noise_fwhm_deg, muKArcmin
+        real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
         character(LEN=200), intent(in) :: phifile, lensedcmbfile
@@ -1116,10 +1135,13 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(DP) :: NoiseVar, NoiseVarP
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+ 
 
-        NoiseVar =  ( muKArcmin * pi/ 180 / 60.) ** 2
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
+        LMin = lmin_filter
         LMin = lmin_filter
 
         call system('mkdir -p '//dir)
@@ -1152,9 +1174,9 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 5
         integer, parameter :: lmaxmax = 8000
-        real(dp), intent(in)     :: noise_fwhm_deg, muKArcmin
+        real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
         character(LEN=200), intent(in) :: phifile, lensedcmbfile
@@ -1166,9 +1188,11 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(DP) :: NoiseVar, NoiseVarP
+        real(dp),dimension(lmax), intent(in) :: muKArcmin
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+ 
 
-        NoiseVar =  ( muKArcmin * pi/ 180 / 60.) ** 2
+        NoiseVar =  muKArcmin  !muKArcmin becomes the input array
         NoiseVarP=NoiseVar*2
         LMin = lmin_filter
 

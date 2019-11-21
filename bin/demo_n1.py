@@ -1,4 +1,3 @@
-
 from __future__ import print_function
 from orphics import maps,io,cosmology
 from pixell import enmap,lensing as plensing,curvedsky as cs,reproject
@@ -34,7 +33,7 @@ solint = SOLensInterface(mask)
 thloc = "data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
-"""
+
 # norm dict
 Als = {}
 with bench.show("norm"):
@@ -42,18 +41,32 @@ with bench.show("norm"):
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
+l=ls.astype(int)
+BB=np.full((len(l[2:])),1000000000000000000000000)
+a=[l[2:],Als['TT'][2:],Als['EE'][2:],Als['EB'][2:],Als['TE'][2:],Als['TB'][2:],BB]
+y=np.transpose(a)
+np.savetxt('output/N0_analytical.txt',y)
 
 #why use filter?
 #The observed sky maps are cut by a galactic mask and have noise.
 # Wiener filter
 nls = al_mv * ls**2./4.  #theory noise per mode
+
+#ls=np.zeros(2900)
+nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:len(ls)]
+nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:len(ls)]
+NOISE_LEVEL=nells
+polnoise=nells_P
+
 tclkk = theory.gCl('kk',ls)
 wfilt = tclkk/(tclkk+nls)/ls**2.
 wfilt[ls<50] = 0
 wfilt[ls>500] = 0
 wfilt[~np.isfinite(wfilt)] = 0
 
+
 # Filtered alms
+
 talm  = solint.get_kmap(ch,"T",(0,0,0),lmin,lmax,filtered=True)
 ealm  = solint.get_kmap(ch,"E",(0,0,0),lmin,lmax,filtered=True)
 balm  = solint.get_kmap(ch,"B",(0,0,0),lmin,lmax,filtered=True)
@@ -70,41 +83,42 @@ frmap = hp.alm2map(fkalm,nside=256)
 
 # Input kappa
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
-"""
-s.checkproc_py()
-phi='data/cosmo2017_10K_acc3_lenspotentialCls.dat'
-lensed='data/cosmo2017_10K_acc3_lensedCls.dat'
-FWHM=1.5
-NOISE_LEVEL=1.0
+
+
+phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
+lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
+FWHM=1.4
 LMIN=2
-LMAXOUT=4000
-LMAX=4000
-LMAX_TT=4000
+LMAXOUT=2900
+LMAX=2900
+LMAX_TT=2900
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
 
-bins, phiphi, n0_mat, indices = s.compute_n0_py(from_args=None,phifile=phi,lensedcmbfile=lensed,FWHM=FWHM,noise_level=NOISE_LEVEL,lmin=LMIN,lmaxout=LMAXOUT,lmax=LMAX,lmax_TT=LMAX_TT,lcorr_TT=LCORR_TT,tmp_output=TMP_OUTPUT)
-bins, n1_mat, indices = s.compute_n1_py(from_args=None,phifile=phi,lensedcmbfile=lensed,FWHM=FWHM,noise_level=NOISE_LEVEL,lmin=LMIN,lmaxout=LMAXOUT,lmax=LMAX,lmax_TT=LMAX_TT,lcorr_TT=LCORR_TT,tmp_output=TMP_OUTPUT)
+bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+np.savetxt('output/phiphi',phiphi)
 tphi = lambda l: (l + 0.5)**4 / (2. * np.pi)
 N1_array=n1_mat
 indices = ['TT','EE','EB','TE','TB']
 dict_int={'TT':0,'EE':1,'EB':2,'TE':3,'TB':4}
 # Verify input x cross
-"""
+
 w3 = np.mean(solint.mask**3) # Mask factors
 w2 = np.mean(solint.mask**2)
 xcls = hp.alm2cl(rkalm,ikalm)/w3
 icls = hp.alm2cl(ikalm,ikalm)/w2
 ells = np.arange(len(icls))
 clkk = theory.gCl('kk',ells)
-"""
+
 pl = io.Plotter(xyscale='loglog',xlabel='$L$',ylabel='$C_L$')
-"""
+np.savetxt('output/clkk',clkk)
 pl.add(ells,clkk,ls="-",lw=3,label='theory input')
 pl.add(ells,xcls,alpha=0.4,label='input x recon')
 pl.add(ells,icls,alpha=0.4,label='input x input')
 pl.add(ls,nls,ls="--",label='theory noise per mode')
-"""
+#pl.add(bins, bins*(bins+1)*0.25*phiphi, ls="-", label='Lensing')
+
 #Plot N1 noise
 i=dict_int[polcomb]
 pl.add(bins,N1_array[i][i][:] * tphi(bins),ls='dashdot',lw=2,label=indices[i]+indices[i],alpha=0.8)
@@ -117,6 +131,7 @@ pl._ax.set_xlim(20,4000)
 pl.done(config['data_path']+"xcls_%s.png" % polcomb)
 
 """
+
 # Filtered input
 fikalm = hp.almxfl(ikalm,wfilt)
 fimap = hp.alm2map(fikalm,nside=256)
