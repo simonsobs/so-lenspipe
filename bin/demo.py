@@ -86,6 +86,7 @@ fkalm = hp.almxfl(rkalm,wfilt)
 frmap = hp.alm2map(fkalm,nside=256)
 
 # Input kappa
+# TODO: Does this really need to be masked?
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
 
 

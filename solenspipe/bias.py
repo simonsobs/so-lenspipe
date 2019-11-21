@@ -74,7 +74,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
-def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
+def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
@@ -84,7 +84,8 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     mcn1 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):        
+    for i in range(comm.rank+1, nsims+1, comm.size):
+        if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xsk   = get_kmap(eX,(icov,2,i))
         Yskp  = get_kmap(eY,(icov,3,i))
         Ask   = get_kmap(eA,(icov,2,i))
