@@ -1070,7 +1070,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1121,7 +1121,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1139,8 +1139,8 @@ contains
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  nll  !muKArcmin becomes the input array
-        NoiseVarP=nlp
+        NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
+        NoiseVarP=nlp    !nlp is the polarization noise power 
         LMin = lmin_filter
         LMin = lmin_filter
 
@@ -1174,7 +1174,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
