@@ -407,25 +407,26 @@ contains
         real(dp) ell,TT,EE,EB,TE,TB,BB
         real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
-        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
-        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
+        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
+        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
         do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0
-            !read(file_id,*) ell, TT, EE,EB,TE,TB
+            !read(file_id,*) ell, dum, N0
+            read(file_id,*) ell, TT, EE,EB,TE,TB,BB
+            !write(*,*) L,ell
             if (L/=ell) stop 'wrong N0 file'
-            do i=1,n_est
-                Norms(L,i) = N0(i,i)
-            end do
+            !do i=1,n_est
+                !Norms(L,i) = N0(i,i)
+            !end do
             !read(file_id,*) ell,
             
             
             
-            !Norms(L,1) = TT
-            !Norms(L,2)=EE
-            !Norms(L,3)=EB
-            !Norms(L,4)=TE
-            !Norms(L,5)=TB
-            !Norms(L,6)=BB
+            Norms(L,1) = TT
+            Norms(L,2)=EE
+            Norms(L,3)=EB
+            Norms(L,4)=TE
+            Norms(L,5)=TB
+            Norms(L,6)=BB
                 
                 
     

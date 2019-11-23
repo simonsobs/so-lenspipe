@@ -238,7 +238,32 @@ def compute_n0_py(
 	n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
 
 	return bins, phiphi, n0_mat, indices
-
+	
+def loadn0(file_path,sample_size):
+#prepare N0 to be used by N1 Fortran
+#BB has 2990 rows
+#sample size, the nth bin where n1 is calculated, determined by L_step in Fortran. Set to 20
+    fname = file_path+"N0_analytical.txt" 
+    try:
+        return np.loadtxt(fname)
+        print("NO file present")
+    except:
+        bb=file_path+"bb.txt" 
+        Als = {}
+        with bench.show("norm"):
+            ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
+        bin=ls[2:][::sample_size]
+        TT=Als['TT'][2:][::sample_size]
+        EE=Als['EE'][2:][::sample_size]
+        EB=Als['EB'][2:][::sample_size]
+        TE=Als['TE'][2:][::sample_size]
+        TB=Als['TB'][2:][::sample_size]
+        BB=bb
+        ar=[bin,TT/bin**2,EE/bin**2,EB/bin**2,TE/bin**2,TB/bin**2,BB/bin**2]
+        y=np.transpose(ar)
+        np.savetxt(fname,y)
+        print("saved N0 in: "+fname)
+        
 def compute_n1_py(
     phifile=None,
     lensedcmbfile=None,

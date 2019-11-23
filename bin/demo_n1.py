@@ -27,10 +27,11 @@ ch = SOChannel('LA',args.freq)
 lmin = args.lmin
 lmax = args.lmax
 polcomb = args.polcomb
-config = io.config_from_yaml("input/config.yml")
+
+config = io.config_from_yaml("../input/config.yml")
 mask = initialize_mask(nside,smooth_deg) #solenspipe code that creates the mask
 solint = SOLensInterface(mask)
-thloc = "data/" + config['theory_root']
+thloc = "../data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
 
@@ -41,11 +42,8 @@ with bench.show("norm"):
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
-l=ls.astype(int)
-BB=np.full((len(l[2:])),1000000000000000000000000)
-a=[l[2:],Als['TT'][2:],Als['EE'][2:],Als['EB'][2:],Als['TE'][2:],Als['TB'][2:],BB]
-y=np.transpose(a)
-np.savetxt('output/N0_analytical.txt',y)
+#loadn0(config['data_path'])
+
 
 #why use filter?
 #The observed sky maps are cut by a galactic mask and have noise.
@@ -58,13 +56,47 @@ nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:len(ls)]
 NOISE_LEVEL=nells
 polnoise=nells_P
 
+
+
+
+
+phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
+lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
+FWHM=1.4
+LMIN=2
+LMAXOUT=2989
+LMAX=2989
+LMAX_TT=2989
+TMP_OUTPUT=config['data_path']
+LCORR_TT=0
+
+#bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#y=np.transpose([bins,phiphi])
+#np.savetxt('output/phiphi.txt',y)
+"""
+np.savetxt('output/n0tt.txt',n0_mat[0][0][:])
+np.savetxt('output/n0ee.txt',n0_mat[1][1][:])
+np.savetxt('output/n0eb.txt',n0_mat[2][2][:])
+np.savetxt('output/n0te.txt',n0_mat[3][3][:])
+np.savetxt('output/n0tb.txt',n0_mat[4][4][:])
+"""
+np.savetxt('output/mn1tt.txt',n1_mat[0][0][:])
+np.savetxt('output/mn1ee.txt',n1_mat[1][1][:])
+np.savetxt('output/mn1eb.txt',n1_mat[2][2][:])
+np.savetxt('output/mn1te.txt',n1_mat[3][3][:])
+np.savetxt('output/mn1tb.txt',n1_mat[4][4][:])
+
+tphi = lambda l: (l + 0.5)**4 / (2. * np.pi)
+N1_array=n1_mat
+indices = ['TT','EE','EB','TE','TB']
+dict_int={'TT':0,'EE':1,'EB':2,'TE':3,'TB':4}
+"""
 tclkk = theory.gCl('kk',ls)
 wfilt = tclkk/(tclkk+nls)/ls**2.
 wfilt[ls<50] = 0
 wfilt[ls>500] = 0
 wfilt[~np.isfinite(wfilt)] = 0
-
-
 # Filtered alms
 
 talm  = solint.get_kmap(ch,"T",(0,0,0),lmin,lmax,filtered=True)
@@ -83,45 +115,31 @@ frmap = hp.alm2map(fkalm,nside=256)
 
 # Input kappa
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
-
-
-phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
-lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
-FWHM=1.4
-LMIN=2
-LMAXOUT=2900
-LMAX=2900
-LMAX_TT=2900
-TMP_OUTPUT=config['data_path']
-LCORR_TT=0
-
-bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-np.savetxt('output/phiphi',phiphi)
-tphi = lambda l: (l + 0.5)**4 / (2. * np.pi)
-N1_array=n1_mat
-indices = ['TT','EE','EB','TE','TB']
-dict_int={'TT':0,'EE':1,'EB':2,'TE':3,'TB':4}
 # Verify input x cross
 
+w4=np.mean(solint.mask**4)
 w3 = np.mean(solint.mask**3) # Mask factors
 w2 = np.mean(solint.mask**2)
 xcls = hp.alm2cl(rkalm,ikalm)/w3
 icls = hp.alm2cl(ikalm,ikalm)/w2
+rcls=hp.alm2cl(rkalm,rkalm)/w4
 ells = np.arange(len(icls))
 clkk = theory.gCl('kk',ells)
-
+"""
 pl = io.Plotter(xyscale='loglog',xlabel='$L$',ylabel='$C_L$')
-np.savetxt('output/clkk',clkk)
+
+"""
+np.savetxt('output/rclsTB.txt',rcls)
 pl.add(ells,clkk,ls="-",lw=3,label='theory input')
 pl.add(ells,xcls,alpha=0.4,label='input x recon')
 pl.add(ells,icls,alpha=0.4,label='input x input')
 pl.add(ls,nls,ls="--",label='theory noise per mode')
+"""
 #pl.add(bins, bins*(bins+1)*0.25*phiphi, ls="-", label='Lensing')
 
 #Plot N1 noise
 i=dict_int[polcomb]
-pl.add(bins,N1_array[i][i][:] * tphi(bins),ls='dashdot',lw=2,label=indices[i]+indices[i],alpha=0.8)
+pl.add(bins,N1_array[i][i][:] * tphi(bins),ls='dashdot',lw=2,label=indices[i]+indices[i]+'N1',alpha=0.8)
 #Plot all the N1
 """
 for i in range(len(N1_array)-1):
