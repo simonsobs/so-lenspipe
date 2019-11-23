@@ -42,7 +42,7 @@ with bench.show("norm"):
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
-#loadn0(config['data_path'])
+s.loadn0(config['data_path'],20)
 
 
 #why use filter?
@@ -51,8 +51,8 @@ al_mv = Als[polcomb]
 nls = al_mv * ls**2./4.  #theory noise per mode
 
 #ls=np.zeros(2900)
-nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:len(ls)]
-nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:len(ls)]
+nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:2990]
+nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:2990]
 NOISE_LEVEL=nells
 polnoise=nells_P
 
@@ -64,9 +64,9 @@ phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
 lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
 FWHM=1.4
 LMIN=2
-LMAXOUT=2989
-LMAX=2989
-LMAX_TT=2989
+LMAXOUT=2990
+LMAX=2990
+LMAX_TT=2990
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
 
@@ -81,11 +81,11 @@ np.savetxt('output/n0eb.txt',n0_mat[2][2][:])
 np.savetxt('output/n0te.txt',n0_mat[3][3][:])
 np.savetxt('output/n0tb.txt',n0_mat[4][4][:])
 """
-np.savetxt('output/mn1tt.txt',n1_mat[0][0][:])
-np.savetxt('output/mn1ee.txt',n1_mat[1][1][:])
-np.savetxt('output/mn1eb.txt',n1_mat[2][2][:])
-np.savetxt('output/mn1te.txt',n1_mat[3][3][:])
-np.savetxt('output/mn1tb.txt',n1_mat[4][4][:])
+np.savetxt('../data/n1tt.txt',n1_mat[0][0][:])
+np.savetxt('../data/n1ee.txt',n1_mat[1][1][:])
+np.savetxt('../data/n1eb1.txt',n1_mat[2][2][:])
+np.savetxt('../data/n1te1.txt',n1_mat[3][3][:])
+np.savetxt('../data/n1tb1.txt',n1_mat[4][4][:])
 
 tphi = lambda l: (l + 0.5)**4 / (2. * np.pi)
 N1_array=n1_mat

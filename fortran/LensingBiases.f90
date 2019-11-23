@@ -23,7 +23,7 @@ contains
         real(dp), intent(out) :: dPhi_Sample(lmaxmax)
         integer(I4B), intent(out) :: nPhiSample
 
-        integer(I4B) :: Lstep = 1
+        integer(I4B) :: Lstep = 20
         integer i,ix, dL,Lix, L
         real :: acc=1
 
@@ -412,7 +412,7 @@ contains
         do L=lmin_filter, lmaxout, Lstep
             !read(file_id,*) ell, dum, N0
             read(file_id,*) ell, TT, EE,EB,TE,TB,BB
-            !write(*,*) L,ell
+            write(*,*) L,ell
             if (L/=ell) stop 'wrong N0 file'
             !do i=1,n_est
                 !Norms(L,i) = N0(i,i)
@@ -645,7 +645,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 1, dL = 20
+        integer(I4B), parameter :: Lstep = 20, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
@@ -877,7 +877,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 1, dL = 20
+        integer(I4B), parameter :: Lstep = 20, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
