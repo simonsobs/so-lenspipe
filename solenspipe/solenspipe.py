@@ -212,7 +212,6 @@ def compute_n0_py(
 	noisep=None,
 	lmin=None,
 	lmaxout=None,
-	#lmax=None,
 	lmax_TT=None,
 	lcorr_TT=None,
 	tmp_output=None):
@@ -225,7 +224,6 @@ def compute_n0_py(
 		noisep,
 		lmin,
 		lmaxout,
-		#lmax,
 		lmax_TT,
 		lcorr_TT,
 		tmp_output)
@@ -272,7 +270,6 @@ def compute_n1_py(
     noisep=None,
     lmin=None,
     lmaxout=None,
-    #lmax=None,
     lmax_TT=None,
     lcorr_TT=None,
     tmp_output=None):
@@ -295,6 +292,40 @@ def compute_n1_py(
     n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
 
     return bins, n1_mat, indices
+    
+def n1_derivatives(
+    x,
+    y,
+    phifile=None,
+    lensedcmbfile=None,
+    FWHM=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+    #x= First set i.e 'TT'
+    #y= Second set i.e 'EB'
+    lensingbiases_f.compute_n1_derivatives(
+        phifile,
+        lensedcmbfile,
+        FWHM/60.,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
+
+    #indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
+    #bins = n1[0]
+    #n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+
+    return n1
 
 
 def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):

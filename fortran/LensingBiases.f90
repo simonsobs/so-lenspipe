@@ -861,7 +861,7 @@ contains
     subroutine GetN1MatrixGeneral(sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        ! Main routine to compute N1 bias.
+        ! Main routine to compute N1 derivatives.
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         integer, parameter :: DP = 8
         integer, parameter :: I4B = 4
@@ -1163,7 +1163,7 @@ contains
 
     end subroutine compute_n1
 
-    subroutine compute_n1_derivatives(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,&
+    subroutine compute_n1_derivatives(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,&
         & lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute
@@ -1189,12 +1189,12 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(dp),dimension(lmax), intent(in) :: muKArcmin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  muKArcmin  !muKArcmin becomes the input array
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
+        NoiseVarP=nlp  
         LMin = lmin_filter
 
         call system('mkdir -p '//dir)
