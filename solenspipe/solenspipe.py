@@ -155,12 +155,6 @@ def initialize_generic_norm(lmin,lmax,ls=None,nells=None,nells_P=None,tag='gener
             tcee = ucee
             tcbb = ucbb
         tcte = ucte 
-<<<<<<< HEAD
-        tcbb = ucbb + maps.interp(ls,nells_P)(ells)
-        ntn=maps.interp(ls,nells)(ells)
-        npn=maps.interp(ls,nells_P)(ells)
-=======
->>>>>>> master
         ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
         io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
         return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
