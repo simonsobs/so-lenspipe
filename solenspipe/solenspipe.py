@@ -129,7 +129,7 @@ def initialize_mask(nside,smooth_deg):
 
 
 
-
+"""
 def initialize_generic_norm(lmin,lmax,ls=None,nells=None,nells_P=None,tag='generic',thloc=None):
     onormfname = opath+"norm_%s_lmin_%d_lmax_%d.txt" % (tag,lmin,lmax)
     try:
@@ -158,7 +158,29 @@ def initialize_generic_norm(lmin,lmax,ls=None,nells=None,nells_P=None,tag='gener
         ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
         io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
         return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
+"""
 
+def initialize_norm(solint,ch,lmin,lmax):
+    onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
+    try:
+        return np.loadtxt(onormfname,unpack=True)
+    except:
+        thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
+        theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+        ells = np.arange(lmax+100)
+        uctt = theory.lCl('TT',ells)
+        ucee = theory.lCl('EE',ells)
+        ucte = theory.lCl('TE',ells)
+        ucbb = theory.lCl('BB',ells)
+        ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
+        ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
+        tctt = uctt + maps.interp(ls,nells)(ells)
+        tcee = ucee + maps.interp(ls,nells_P)(ells)
+        tcte = ucte 
+        tcbb = ucbb + maps.interp(ls,nells_P)(ells)
+        ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
+        io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
+        return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
         
 	
 def checkproc_py():
@@ -190,7 +212,6 @@ def compute_n0_py(
 	noisep=None,
 	lmin=None,
 	lmaxout=None,
-	#lmax=None,
 	lmax_TT=None,
 	lcorr_TT=None,
 	tmp_output=None):
@@ -203,20 +224,44 @@ def compute_n0_py(
 		noisep,
 		lmin,
 		lmaxout,
-		#lmax,
 		lmax_TT,
 		lcorr_TT,
 		tmp_output)
 	n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
 
 
-	indices = ['TT', 'EE', 'EB', 'TE', 'TB']
+	indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
 	bins = n0[0]
 	phiphi = n0[1]
 	n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
 
 	return bins, phiphi, n0_mat, indices
-
+	
+def loadn0(file_path,sample_size):
+#prepare N0 to be used by N1 Fortran
+#BB has 2990 rows
+#sample size, the nth bin where n1 is calculated, determined by L_step in Fortran. Set to 20
+    fname = file_path+"N0_analytical.txt" 
+    try:
+        return np.loadtxt(fname)
+        print("NO file present")
+    except:
+        bb=file_path+"bb.txt" 
+        Als = {}
+        with bench.show("norm"):
+            ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
+        bin=ls[2:][::sample_size]
+        TT=Als['TT'][2:][::sample_size]
+        EE=Als['EE'][2:][::sample_size]
+        EB=Als['EB'][2:][::sample_size]
+        TE=Als['TE'][2:][::sample_size]
+        TB=Als['TB'][2:][::sample_size]
+        BB=bb
+        ar=[bin,TT/bin**2,EE/bin**2,EB/bin**2,TE/bin**2,TB/bin**2,BB/bin**2]
+        y=np.transpose(ar)
+        np.savetxt(fname,y)
+        print("saved N0 in: "+fname)
+        
 def compute_n1_py(
     phifile=None,
     lensedcmbfile=None,
@@ -225,7 +270,6 @@ def compute_n1_py(
     noisep=None,
     lmin=None,
     lmaxout=None,
-    #lmax=None,
     lmax_TT=None,
     lcorr_TT=None,
     tmp_output=None):
@@ -243,11 +287,45 @@ def compute_n1_py(
         tmp_output)
     n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
 
-    indices = ['TT', 'EE', 'EB', 'TE', 'TB']
+    indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
     bins = n1[0]
     n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
 
     return bins, n1_mat, indices
+    
+def n1_derivatives(
+    x,
+    y,
+    phifile=None,
+    lensedcmbfile=None,
+    FWHM=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+    #x= First set i.e 'TT'
+    #y= Second set i.e 'EB'
+    lensingbiases_f.compute_n1_derivatives(
+        phifile,
+        lensedcmbfile,
+        FWHM/60.,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
+
+    #indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
+    #bins = n1[0]
+    #n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+
+    return n1
 
 
 def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
@@ -285,8 +363,9 @@ def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
 	
 
             
-
+"""
 def initialize_norm(solint,ch,lmin,lmax,tag='SO'):
     ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
     ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
     return initialize_generic_norm(lmin,lmax,ls=ls,nells=nells,nells_P=nells_P,tag=tag)
+"""

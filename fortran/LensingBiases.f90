@@ -23,7 +23,7 @@ contains
         real(dp), intent(out) :: dPhi_Sample(lmaxmax)
         integer(I4B), intent(out) :: nPhiSample
 
-        integer(I4B) :: Lstep = 1
+        integer(I4B) :: Lstep = 20
         integer i,ix, dL,Lix, L
         real :: acc=1
 
@@ -407,25 +407,26 @@ contains
         real(dp) ell,TT,EE,EB,TE,TB,BB
         real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
-        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
-        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
+        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
+        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
         do L=lmin_filter, lmaxout, Lstep
-            read(file_id,*) ell, dum, N0
-            !read(file_id,*) ell, TT, EE,EB,TE,TB
+            !read(file_id,*) ell, dum, N0
+            read(file_id,*) ell, TT, EE,EB,TE,TB,BB
+            write(*,*) L,ell
             if (L/=ell) stop 'wrong N0 file'
-            do i=1,n_est
-                Norms(L,i) = N0(i,i)
-            end do
+            !do i=1,n_est
+                !Norms(L,i) = N0(i,i)
+            !end do
             !read(file_id,*) ell,
             
             
             
-            !Norms(L,1) = TT
-            !Norms(L,2)=EE
-            !Norms(L,3)=EB
-            !Norms(L,4)=TE
-            !Norms(L,5)=TB
-            !Norms(L,6)=BB
+            Norms(L,1) = TT
+            Norms(L,2)=EE
+            Norms(L,3)=EB
+            Norms(L,4)=TE
+            Norms(L,5)=TB
+            Norms(L,6)=BB
                 
                 
     
@@ -644,7 +645,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 1, dL = 20
+        integer(I4B), parameter :: Lstep = 20, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
@@ -860,7 +861,7 @@ contains
     subroutine GetN1MatrixGeneral(sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        ! Main routine to compute N1 bias.
+        ! Main routine to compute N1 derivatives.
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         integer, parameter :: DP = 8
         integer, parameter :: I4B = 4
@@ -876,7 +877,7 @@ contains
         logical, intent(in) :: sampling
 
         integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
-        integer(I4B), parameter :: Lstep = 1, dL = 20
+        integer(I4B), parameter :: Lstep = 20, dL = 20
         integer  :: lumped_indices(2,n_est)
         integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
         integer PhiL
@@ -1070,7 +1071,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1121,7 +1122,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1139,8 +1140,8 @@ contains
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  nll  !muKArcmin becomes the input array
-        NoiseVarP=nlp
+        NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
+        NoiseVarP=nlp    !nlp is the polarization noise power 
         LMin = lmin_filter
         LMin = lmin_filter
 
@@ -1162,7 +1163,7 @@ contains
 
     end subroutine compute_n1
 
-    subroutine compute_n1_derivatives(phifile,lensedcmbfile,noise_fwhm_deg,muKArcmin,&
+    subroutine compute_n1_derivatives(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,&
         & lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute
@@ -1174,7 +1175,7 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 5
+        integer(I4B), parameter :: n_est = 6
         integer, parameter :: lmaxmax = 8000
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
@@ -1188,12 +1189,12 @@ contains
         real(dp) :: NT(lmaxmax), NP(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         integer(I4B) :: LMin
-        real(dp),dimension(lmax), intent(in) :: muKArcmin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
  
 
-        NoiseVar =  muKArcmin  !muKArcmin becomes the input array
-        NoiseVarP=NoiseVar*2
+        NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
+        NoiseVarP=nlp  
         LMin = lmin_filter
 
         call system('mkdir -p '//dir)

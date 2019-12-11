@@ -17,6 +17,7 @@ Dependencies:
 
 """
 
+
 from __future__ import print_function
 from orphics import maps,io,cosmology
 from pixell import enmap,lensing as plensing,curvedsky as cs,reproject
@@ -28,8 +29,9 @@ from mapsims import noise,SOChannel
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 from solenspipe import initialize_mask, initialize_norm, SOLensInterface,get_kappa_alm
-
+import solenspipe as s
 import argparse
+
 # Parse command line
 parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
 parser.add_argument("polcomb", type=str,help='Polarization combination. Possibilities include mv (all), mvpol (all pol), TT, EE, TE, EB or TB.')
@@ -47,11 +49,11 @@ ch = SOChannel('LA',args.freq)
 lmin = args.lmin
 lmax = args.lmax
 polcomb = args.polcomb
-config = io.config_from_yaml("input/config.yml")
+config = io.config_from_yaml("../input/config.yml")
 
 mask = initialize_mask(nside,smooth_deg)
 solint = SOLensInterface(mask)
-thloc = "data/" + config['theory_root']
+thloc = "../data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
 # norm dict
@@ -62,6 +64,10 @@ Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
 
+
+
+
+
 # Wiener filter
 nls = al_mv * ls**2./4.
 tclkk = theory.gCl('kk',ls)
@@ -69,6 +75,32 @@ wfilt = tclkk/(tclkk+nls)/ls**2.
 wfilt[ls<50] = 0
 wfilt[ls>500] = 0
 wfilt[~np.isfinite(wfilt)] = 0
+
+
+#calculate N1
+s.loadn0(config['data_path'],20) #laod N0 file used for N1 calculation
+nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:2990] #Prepare noise levels for temperature
+nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:2990] #Prepare noise levels for polarization
+NOISE_LEVEL=nells
+polnoise=nells_P
+phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
+lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
+FWHM=1.4
+LMIN=2
+LMAXOUT=2990
+LMAX=2990
+LMAX_TT=2990
+TMP_OUTPUT=config['data_path']
+LCORR_TT=0
+bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
+
+indices = ['TT','EE','EB','TE','TB']
+dict_int={'TT':0,'EE':1,'EB':2,'TE':3,'TB':4}
+i=dict_int[polcomb]
+N1=n1_mat[i][i][:]*bins**4*0.25
+#save the N0 used
+N0=Als[polcomb][::20]*bins**2*0.25
 
 # Filtered alms
 talm  = solint.get_kmap(ch,"T",(0,0,0),lmin,lmax,filtered=True)
@@ -91,16 +123,21 @@ ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.co
 
 
 # Verify input x cross
+w4=np.mean(solint.mask**4)
 w3 = np.mean(solint.mask**3) # Mask factors
 w2 = np.mean(solint.mask**2)
 xcls = hp.alm2cl(rkalm,ikalm)/w3
 icls = hp.alm2cl(ikalm,ikalm)/w2
+rcls=hp.alm2cl(rkalm,rkalm)/w4 #reconstruction auto
 ells = np.arange(len(icls))
 clkk = theory.gCl('kk',ells)
 pl = io.Plotter(xyscale='loglog',xlabel='$L$',ylabel='$C_L$')
 pl.add(ells,clkk,ls="-",lw=3,label='theory input')
 pl.add(ells,xcls,alpha=0.4,label='input x recon')
 pl.add(ells,icls,alpha=0.4,label='input x input')
+clkk=clkk[:2989:20]
+pl.add(bins,clkk+N1+N0,alpha=0.5,label='clkk+N1+N0')
+pl.add(ells,rcls,alpha=0.4,label='rec x rec')
 pl.add(ls,nls,ls="--",label='theory noise per mode')
 pl._ax.set_xlim(20,4000)
 pl.done(config['data_path']+"xcls_%s.png" % polcomb)
