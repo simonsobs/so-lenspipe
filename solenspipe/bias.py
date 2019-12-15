@@ -1,4 +1,5 @@
 import numpy as np
+from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
@@ -70,7 +71,6 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
         rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
             + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
-    from pixell import utils
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
@@ -83,8 +83,8 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
-    mcn1 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):
+    n1 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xsk   = get_kmap(eX,(icov,2,i))
         Yskp  = get_kmap(eY,(icov,3,i))
@@ -98,11 +98,10 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
         Bsp   = get_kmap(eB,(icov,1,i))
         Asp   = get_kmap(eA,(icov,1,i))
         Bs    = get_kmap(eB,(icov,0,i))
-        mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)) # FIXME: make mpi aware
-    from pixell import utils
-    totmcn1 = utils.allreduce(mcn1,comm) 
-    return mcn1/nsims
+        term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+        n1 = n1 + term
+    return  utils.allreduce(n1,comm) /nsims
 
 
 def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
@@ -120,7 +119,6 @@ def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
             ky   = get_kmap(eY,(icov,j,i))
             mf += qe(kx,ky)
             ntot += 1.
-    from pixell import utils
     mftot = utils.allreduce(mf,comm) 
     totnot = utils.allreduce(ntot,comm) 
     return mftot/totntot
@@ -177,6 +175,10 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
     yc = cfunc(ys)
     uc = cfunc(us)
     vc = cfunc(vs)
+
+
+    #return evaluate(cross_estimator_symbolic(xyuv,m,qe_func,pow_func),feed_dict)
+
     phi_A_coadd = qe_func(XY,xc,yc)
     phi_B_coadd = qe_func(UV,uc,vc)
     sum_phiiiA = 0.
@@ -202,3 +204,65 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
     C_phixA_phixB = pow_func(phixA,phixB)
     return ( m**4. * C_phixA_phixB- 4. * m**2. * sum_CphiixA_phiixB + \
                4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
+
+
+def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
+                             coadd_name_func = lambda x: f'{x}c',field_names=['x','y','u','v'],
+                             split_name_func = lambda x,y: f'{x}s{y}'):
+
+    """
+    Returns a symbolic expression for the cross-only estimate of the raw 4-point 
+    lensing power spectrum given splits of the data and functions for 
+    lensing reconstrucion and power spectrum calculation.
+
+    xyuv: string containing 4-letter lensing power spectrum combination. e.g. TTTT,
+    TTTE, EEEB, etc. These are used in function calls with qe_func.
+
+    """
+
+
+    X,Y,U,V = xyuv
+    XY = X + Y
+    UV = U + V
+    m = nsplits
+    c = coadd_name_func
+    f = field_names
+    s = split_name_func
+    from sympy import Symbol
+    xc = Symbol(f'{c(f[0])}')
+    yc = Symbol(f'{c(f[1])}')
+    uc = Symbol(f'{c(f[2])}')
+    vc = Symbol(f'{c(f[3])}')
+    xs = [None]*m ; ys = [None]*m ; us = [None]*m ; vs = [None]*m
+    for i in range(m):
+        xs[i] = Symbol(f'{s(f[0],i)}')
+        ys[i] = Symbol(f'{s(f[1],i)}')
+        us[i] = Symbol(f'{s(f[2],i)}')
+        vs[i] = Symbol(f'{s(f[3],i)}')
+
+    phi_A_coadd = qe_func(XY,xc,yc,term=0)
+    phi_B_coadd = qe_func(UV,uc,vc,term=1)
+    sum_phiiiA = 0
+    sum_phiiiB = 0
+    sum_CphiixA_phiixB = 0
+    sum_CphiijA_phiijB = 0
+    for i in range(int(m)):
+        phiiA = (qe_func(XY,xs[i],yc,term=0)+qe_func(XY,xc,ys[i],term=0))/2.
+        phiiB = (qe_func(UV,us[i],vc,term=1)+qe_func(UV,uc,vs[i],term=1))/2.
+        phiiiA = qe_func(XY,xs[i],ys[i],term=0) # = (qe_func(XY,xs[i],ys[i])+qe_func(XY,xs[i],ys[i]))/2.
+        phiiiB = qe_func(UV,us[i],vs[i],term=1) # = (qe_func(UV,us[i],vs[i])+qe_func(UV,us[i],vs[i]))/2.
+        sum_phiiiA += phiiiA
+        sum_phiiiB += phiiiB
+        phiixA = phiiA - phiiiA/m
+        phiixB = phiiB - phiiiB/m
+        sum_CphiixA_phiixB += pow_func(phiixA,phiixB)
+        for j in range(i+1,int(m)):
+            phiijA = (qe_func(XY,xs[i],ys[j],term=0)+qe_func(XY,xs[j],ys[i],term=0))/2.
+            phiijB = (qe_func(UV,us[i],vs[j],term=1)+qe_func(UV,us[j],vs[i],term=1))/2.
+            sum_CphiijA_phiijB += pow_func(phiijA,phiijB)
+    phixA = phi_A_coadd - sum_phiiiA / m**2
+    phixB = phi_B_coadd - sum_phiiiB / m**2
+    C_phixA_phixB = pow_func(phixA,phixB)
+    return ( m**4. * C_phixA_phixB- 4. * m**2. * sum_CphiixA_phiixB + \
+               4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
+
