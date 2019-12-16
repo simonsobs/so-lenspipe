@@ -162,10 +162,11 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
 
 
     """
+    from sympy import Symbol
     X,Y,U,V = xyuv
     XY = X + Y
     UV = U + V
-    m = float(_validate_splits(xyuv,xsplits,ysplits,usplits,vsplits))
+    m = _validate_splits(xyuv,xsplits,ysplits,usplits,vsplits)
     xs = np.asanyarray(xsplits)
     ys = np.asanyarray(ysplits)
     us = np.asanyarray(usplits)
@@ -175,40 +176,17 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
     yc = cfunc(ys)
     uc = cfunc(us)
     vc = cfunc(vs)
-
-
-    #return evaluate(cross_estimator_symbolic(xyuv,m,qe_func,pow_func),feed_dict)
-
-    phi_A_coadd = qe_func(XY,xc,yc)
-    phi_B_coadd = qe_func(UV,uc,vc)
-    sum_phiiiA = 0.
-    sum_phiiiB = 0.
-    sum_CphiixA_phiixB = 0.
-    sum_CphiijA_phiijB = 0.
+    feed_dict = {'xc': xc, 'yc': yc, 'uc': uc,'vc': vc}
     for i in range(int(m)):
-        phiiA = (qe_func(XY,xs[i],yc)+qe_func(XY,xc,ys[i]))/2.
-        phiiB = (qe_func(UV,us[i],vc)+qe_func(UV,uc,vs[i]))/2.
-        phiiiA = qe_func(XY,xs[i],ys[i]) # = (qe_func(XY,xs[i],ys[i])+qe_func(XY,xs[i],ys[i]))/2.
-        phiiiB = qe_func(UV,us[i],vs[i]) # = (qe_func(UV,us[i],vs[i])+qe_func(UV,us[i],vs[i]))/2.
-        sum_phiiiA += phiiiA
-        sum_phiiiB += phiiiB
-        phiixA = phiiA - phiiiA/m
-        phiixB = phiiB - phiiiB/m
-        sum_CphiixA_phiixB += pow_func(phiixA,phiixB)
-        for j in range(i+1,int(m)):
-            phiijA = (qe_func(XY,xs[i],ys[j])+qe_func(XY,xs[j],ys[i]))/2.
-            phiijB = (qe_func(UV,us[i],vs[j])+qe_func(UV,us[j],vs[i]))/2.
-            sum_CphiijA_phiijB += pow_func(phiijA,phiijB)
-    phixA = phi_A_coadd - sum_phiiiA / m**2
-    phixB = phi_B_coadd - sum_phiiiB / m**2
-    C_phixA_phixB = pow_func(phixA,phixB)
-    return ( m**4. * C_phixA_phixB- 4. * m**2. * sum_CphiixA_phiixB + \
-               4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
-
+        feed_dict[f'xs{i}'] = xs[i]
+        feed_dict[f'ys{i}'] = ys[i]
+        feed_dict[f'us{i}'] = us[i]
+        feed_dict[f'vs{i}'] = vs[i]
+    return cross_estimator_symbolic(xyuv,m,qe_func,pow_func,eval_feed_dict=feed_dict)
 
 def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
                              coadd_name_func = lambda x: f'{x}c',field_names=['x','y','u','v'],
-                             split_name_func = lambda x,y: f'{x}s{y}'):
+                             split_name_func = lambda x,y: f'{x}s{y}',eval_feed_dict=None):
 
     """
     Returns a symbolic expression for the cross-only estimate of the raw 4-point 
@@ -218,9 +196,18 @@ def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
     xyuv: string containing 4-letter lensing power spectrum combination. e.g. TTTT,
     TTTE, EEEB, etc. These are used in function calls with qe_func.
 
+    nsplits: number of splits
+
+    qe_func: function for lensing reconstruction. This function should either operate
+    on symbols and return symbols, or alternatively, eval_feed_dict can be provided
+    which will be used to evaluate the symbols prior to application of the function.
+
+    pow_func: function for power spectrum estimation. This function should either operate
+    on symbols and return symbols, or alternatively, eval_feed_dict can be provided
+    which will be used to evaluate the symbols prior to application of the function.
+
     """
-
-
+    from sympy import Symbol
     X,Y,U,V = xyuv
     XY = X + Y
     UV = U + V
@@ -228,17 +215,17 @@ def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
     c = coadd_name_func
     f = field_names
     s = split_name_func
-    from sympy import Symbol
-    xc = Symbol(f'{c(f[0])}')
-    yc = Symbol(f'{c(f[1])}')
-    uc = Symbol(f'{c(f[2])}')
-    vc = Symbol(f'{c(f[3])}')
+    e = lambda inp: eval_feed_dict[inp.name] if eval_feed_dict is not None else inp
+    xc = e(Symbol(f'{c(f[0])}'))
+    yc = e(Symbol(f'{c(f[1])}'))
+    uc = e(Symbol(f'{c(f[2])}'))
+    vc = e(Symbol(f'{c(f[3])}'))
     xs = [None]*m ; ys = [None]*m ; us = [None]*m ; vs = [None]*m
     for i in range(m):
-        xs[i] = Symbol(f'{s(f[0],i)}')
-        ys[i] = Symbol(f'{s(f[1],i)}')
-        us[i] = Symbol(f'{s(f[2],i)}')
-        vs[i] = Symbol(f'{s(f[3],i)}')
+        xs[i] = e(Symbol(f'{s(f[0],i)}'))
+        ys[i] = e(Symbol(f'{s(f[1],i)}'))
+        us[i] = e(Symbol(f'{s(f[2],i)}'))
+        vs[i] = e(Symbol(f'{s(f[3],i)}'))
 
     phi_A_coadd = qe_func(XY,xc,yc,term=0)
     phi_B_coadd = qe_func(UV,uc,vc,term=1)
