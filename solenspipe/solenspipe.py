@@ -288,6 +288,7 @@ def compute_n1_py(
     n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
 
     indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
+    #indices = ['TT', 'EE', 'EB', 'TE', 'TB']
     bins = n1[0]
     n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
 
@@ -320,12 +321,41 @@ def n1_derivatives(
         lcorr_TT,
         tmp_output)
     n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
-
-    #indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
-    #bins = n1[0]
-    #n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+    #column L refer to N(L) being differenciated.
+    #row L refer to the C_L(phi) values
+    #Output already in convergence kappa format. No need for L**4/4 scaling.
 
     return n1
+
+def n1_TT(
+    phifile=None,
+    lensedcmbfile=None,
+    FWHM=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+    #x= First set i.e 'TT'
+    #y= Second set i.e 'EB'
+    lensingbiases_f.compute_n1_tt(
+        phifile,
+        lensedcmbfile,
+        FWHM/60.,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    print("hi")
+    #n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
+    #column L refer to N(L) being differenciated.
+    #row L refer to the C_L(phi) values
+    #Output already in convergence kappa format. No need for L**4/4 scaling.
 
 
 def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
