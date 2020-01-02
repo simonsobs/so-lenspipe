@@ -42,7 +42,7 @@ with bench.show("norm"):
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
 al_mv = Als[polcomb]
-s.loadn0(config['data_path'],20)
+#s.loadn0(config['data_path'],20)
 
 
 #why use filter?
@@ -51,8 +51,8 @@ s.loadn0(config['data_path'],20)
 nls = al_mv * ls**2./4.  #theory noise per mode
 
 #ls=np.zeros(2900)
-nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:2990]
-nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:2990]
+nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3000]
+nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:3000]
 NOISE_LEVEL=nells
 polnoise=nells_P
 
@@ -64,17 +64,26 @@ phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
 lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
 FWHM=1.4
 LMIN=2
-LMAXOUT=2990
-LMAX=2990
-LMAX_TT=2990
+LMAXOUT=2992
+LMAX=2992
+LMAX_TT=2992
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
+from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
+#clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
+lens=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
+clpp=lens[5,:]
+#cp=lensingbiases_f.readphiphi(phi,LMAX,LMAX)
+#ct,ce,cb,cx,ctf,cef,cbf,cxf =lensingbiases_f.readpower(lensed,LMAX,LMAX)
+#s.n1_TT(phi,lensed,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 #bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
 #bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-print(s.n1_derivatives('TT','TT',phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT))
+s.n1_derivatives('TT','TT',clpp,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 #y=np.transpose([bins,phiphi])
 #np.savetxt('output/phiphi.txt',y)
+#np.savetxt('output/n0bb.txt',n0_mat[5][5][:])
 """
 np.savetxt('output/n0tt.txt',n0_mat[0][0][:])
 np.savetxt('output/n0ee.txt',n0_mat[1][1][:])
@@ -82,12 +91,14 @@ np.savetxt('output/n0eb.txt',n0_mat[2][2][:])
 np.savetxt('output/n0te.txt',n0_mat[3][3][:])
 np.savetxt('output/n0tb.txt',n0_mat[4][4][:])
 """
+#np.savetxt('../data/n1tt11.txt',n1_mat[0][0][:])
 """
-np.savetxt('../data/n1tt.txt',n1_mat[0][0][:])
-np.savetxt('../data/n1ee.txt',n1_mat[1][1][:])
-np.savetxt('../data/n1eb1.txt',n1_mat[2][2][:])
-np.savetxt('../data/n1te1.txt',n1_mat[3][3][:])
-np.savetxt('../data/n1tb1.txt',n1_mat[4][4][:])
+np.savetxt('../data/n1bins5.txt',bins)
+np.savetxt('../data/n1tt5.txt',n1_mat[0][0][:])
+np.savetxt('../data/n1ee5.txt',n1_mat[1][1][:])
+np.savetxt('../data/n1eb5.txt',n1_mat[2][2][:])
+np.savetxt('../data/n1te5.txt',n1_mat[3][3][:])
+np.savetxt('../data/n1tb5.txt',n1_mat[4][4][:])
 """
 """
 np.savetxt('../data/dn1tt.txt',n1_mat[0][0][:])
@@ -97,9 +108,13 @@ np.savetxt('../data/dn1te1.txt',n1_mat[3][3][:])
 np.savetxt('../data/dn1tb1.txt',n1_mat[4][4][:])
 """
 
-
-
-
+"""
+np.savetxt('../data/n1tt.txt',n1_mat[0][0][:])
+np.savetxt('../data/n1ee.txt',n1_mat[1][1][:])
+np.savetxt('../data/n1eb1.txt',n1_mat[2][2][:])
+np.savetxt('../data/n1te1.txt',n1_mat[3][3][:])
+np.savetxt('../data/n1tb1.txt',n1_mat[4][4][:])
+"""
 
 """
 tclkk = theory.gCl('kk',ls)
