@@ -48,7 +48,7 @@ al_mv = Als[polcomb]
 #why use filter?
 #The observed sky maps are cut by a galactic mask and have noise.
 # Wiener filter
-nls = al_mv * ls**2./4.  #theory noise per mode
+#nls = al_mv * ls**2./4.  #theory noise per mode
 
 #ls=np.zeros(2900)
 nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3000]
@@ -70,20 +70,25 @@ LMAX_TT=2992
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
-#clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
+clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
 lens=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
-clpp=lens[5,:]
-#cp=lensingbiases_f.readphiphi(phi,LMAX,LMAX)
+cls=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lensedCls.dat",unpack=True) #nx5 array
+clpp=lens[5,:][:8249]
+#cls and clpp must have same dimensions.
+
+#cp=lensingbiases_f.readphiphi(clpp,LMAX,LMAX)
+#np.savetxt('../data/clphiphi.txt',cp)
 #ct,ce,cb,cx,ctf,cef,cbf,cxf =lensingbiases_f.readpower(lensed,LMAX,LMAX)
-#s.n1_TT(phi,lensed,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+s.n1_TT(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#ctobs=lensingbiases_f.compute_n1_tt(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#lensingbiases_f.compute_n1_tt(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 #bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#bins, n1_mat, indices = s.compute_n1_py(clpp,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
-#bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-s.n1_derivatives('TT','TT',clpp,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-#y=np.transpose([bins,phiphi])
-#np.savetxt('output/phiphi.txt',y)
-#np.savetxt('output/n0bb.txt',n0_mat[5][5][:])
+
+#s.n1_derivatives('TT','TT',clpp,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
 """
 np.savetxt('output/n0tt.txt',n0_mat[0][0][:])
 np.savetxt('output/n0ee.txt',n0_mat[1][1][:])
@@ -109,11 +114,11 @@ np.savetxt('../data/dn1tb1.txt',n1_mat[4][4][:])
 """
 
 """
-np.savetxt('../data/n1tt.txt',n1_mat[0][0][:])
-np.savetxt('../data/n1ee.txt',n1_mat[1][1][:])
-np.savetxt('../data/n1eb1.txt',n1_mat[2][2][:])
-np.savetxt('../data/n1te1.txt',n1_mat[3][3][:])
-np.savetxt('../data/n1tb1.txt',n1_mat[4][4][:])
+np.savetxt('../data/n1tts.txt',n1_mat[0][0][:])
+np.savetxt('../data/n1ees.txt',n1_mat[1][1][:])
+np.savetxt('../data/n1ebs.txt',n1_mat[2][2][:])
+np.savetxt('../data/n1tes.txt',n1_mat[3][3][:])
+np.savetxt('../data/n1tbs.txt',n1_mat[4][4][:])
 """
 
 """
