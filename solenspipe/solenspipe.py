@@ -1,12 +1,11 @@
 from __future__ import print_function
 from orphics import maps,io,cosmology
-from pixell import enmap,lensing as plensing
+from pixell import enmap,lensing as plensing,curvedsky
 import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
 from mapsims import noise,Channel,SOStandalonePrecomputedCMB
-from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
@@ -49,12 +48,54 @@ def get_kappa_alm(i,path=config['signal_path']):
     fname = path + "fullskyPhi_alm_%s.fits" % istr
     return plensing.phi_to_kappa(hp.read_alm(fname))
 
+def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
+    """
+    Approximate correction to an n-point function for the loss of power
+    due to the application of a mask.
+
+    For an n-point function using SHTs, this is the ratio of 
+    area weighted by the nth power of the mask to the full sky area 4 pi.
+    This simplifies to mean(mask**n) for equal area pixelizations like
+    healpix. For SHTs on CAR, it is sum(mask**n * pixel_area_map) / 4pi.
+    When using FFTs, it is the area weighted by the nth power normalized
+    to the area of the map. This also simplifies to mean(mask**n)
+    for equal area pixels. For CAR, it is sum(mask**n * pixel_area_map) 
+    / sum(pixel_area_map).
+
+    If not, it does an expensive calculation of the map of pixel areas. If this has
+    been pre-calculated, it can be provided as the pmap argument.
+    
+    """
+    assert mask.ndim==1 or mask.ndim==2
+    if pmap is None: 
+        if equal_area:
+            npix = mask.size
+            pmap = 4*np.pi / npix if sht else enmap.area(mask.shape,mask.wcs) / npix
+        else:
+            pmap = enmap.pixsizemap(mask.shape,mask.wcs)
+    return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4):
         self.mask = mask
-        self.nside = hp.npix2nside(mask.size)
-        self.nsim = noise.SONoiseSimulator(nside=self.nside,apply_beam_correction=True)    
+        if mask.ndim==1:
+            self.nside = hp.npix2nside(mask.size)
+            self.shape,self.wcs = enmap.fullsky_geometry(res=np.deg2rad(0.5*8192/self.nside/60.))
+            self.healpix = True
+            self.mlmax = 2*self.nside
+            self.npix = hp.nside2npix(self.nside)
+            self.pmap = 4*np.pi / self.npix
+        else:
+            self.shape,self.wcs = mask.shape,mask.wcs
+            self.nside = None
+            self.healpix = False
+            res_arcmin = np.rad2deg(enmap.pixshape(self.shape, self.wcs)[0])*60.
+            self.mlmax = int(5000 * (2.0/res_arcmin))
+            self.pmap = enmap.pixsizemap(self.shape,self.wcs)
+        self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
+                                           shape=self.shape if not(self.healpix) else None,wcs=self.wcs if not(self.healpix) else None, 
+                                           apply_beam_correction=True,scanning_strategy=scanning_strategy,
+                                           fsky={'LA':fsky})    
         thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         self.cltt = lambda x: theory.lCl('TT',x) 
@@ -64,12 +105,28 @@ class SOLensInterface(object):
         self.theory = theory
         self.set_data_map(data_mode)
 
+    def wfactor(self,n):
+        return wfactor(n,self.mask,sht=True,pmap=self.pmap)
+
     def set_data_map(self,data_mode=None):
         if data_mode is None:
             print('WARNING: No data mode specified. Defaulting to simulation iset=0,i=0 at 150GHz.')
             data_mode = 'sim'
         # if data_mode=='sim':
         #     self.
+
+
+    def alm2map(self,alm):
+        if self.healpix:
+            return hp.alm2map(alm,nside=self.nside)
+        else:
+            return curvedsky.alm2map(alm,enmap.empty((3,)+self.shape,self.wcs))
+        
+    def map2alm(self,imap):
+        if self.healpix:
+            return hp.map2alm(imap,lmax=self.mlmax)
+        else:
+            return curvedsky.map2alm(imap,lmax=self.mlmax)
 
     def prepare_map(self,channel,seed,lmin,lmax):
         """
@@ -80,13 +137,13 @@ class SOLensInterface(object):
         s_i,s_set,noise_seed = convert_seeds(seed)
 
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-        cmb_map = hp.alm2map(cmb_alm,nside=self.nside)
+        cmb_map = self.alm2map(cmb_alm)
+            
         noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
         noise_map[noise_map<-1e24] = 0
-        # io.mollview(noise_map[0],"noisemap.png",lim=1000)
-        # sys.exit()
+        noise_map[np.isnan(noise_map)] = 0
         imap = (cmb_map + noise_map)*self.mask
-        oalms = hp.map2alm(imap)
+        oalms = self.map2alm(imap)
 
         nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
         nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
@@ -109,9 +166,7 @@ class SOLensInterface(object):
         return self.cache[seed][xs[X]] if filtered else self.cache[seed][xs[X]+3]
 
     def get_mv_kappa(self,polcomb,talm,ealm,balm):
-        shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(0.5*8192/self.nside/60.))
-        mlmax = 2*self.nside
-        res = qe.qe_all(shape,wcs,lambda x,y: self.theory.lCl(x,y),mlmax,talm,ealm,balm,estimators=[polcomb])
+        res = qe.qe_all(self.shape,self.wcs,lambda x,y: self.theory.lCl(x,y),self.mlmax,talm,ealm,balm,estimators=[polcomb])
         return res[polcomb]
         
 
