@@ -1,5 +1,5 @@
 from __future__ import print_function
-from orphics import maps,io,cosmology
+from orphics import maps,io,cosmology # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky
 import numpy as np
 import os,sys
@@ -128,6 +128,11 @@ class SOLensInterface(object):
         else:
             return curvedsky.map2alm(imap,lmax=self.mlmax)
 
+
+    def get_kappa_alm(self,i):
+        kalms = get_kappa_alm(i,path=config['signal_path'])
+        return maps.change_alm_lmax(kalms, self.mlmax)
+
     def prepare_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -135,21 +140,28 @@ class SOLensInterface(object):
         """
         # Convert the solenspipe convention to the Alex convention
         s_i,s_set,noise_seed = convert_seeds(seed)
+        print(s_i,s_set,noise_seed)
+        
 
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = self.alm2map(cmb_alm)
-            
+        
         noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
         noise_map[noise_map<-1e24] = 0
         noise_map[np.isnan(noise_map)] = 0
+
         imap = (cmb_map + noise_map)*self.mask
+
+        
         oalms = self.map2alm(imap)
+        
 
         nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
         nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
         filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
         filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
         filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
+        
 
         almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
         alme = qe.filter_alms(oalms[1],filt_e,lmin=lmin,lmax=lmax)
