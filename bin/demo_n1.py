@@ -81,8 +81,12 @@ norms=np.array([ntt/bins**2,nee/bins**2,neb/bins**2,nte/bins**2,ntb/bins**2,nbb]
 """
 Input normalisation as an array of arrays of deflection n0s.
 """
-#n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#N1 bias calculation
+n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
+#derivative wrt clphi
 n1=s.n1_derivatives('TT','TT',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
 np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/n1der",n1)
 """returns arrays n1tt,n1ee,n1bb,n1te"""
 
