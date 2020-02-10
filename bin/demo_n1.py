@@ -52,25 +52,38 @@ LMAX=2992
 LMAX_TT=2992
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
-n0=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/N0_analytical.txt",unpack=True) #contains bins n0tt,n0ee,n0eb,n0te,n0tb 
+
 clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
 lens=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
 cls=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
 
 #arrays with l starting at l=2"
+#clphiphi array starting at l=2
 clpp=lens[5,:][:8249]
+
+
 #cls is an array containing [cltt,clee,clbb,clte] used for the filters
 cltt=cls[1]       
 clee=cls[2]
 clbb=cls[3]
 clte=cls[4]
 
-"""
-Currently fortran code takes in the normalization as a text file, found here at "/global/homes/j/jia_qu/so-lenspipe/data/N0_analytical.txt", still need to
-fix this to take in the N0 as an array instead.
-"""
-s.compute_n1_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+norms=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/norm_lmin_300_lmax_3000.txt")
+bins=norms[2:,0]
+ntt=norms[2:,1]
+nee=norms[2:,2]
+neb=norms[2:,3]
+nte=norms[2:,4]
+ntb=norms[2:,5]
+nbb=np.ones(len(ntb))
+norms=np.array([ntt/bins**2,nee/bins**2,neb/bins**2,nte/bins**2,ntb/bins**2,nbb])
 
+"""
+Input normalisation as an array of arrays of deflection n0s.
+"""
+#n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+n1=s.n1_derivatives('TT','TT',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/n1der",n1)
 """returns arrays n1tt,n1ee,n1bb,n1te"""
 
 #np.savetxt('../data/norms.txt',c)

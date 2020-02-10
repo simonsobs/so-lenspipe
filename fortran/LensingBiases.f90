@@ -455,46 +455,40 @@ contains
     
 
     
-    subroutine loadNorm(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
+    subroutine loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Load N0 bias from the disk
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         integer, parameter :: DP = 8
         integer, parameter :: I4B = 4
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
-
+        real, intent(in) :: normarray(6,*)
         integer,  intent(in) :: lmin_filter,lmaxmax,lmaxout,n_est,Lstep
-        real(dp),intent(out) :: Norms(lmaxmax,n_est)
+        real(dp),intent(out) :: Norms((lmaxmax-lmin_filter)/Lstep,n_est)
         character(LEN=50), intent(in) :: dir
         character(LEN=50), intent(in) :: vartag
         integer  file_id, L,i
         real(dp) ell,TT,EE,EB,TE,TB,BB
         real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
-        !open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='old')
-        open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.txt', newunit = file_id, form='formatted', status='old')
+
         do L=lmin_filter, lmaxout, Lstep
             !read(file_id,*) ell, dum, N0
-            read(file_id,*) ell, TT, EE,EB,TE,TB,BB
-            if (L/=ell) stop 'wrong N0 file'
             !do i=1,n_est
                 !Norms(L,i) = N0(i,i)
             !end do
             !read(file_id,*) ell,
             
-            
-            
-            Norms(L,1) = TT
-            Norms(L,2)=EE
-            Norms(L,3)=EB
-            Norms(L,4)=TE
-            Norms(L,5)=TB
-            Norms(L,6)=BB
+            Norms(L,1)=normarray(1,L-1)
+            Norms(L,2)=normarray(2,L-1)
+            Norms(L,3)=normarray(3,L-1)
+            Norms(L,4)=normarray(4,L-1)
+            Norms(L,5)=normarray(5,L-1)
+            Norms(L,6)=normarray(6,L-1)
                 
                 
     
         end do
-        close(file_id)
     end subroutine loadNorm
     !
     !
@@ -675,7 +669,7 @@ contains
     !
     
     
-    subroutine GetN1General(sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+    subroutine GetN1General(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n1theta,n1ee,n1eb,n1te,n1tb)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Main routine to compute N1 bias.
@@ -714,10 +708,11 @@ contains
         integer ij(2),pq(2), est1, est2
         real(dp) tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl, N1_L1_PS_Curl, N1_L1_PS, N1_PS, N1_PS_Curl
         real(dp) dPhi_Sample(lmaxmax)
+        real, intent(in) :: normarray(6,*)
         real(dp) Norms(lmaxmax,n_est), NormsCurl(lmaxmax,n_est)
         integer file_id_PS
         real(dp) this13, this24
-        real(dp), intent(out) ::  n1theta((lmaxout-lmin_filter)/Lstep),n1ee((lmaxout-lmin_filter)/Lstep),n1eb((lmaxout-lmin_filter)/Lstep),n1te((lmaxout-lmin_filter)/Lstep),n1tb((lmaxout-lmin_filter)/Lstep)
+        real(dp),  DIMENSION((lmaxout-lmin_filter)/Lstep+1),intent(out) ::  n1theta,n1ee,n1eb,n1te,n1tb
         character(LEN=10) outtag
         CHARACTER(LEN=13) :: creturn
 
@@ -726,13 +721,12 @@ contains
         call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
 
         outtag = 'N1_All'
-        call loadNorm(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
+        call loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
        
 
         call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted',&
         & status='replace')
-
         Lix=0
         print *,'N1 computation (phi, curl, PS)'
         do L=lmin_filter, lmaxout, Lstep
@@ -740,6 +734,7 @@ contains
             WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(L,kind=dp)/lmaxout*100.,kind=I4B)
             101     FORMAT( a , 'Progression : ',i7,' % ')
             Lix=Lix+1
+            write(*,*) Lix
             Lvec(1) = L
             LVec(2)= 0
             N1=0
@@ -867,6 +862,7 @@ contains
         ! print *,L, N1(i_TT,i_TT), N1(i_eb,i_eb), N1(i_eb, i_ee)
         ! print *, 'Psi',L, N1_Curl(i_TT,i_TT), N1_Curl(i_tb,i_eb), N1_Curl(i_eb, i_ee)
         ! print *, 'PS', L, N1_PS, N1_PS_Curl
+        
         n1theta(Lix)=N1(1,1)
         n1ee(Lix)=N1(2,2)
         n1eb(Lix)=N1(3,3)
@@ -880,7 +876,7 @@ contains
     
 
     !
-    subroutine GetN1MatrixGeneral(sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+    subroutine GetN1MatrixGeneral(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Main routine to compute N1 derivatives.
@@ -921,6 +917,7 @@ contains
         real(dp) tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl, N1_L1_PS_Curl, N1_L1_PS, N1_PS, N1_PS_Curl
         real(dp) dPhi_Sample(lmaxmax)
         real(dp) Norms(lmaxmax,n_est), NormsCurl(lmaxmax,n_est)
+        real, intent(in) :: normarray(6,*)
         integer file_id_PS
         real(dp) this13, this24
         real(dp), allocatable :: Matrix(:,:,:,:), MatrixL1(:,:,:)
@@ -937,7 +934,7 @@ contains
         allocate(matrix((lmaxout-lmin_filter)/Lstep+1,nPhiSample, n_est,n_est))
         allocate(matrixL1(nPhiSample,n_est,n_est))
         matrix=0
-        call loadNorm(n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir) !load N0
+        call loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir) !load N0
         call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
 
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='replace')
@@ -1104,7 +1101,7 @@ contains
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
-        real, intent(in) :: lensedcmbfile(5,lmaxmax)
+        real, intent(in) :: lensedcmbfile(5,*)
         real(dp), intent(in) :: phifile(lmaxmax)
         real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax)
         character(LEN=:), allocatable :: root
@@ -1181,7 +1178,7 @@ contains
 
     end subroutine ReadPowernum
 
-    subroutine compute_n1(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,n1theta,n1ee,n1eb,n1te,n1tb)
+    subroutine compute_n1(phifile,normarray,lensedcmbfile,Tfile,Efile,Bfile,Xfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,n1theta,n1ee,n1eb,n1te,n1tb)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N1 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1191,14 +1188,15 @@ contains
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
         ! Order 1 2 3 = T E B
         ! Estimator order TT, EE, EB, TE, TB, BB
-        integer(I4B), parameter :: n_est = 6
+        integer(I4B), parameter :: n_est = 6,Lstep=20
         integer, intent(in) ::  lmaxmax 
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
-        real, intent(in) :: lensedcmbfile(5,lmaxmax)
+        real, intent(in) :: lensedcmbfile(5,*)
         !character(LEN=200), intent(in) ::  lensedcmbfile
         real(dp), intent(in) :: phifile(lmaxmax)
+        real, intent(in) :: normarray(6,*)
         real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax)
         character(LEN=:), allocatable :: root
         character(LEN=50) vartag
@@ -1210,9 +1208,9 @@ contains
         integer(I4B) :: LMin,L
         real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
-        real(dp), intent(out) ::  n1theta(lmaxout),n1ee(lmaxout),n1eb(lmaxout),n1te(lmaxout),n1tb(lmaxout)
+        real(dp),dimension((lmaxout-lmin_filter)/Lstep+1), intent(out) ::  n1theta,n1ee,n1eb,n1te,n1tb
         
-
+  
         NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
         NoiseVarP=nlp    !nlp is the polarization noise power 
         LMin = lmin_filter
@@ -1230,12 +1228,12 @@ contains
         root = 'analytical'
         vartag = '_'//root
         
-        call GetN1General( .true. ,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+        call GetN1General(normarray, .true. ,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                             & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,n1theta,n1ee,n1eb,n1te,n1tb)
 
     end subroutine compute_n1
 
-    subroutine compute_n1_derivatives(phifile,lensedcmbfile,noise_fwhm_deg,nll,nlp,&
+    subroutine compute_n1_derivatives(phifile,normarray,lensedcmbfile,noise_fwhm_deg,nll,nlp,&
         & lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute
@@ -1252,7 +1250,8 @@ contains
         real(dp), intent(in)     :: noise_fwhm_deg
         integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
         character(LEN=50), intent(in) :: dir
-        real, intent(in) :: lensedcmbfile(5,lmaxmax)
+        real, intent(in) :: normarray(6,*)
+        real, intent(in) :: lensedcmbfile(5,*)
         real(dp), intent(in) :: phifile(lmaxmax)
         character(LEN=:), allocatable :: root
         character(LEN=50) vartag
@@ -1283,7 +1282,7 @@ contains
         root = 'analytical'
         vartag = '_'//root
 
-        call GetN1MatrixGeneral( .true. ,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+        call GetN1MatrixGeneral( normarray,.true. ,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                             & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag)
 
     end subroutine compute_n1_derivatives
@@ -1311,4 +1310,5 @@ contains
   end function get_threads
 
 end module checkproc
-! Copyright (C) 2016 Lewis, Peloton
+! Copyright (C) 2016 Lewis, Peloton      
+        

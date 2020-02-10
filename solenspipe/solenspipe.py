@@ -128,38 +128,6 @@ def initialize_mask(nside,smooth_deg):
         return mask
 
 
-
-"""
-def initialize_generic_norm(lmin,lmax,ls=None,nells=None,nells_P=None,tag='generic',thloc=None):
-    onormfname = opath+"norm_%s_lmin_%d_lmax_%d.txt" % (tag,lmin,lmax)
-    try:
-        return np.loadtxt(onormfname,unpack=True)
-    except:
-        if thloc is None: thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
-        theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-        ells = np.arange(lmax+100)
-        uctt = theory.lCl('TT',ells)
-        ucee = theory.lCl('EE',ells)
-        ucte = theory.lCl('TE',ells)
-        ucbb = theory.lCl('BB',ells)
-        if nells is not None:
-            ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
-            tctt = uctt + maps.interp(ls,nells)(ells)
-        else:
-            tctt = uctt
-        if nells_P is not None:
-            ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
-            tcee = ucee + maps.interp(ls,nells_P)(ells)
-            tcbb = ucbb + maps.interp(ls,nells_P)(ells)
-        else:
-            tcee = ucee
-            tcbb = ucbb
-        tcte = ucte 
-        ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
-        io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
-        return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
-"""
-
 def initialize_norm(solint,ch,lmin,lmax):
     onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     try:
@@ -201,41 +169,40 @@ def checkproc_py():
         print ('export OMP_NUM_THREADS=n')
         print ('###################################')
 
-
-
-
 def compute_n0_py(
-	phifile=None,
-	lensedcmbfile=None,
-	FWHM=None,
-	noise_level=None,
-	noisep=None,
-	lmin=None,
-	lmaxout=None,
-	lmax_TT=None,
-	lcorr_TT=None,
-	tmp_output=None):
-	    
-	lensingbiases_f.compute_n0(
-		phifile,
-		lensedcmbfile,
-		FWHM/60.,
-		noise_level,
-		noisep,
-		lmin,
-		lmaxout,
-		lmax_TT,
-		lcorr_TT,
-		tmp_output)
-	n0 = np.loadtxt(os.path.join(tmp_output, 'N0_analytical.dat')).T
+    phifile=None,
+    lensedcmbfile=None,
+    cltt=None,
+    clee=None,
+    clbb=None,
+    cleb=None,
+    FWHM=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
 
+    n0tt,n0ee,n0eb,n0te,n0tb=lensingbiases_f.compute_n0(
+        phifile,
+        lensedcmbfile,
+        cltt,
+        clee,
+        clbb,
+        cleb,
+        FWHM/60.,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    
+    return n0tt,n0ee,n0eb,n0te,n0tb
 
-	indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
-	bins = n0[0]
-	phiphi = n0[1]
-	n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
-
-	return bins, phiphi, n0_mat, indices
 	
 def loadn0(file_path,sample_size):
 #prepare N0 to be used by N1 Fortran
@@ -261,9 +228,53 @@ def loadn0(file_path,sample_size):
         y=np.transpose(ar)
         np.savetxt(fname,y)
         print("saved N0 in: "+fname)
-        
+
 def compute_n1_py(
     phifile=None,
+    normarray=None,
+    lensedcmbfile=None,
+    cltt=None,
+    clee=None,
+    clbb=None,
+    cleb=None,
+    FWHM=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+
+    n1tt,n1ee,n1eb,n1te,n1tb=lensingbiases_f.compute_n1(
+        phifile,
+        normarray,
+        lensedcmbfile,
+        cltt,
+        clee,
+        clbb,
+        cleb,
+        FWHM/60.,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+    
+    return n1tt,n1ee,n1eb,n1te,n1tb  #returns n1tt array
+    #n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
+
+    #indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
+    #indices = ['TT', 'EE', 'EB', 'TE', 'TB']
+    #bins = n1[0]
+    #n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+
+    #return bins, n1_mat, indices
+def compute_n1clphiphi_py(
+    phifile=None,
+    normarray=None,
     lensedcmbfile=None,
     FWHM=None,
     noise_level=None,
@@ -274,8 +285,9 @@ def compute_n1_py(
     lcorr_TT=None,
     tmp_output=None):
 
-    lensingbiases_f.compute_n1(
+    n1dtt,n1dee,n1deb,n1dte,n1dtb=lensingbiases_f.compute_n1_derivatives(
         phifile,
+        normarray,
         lensedcmbfile,
         FWHM/60.,
         noise_level,
@@ -285,19 +297,15 @@ def compute_n1_py(
         lmax_TT,
         lcorr_TT,
         tmp_output)
-    n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
-
-    indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
-    #indices = ['TT', 'EE', 'EB', 'TE', 'TB']
-    bins = n1[0]
-    n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
-
-    return bins, n1_mat, indices
     
+    return n1dtt,n1dee,n1deb,n1dte,n1dtb #returns n1tt array
+
+	
 def n1_derivatives(
     x,
     y,
     phifile=None,
+    normarray=None,
     lensedcmbfile=None,
     FWHM=None,
     noise_level=None,
@@ -311,6 +319,7 @@ def n1_derivatives(
     #y= Second set i.e 'EB'
     lensingbiases_f.compute_n1_derivatives(
         phifile,
+        normarray,
         lensedcmbfile,
         FWHM/60.,
         noise_level,
@@ -327,7 +336,8 @@ def n1_derivatives(
 
     return n1
 
-def n1_TT(
+
+def n0_TT(
     phifile=None,
     lensedcmbfile=None,
     FWHM=None,
@@ -340,7 +350,7 @@ def n1_TT(
     tmp_output=None):
     #x= First set i.e 'TT'
     #y= Second set i.e 'EB'
-    lensingbiases_f.compute_n1_tt(
+    lensingbiases_f.compute_n0_tt(
         phifile,
         lensedcmbfile,
         FWHM/60.,
@@ -351,13 +361,9 @@ def n1_TT(
         lmax_TT,
         lcorr_TT,
         tmp_output)
-    print("hi")
-    #n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
-    #column L refer to N(L) being differenciated.
-    #row L refer to the C_L(phi) values
-    #Output already in convergence kappa format. No need for L**4/4 scaling.
-
-
+    print("saved file to")
+    print(tmp_output)
+    
 def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
     '''
     Quick plot for inspection
