@@ -13,7 +13,6 @@ import solenspipe as s
 import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
-parser.add_argument("polcomb", type=str,help='Polarization combination. Possibilities include mv (all), mvpol (all pol), TT, EE, TE, EB or TB.')
 parser.add_argument("--nside",     type=int,  default=2048,help="nside")
 parser.add_argument("--smooth-deg",     type=float,  default=4.,help="Gaussian smoothing sigma for mask in degrees.")
 parser.add_argument("--lmin",     type=int,  default=300,help="lmin")
@@ -26,7 +25,6 @@ smooth_deg = args.smooth_deg
 ch = SOChannel('LA',args.freq)
 lmin = args.lmin
 lmax = args.lmax
-polcomb = args.polcomb
 
 config = io.config_from_yaml("../input/config.yml")
 mask = initialize_mask(nside,smooth_deg) #solenspipe code that creates the mask
@@ -41,27 +39,12 @@ with bench.show("norm"):
     ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
-al_mv = Als[polcomb]
-#s.loadn0(config['data_path'],20)
-
-
-#why use filter?
-#The observed sky maps are cut by a galactic mask and have noise.
-# Wiener filter
-#nls = al_mv * ls**2./4.  #theory noise per mode
-
-#ls=np.zeros(2900)
 nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3000]
 nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:3000]
 NOISE_LEVEL=nells
 polnoise=nells_P
 
 
-
-
-
-phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
-lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
 FWHM=1.4
 LMIN=2
 LMAXOUT=2992
@@ -69,137 +52,46 @@ LMAX=2992
 LMAX_TT=2992
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
-from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
+
 clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
 lens=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
-cls=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lensedCls.dat",unpack=True) #nx5 array
+cls=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
+
+#arrays with l starting at l=2"
+#clphiphi array starting at l=2
 clpp=lens[5,:][:8249]
+
+
+#cls is an array containing [cltt,clee,clbb,clte] used for the filters
+cltt=cls[1]       
+clee=cls[2]
+clbb=cls[3]
+clte=cls[4]
+
+norms=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/norm_lmin_300_lmax_3000.txt")
+bins=norms[2:,0]
+ntt=norms[2:,1]
+nee=norms[2:,2]
+neb=norms[2:,3]
+nte=norms[2:,4]
+ntb=norms[2:,5]
+nbb=np.ones(len(ntb))
+norms=np.array([ntt/bins**2,nee/bins**2,neb/bins**2,nte/bins**2,ntb/bins**2,nbb])
+
+"""
+Input normalisation as an array of arrays of deflection n0s.
+"""
+#N1 bias calculation
+n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
+#derivative wrt clphi
+n1=s.n1_derivatives('TT','TT',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/n1der",n1)
+"""returns arrays n1tt,n1ee,n1bb,n1te"""
+
+#np.savetxt('../data/norms.txt',c)
 #cls and clpp must have same dimensions.
 
-#cp=lensingbiases_f.readphiphi(clpp,LMAX,LMAX)
-#np.savetxt('../data/clphiphi.txt',cp)
-#ct,ce,cb,cx,ctf,cef,cbf,cxf =lensingbiases_f.readpower(lensed,LMAX,LMAX)
-s.n1_TT(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-#ctobs=lensingbiases_f.compute_n1_tt(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-#lensingbiases_f.compute_n1_tt(clpp,cls,FWHM/60.,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-
-#bins, phiphi, n0_mat, indices = s.compute_n0_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-#bins, n1_mat, indices = s.compute_n1_py(clpp,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 
-#s.n1_derivatives('TT','TT',clpp,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-
-"""
-np.savetxt('output/n0tt.txt',n0_mat[0][0][:])
-np.savetxt('output/n0ee.txt',n0_mat[1][1][:])
-np.savetxt('output/n0eb.txt',n0_mat[2][2][:])
-np.savetxt('output/n0te.txt',n0_mat[3][3][:])
-np.savetxt('output/n0tb.txt',n0_mat[4][4][:])
-"""
-#np.savetxt('../data/n1tt11.txt',n1_mat[0][0][:])
-"""
-np.savetxt('../data/n1bins5.txt',bins)
-np.savetxt('../data/n1tt5.txt',n1_mat[0][0][:])
-np.savetxt('../data/n1ee5.txt',n1_mat[1][1][:])
-np.savetxt('../data/n1eb5.txt',n1_mat[2][2][:])
-np.savetxt('../data/n1te5.txt',n1_mat[3][3][:])
-np.savetxt('../data/n1tb5.txt',n1_mat[4][4][:])
-"""
-"""
-np.savetxt('../data/dn1tt.txt',n1_mat[0][0][:])
-np.savetxt('../data/dn1ee.txt',n1_mat[1][1][:])
-np.savetxt('../data/dn1eb1.txt',n1_mat[2][2][:])
-np.savetxt('../data/dn1te1.txt',n1_mat[3][3][:])
-np.savetxt('../data/dn1tb1.txt',n1_mat[4][4][:])
-"""
-
-"""
-np.savetxt('../data/n1tts.txt',n1_mat[0][0][:])
-np.savetxt('../data/n1ees.txt',n1_mat[1][1][:])
-np.savetxt('../data/n1ebs.txt',n1_mat[2][2][:])
-np.savetxt('../data/n1tes.txt',n1_mat[3][3][:])
-np.savetxt('../data/n1tbs.txt',n1_mat[4][4][:])
-"""
-
-"""
-tclkk = theory.gCl('kk',ls)
-wfilt = tclkk/(tclkk+nls)/ls**2.
-wfilt[ls<50] = 0
-wfilt[ls>500] = 0
-wfilt[~np.isfinite(wfilt)] = 0
-# Filtered alms
-
-talm  = solint.get_kmap(ch,"T",(0,0,0),lmin,lmax,filtered=True)
-ealm  = solint.get_kmap(ch,"E",(0,0,0),lmin,lmax,filtered=True)
-balm  = solint.get_kmap(ch,"B",(0,0,0),lmin,lmax,filtered=True)
-
-# Reconstruction
-with bench.show("recon"):
-    rkalm = hp.almxfl(solint.get_mv_kappa(polcomb,talm,ealm,balm)[0],al_mv)
-hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_map.fits",hp.alm2map(rkalm,nside),overwrite=True)
-hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_mask.fits",mask,overwrite=True)
-
-# Filtered reconstruction
-fkalm = hp.almxfl(rkalm,wfilt)
-frmap = hp.alm2map(fkalm,nside=256)
-
-# Input kappa
-ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
-# Verify input x cross
-
-w4=np.mean(solint.mask**4)
-w3 = np.mean(solint.mask**3) # Mask factors
-w2 = np.mean(solint.mask**2)
-xcls = hp.alm2cl(rkalm,ikalm)/w3
-icls = hp.alm2cl(ikalm,ikalm)/w2
-rcls=hp.alm2cl(rkalm,rkalm)/w4
-ells = np.arange(len(icls))
-clkk = theory.gCl('kk',ells)
-
-pl = io.Plotter(xyscale='loglog',xlabel='$L$',ylabel='$C_L$')
-
-
-#np.savetxt('output/rclsTB.txt',rcls)
-pl.add(ells,clkk,ls="-",lw=3,label='theory input')
-pl.add(ells,xcls,alpha=0.4,label='input x recon')
-pl.add(ells,icls,alpha=0.4,label='input x input')
-pl.add(ells,rcls,alpha=0.4,label='rec x rec')
-pl.add(ls,nls,ls="--",label='theory noise per mode')
-"""
-#pl.add(bins, bins*(bins+1)*0.25*phiphi, ls="-", label='Lensing')
-"""
-#Plot N1 noise
-i=dict_int[polcomb]
-pl.add(bins,N1_array[i][i][:] * tphi(bins),ls='dashdot',lw=2,label=indices[i]+indices[i]+'N1',alpha=0.8)
-#Plot all the N1
-
-
-for i in range(len(N1_array)-1):
-	pl.add(bins,N1_array[i][i][:] * tphi(bins),ls='--',lw=2,label=indices[i]+indices[i],alpha=0.5)
-"""
-#pl._ax.set_xlim(20,4000)
-#pl.done(config['data_path']+"xcls_%s.png" % polcomb)
-
-"""
-
-# Filtered input
-fikalm = hp.almxfl(ikalm,wfilt)
-fimap = hp.alm2map(fikalm,nside=256)
-
-# Resampled mask
-dmask = hp.ud_grade(mask,nside_out=256)
-dmask[dmask<0] = 0
-
-
-# Mollview plots
-io.mollview(frmap*dmask,config['data_path']+"wrmap.png",xsize=1600,lim=8e-6)
-io.mollview(fimap*dmask,config['data_path']+"wimap.png",xsize=1600,lim=8e-6)
-
-# CAR plots
-shape,wcs = enmap.band_geometry(np.deg2rad((-70,30)),res=np.deg2rad(0.5*8192/512/60.))
-omask = reproject.enmap_from_healpix(dmask, shape, wcs,rot=None)
-omap = cs.alm2map(fkalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,config['data_path']+"cwrmap",grid=True,ticks=20,color='gray')
-omap = cs.alm2map(fikalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,config['data_path']+"cwimap",grid=True,ticks=20,color='gray')
-"""

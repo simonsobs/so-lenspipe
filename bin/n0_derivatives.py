@@ -68,7 +68,7 @@ def diff_cl(cl_array,bins):
     """deltacls used in the denominator of finite difference derivatives"""
     dcltt=[]
     for i in range(len(bins)):
-        dcltt.append(2*0.001*cl_array[int(bins[i])])
+        dcltt.append(2*0.01*cl_array[int(bins[i])])
     return dcltt
     
 def norm_der_cltt(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
@@ -84,8 +84,8 @@ def norm_der_cltt(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
     tcbb = ucbb + maps.interp(ls,nells_P)(ells)
     #onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     
-    array1001=perturbe_clist(uctt,lprime,1.001)
-    array999=perturbe_clist(uctt,lprime,0.999)
+    array1001=perturbe_clist(uctt,lprime,1.01)
+    array999=perturbe_clist(uctt,lprime,0.99)
     N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
     N0999=[[],[],[],[],[]]
     
@@ -115,7 +115,7 @@ def norm_der_cltt(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
         
             der=((N1001[k][i]-N0999[k][i]))/delta[i]
             diff.append(der)    
-        #np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/n0{}_cltt.txt'.format(keys[k]),der)
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/n0{}_cltt.txt'.format(keys[k]),der)
         np.savetxt('../data/n0{}_cltt.txt'.format(keys[k]),diff)
   
 def norm_der_clee(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
@@ -131,8 +131,8 @@ def norm_der_clee(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
     tcbb = ucbb + maps.interp(ls,nells_P)(ells)
     #onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     
-    array1001=perturbe_clist(ucee,lprime,1.001)
-    array999=perturbe_clist(ucee,lprime,0.999)
+    array1001=perturbe_clist(ucee,lprime,1.01)
+    array999=perturbe_clist(ucee,lprime,0.99)
     N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
     N0999=[[],[],[],[],[]]
     
@@ -177,8 +177,8 @@ def norm_der_clte(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
     tcbb = ucbb + maps.interp(ls,nells_P)(ells)
     #onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     
-    array1001=perturbe_clist(ucte,lprime,1.001)
-    array999=perturbe_clist(ucte,lprime,0.999)
+    array1001=perturbe_clist(ucte,lprime,1.01)
+    array999=perturbe_clist(ucte,lprime,0.99)
     N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
     N0999=[[],[],[],[],[]]
     
@@ -223,8 +223,8 @@ def norm_der_clbb(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
     tcbb = ucbb + maps.interp(ls,nells_P)(ells)
     #onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
     
-    array1001=perturbe_clist(ucbb,lprime,1.001)
-    array999=perturbe_clist(ucbb,lprime,0.999)
+    array1001=perturbe_clist(ucbb,lprime,1.01)
+    array999=perturbe_clist(ucbb,lprime,0.99)
     N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
     N0999=[[],[],[],[],[]]
     
@@ -256,7 +256,7 @@ def norm_der_clbb(solint,ch,lmin,lmax,uctt_,ucee_,ucte_,ucbb_):
         np.savetxt('../data/n0{}_clbb.txt'.format(keys[k]),diff)
 
 norm_der_cltt(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
-norm_der_clee(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
-norm_der_clte(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
-norm_der_clbb(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
+#norm_der_clee(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
+#norm_der_clte(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
+#norm_der_clbb(solint,ch,lmin,lmax,uctt,ucee,ucte,ucbb)
 
