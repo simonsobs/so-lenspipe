@@ -172,14 +172,17 @@ class SOLensInterface(object):
 
 
     def get_kmap(self,channel,X,seed,lmin,lmax,filtered=True):
-        xs = {'T':0,'E':1,'B':2}
-        assert X in xs.keys()
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
-        return self.cache[seed][xs[X]] if filtered else self.cache[seed][xs[X]+3]
+        return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 
     def get_mv_kappa(self,polcomb,talm,ealm,balm):
-        res = qe.qe_all(self.shape,self.wcs,lambda x,y: self.theory.lCl(x,y),self.mlmax,talm,ealm,balm,estimators=[polcomb])
-        return res[polcomb]
+        return self.qfunc(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfunc(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_all(self.shape,self.wcs,lambda x,y: self.theory.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
         
 
 def initialize_mask(nside,smooth_deg):
