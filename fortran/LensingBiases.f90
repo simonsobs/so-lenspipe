@@ -334,7 +334,7 @@ contains
         integer file_id, i,j, icurl, nPhiSample,Phi_Sample(lmaxmax)
         logical isCurl
         real(dp) N0(n_est,n_est), N0_L(n_est,n_est),dPhi_Sample(lmaxmax)
-        real(dp), intent(out) ::  n0tt(:),n0ee(:),n0eb(:),n0te(:),n0tb(:)
+        real(dp), intent(out) ::  n0tt(150),n0ee(150),n0eb(150),n0te(150),n0tb(150)
         real(dp) Norms(lmaxmax,n_est)
         CHARACTER(LEN=13) :: creturn
 
@@ -355,6 +355,7 @@ contains
 
 
             do Lix =1, nPhiSample
+                write(*,*) Lix
                 creturn = achar(13)
                 WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(Lix,kind=dp)/nPhiSample*100.,kind=I4B)
                 101     FORMAT( a , 'Progression : ',i7,' % ')
@@ -455,41 +456,7 @@ contains
     
 
     
-    subroutine loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        ! Load N0 bias from the disk
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        integer, parameter :: DP = 8
-        integer, parameter :: I4B = 4
-        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
-        real, intent(in) :: normarray(6,*)
-        integer,  intent(in) :: lmin_filter,lmaxmax,lmaxout,n_est,Lstep
-        real(dp),intent(out) :: Norms((lmaxmax-lmin_filter)/Lstep,n_est)
-        character(LEN=50), intent(in) :: dir
-        character(LEN=50), intent(in) :: vartag
-        integer  file_id, L,i
-        real(dp) ell,TT,EE,EB,TE,TB,BB
-        real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
 
-
-        do L=lmin_filter, lmaxout, Lstep
-            !read(file_id,*) ell, dum, N0
-            !do i=1,n_est
-                !Norms(L,i) = N0(i,i)
-            !end do
-            !read(file_id,*) ell,
-            
-            Norms(L,1)=normarray(1,L-1)
-            Norms(L,2)=normarray(2,L-1)
-            Norms(L,3)=normarray(3,L-1)
-            Norms(L,4)=normarray(4,L-1)
-            Norms(L,5)=normarray(5,L-1)
-            Norms(L,6)=normarray(6,L-1)
-                
-                
-    
-        end do
-    end subroutine loadNorm
     !
     !
     
@@ -668,6 +635,41 @@ contains
     
     !
     
+ 
+    
+    subroutine loadNorm(normarray,n_est,lmin_filter,lmaxout, Lstep,Norms)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Load N0 bias from the disk
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        real, intent(in) :: normarray(6,*)
+        integer,  intent(in) :: lmin_filter,lmaxout,n_est,Lstep
+        real(dp),intent(out) :: Norms(lmaxout,n_est)
+        integer  file_id, L,i
+        real(dp) ell,TT,EE,EB,TE,TB,BB
+        real(dp) N0(n_est,n_est), dum !array size 5 i.e n_est=5
+
+        
+        do L=lmin_filter, lmaxout, Lstep
+            !read(file_id,*) ell, dum, N0
+            !do i=1,n_est
+                !Norms(L,i) = N0(i,i)
+            !end do
+            !read(file_id,*) ell,
+            
+            Norms(L,1)=normarray(1,L-1)
+            Norms(L,2)=normarray(2,L-1)
+            Norms(L,3)=normarray(3,L-1)
+            Norms(L,4)=normarray(4,L-1)
+            Norms(L,5)=normarray(5,L-1)
+            Norms(L,6)=normarray(6,L-1)
+            
+                
+    
+        end do
+    end subroutine loadNorm
     
     subroutine GetN1General(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n1theta,n1ee,n1eb,n1te,n1tb)
@@ -709,7 +711,7 @@ contains
         real(dp) tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl, N1_L1_PS_Curl, N1_L1_PS, N1_PS, N1_PS_Curl
         real(dp) dPhi_Sample(lmaxmax)
         real, intent(in) :: normarray(6,*)
-        real(dp) Norms(lmaxmax,n_est), NormsCurl(lmaxmax,n_est)
+        real(dp):: Norms(lmaxout,n_est)
         integer file_id_PS
         real(dp) this13, this24
         real(dp),  DIMENSION((lmaxout-lmin_filter)/Lstep+1),intent(out) ::  n1theta,n1ee,n1eb,n1te,n1tb
@@ -717,13 +719,11 @@ contains
         CHARACTER(LEN=13) :: creturn
 
         lumped_indices = transpose(reshape((/ 1,2,2,1,1,3,1,2,3,2,3,3 /), (/ n_est, 2 /)  ))
-
         call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
 
         outtag = 'N1_All'
-        call loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir)
-       
-
+        
+        call loadNorm(normarray,n_est,lmin_filter,lmaxout, Lstep,Norms)
         call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted',&
         & status='replace')
@@ -847,14 +847,14 @@ contains
 
 
         end do
-
         do est1=1,n_est
             do est2=est1,n_est
                 N1(est1,est2) = norms(L,est1)*norms(L,est2)*N1(est1,est2) / (twopi**4)
                 N1(est2,est1) = N1(est1,est2)
             end do
+        
         end do
-
+        
         write(file_id,'(1I5)',advance='NO') L
         call WriteMatrixLine(file_id, N1,n_est)
 
@@ -916,7 +916,7 @@ contains
         integer ij(2),pq(2), est1, est2
         real(dp) tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl, N1_L1_PS_Curl, N1_L1_PS, N1_PS, N1_PS_Curl
         real(dp) dPhi_Sample(lmaxmax)
-        real(dp) Norms(lmaxmax,n_est), NormsCurl(lmaxmax,n_est)
+        real(dp):: Norms(lmaxout,n_est)
         real, intent(in) :: normarray(6,*)
         integer file_id_PS
         real(dp) this13, this24
@@ -934,7 +934,7 @@ contains
         allocate(matrix((lmaxout-lmin_filter)/Lstep+1,nPhiSample, n_est,n_est))
         allocate(matrixL1(nPhiSample,n_est,n_est))
         matrix=0
-        call loadNorm(normarray,n_est,lmin_filter, lmaxmax,lmaxout, Lstep,Norms,vartag,dir) !load N0
+        call loadNorm(normarray,n_est,lmin_filter,lmaxout, Lstep,Norms) !load N0
         call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
 
         open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='replace')
@@ -1115,7 +1115,7 @@ contains
         integer(I4B) :: LMin
         real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
-        real(dp), intent(out) ::  n0tt(lmaxout),n0ee(lmaxout),n0eb(lmaxout),n0te(lmaxout),n0tb(lmaxout)
+        real(dp), intent(out) ::  n0tt(150),n0ee(150),n0eb(150),n0te(150),n0tb(150)
  
 
         NoiseVar =  nll  !muKArcmin becomes the input array

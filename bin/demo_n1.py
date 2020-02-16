@@ -53,9 +53,9 @@ LMAX_TT=2992
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
 
-clkk=np.loadtxt('/global/homes/j/jia_qu/so-lenspipe/data/ckk.txt')
-lens=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
-cls=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
+clkk=np.loadtxt(config['data_path']+"ckk.txt")
+lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
+cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
 
 #arrays with l starting at l=2"
 #clphiphi array starting at l=2
@@ -68,7 +68,7 @@ clee=cls[2]
 clbb=cls[3]
 clte=cls[4]
 
-norms=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/norm_lmin_300_lmax_3000.txt")
+norms=np.loadtxt(config['data_path']+"norm_lmin_300_lmax_3000.txt")
 bins=norms[2:,0]
 ntt=norms[2:,1]
 nee=norms[2:,2]
@@ -76,7 +76,7 @@ neb=norms[2:,3]
 nte=norms[2:,4]
 ntb=norms[2:,5]
 nbb=np.ones(len(ntb))
-norms=np.array([ntt/bins**2,nee/bins**2,neb/bins**2,nte/bins**2,ntb/bins**2,nbb])
+norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bins**2],[nbb]])
 
 """
 Input normalisation as an array of arrays of deflection n0s.
@@ -84,14 +84,29 @@ Input normalisation as an array of arrays of deflection n0s.
 #N1 bias calculation
 n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
-#derivative wrt clphi
-n1=s.n1_derivatives('TT','TT',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/n1der",n1)
-"""returns arrays n1tt,n1ee,n1bb,n1te"""
+#derivative wrt clphi
+#n1=s.n1_derivatives('TB','TB',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+
 
 #np.savetxt('../data/norms.txt',c)
 #cls and clpp must have same dimensions.
 
+#s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+n0 = np.loadtxt(os.path.join(TMP_OUTPUT, 'N0_analytical.dat')).T
+bins = n0[0]
+phiphi = n0[1]
+n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
 
+MV_n0, weights = s.minimum_variance_n0(n0_mat, indices, checkit=False)
+
+
+#s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+n1 = np.loadtxt(os.path.join(TMP_OUTPUT, 'N1_All_analytical.dat')).T
+indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
+bins = n1[0]
+n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
+MV_n1 = s.minimum_variance_n1(bins, n1_mat, weights, indices, bin_function=None)
 
