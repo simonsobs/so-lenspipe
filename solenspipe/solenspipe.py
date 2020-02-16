@@ -254,7 +254,8 @@ def compute_n0_py(
     lmax_TT=None,
     lcorr_TT=None,
     tmp_output=None):
-
+    """returns derivatives of kappa N0 noise with respect to the Cls"""
+    bins=np.arange(2,2992,20)
     n0tt,n0ee,n0eb,n0te,n0tb=lensingbiases_f.compute_n0(
         phifile,
         lensedcmbfile,
@@ -270,7 +271,6 @@ def compute_n0_py(
         lmax_TT,
         lcorr_TT,
         tmp_output)
-    
     return n0tt,n0ee,n0eb,n0te,n0tb
 
 	
@@ -333,15 +333,8 @@ def compute_n1_py(
         lcorr_TT,
         tmp_output)
     
-    return n1tt,n1ee,n1eb,n1te,n1tb  #returns n1tt array
-    #n1 = np.loadtxt(os.path.join(tmp_output, 'N1_All_analytical.dat')).T
-
-    #indices = ['TT', 'EE', 'EB', 'TE', 'TB','BB']
-    #indices = ['TT', 'EE', 'EB', 'TE', 'TB']
-    #bins = n1[0]
-    #n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
-
-    #return bins, n1_mat, indices
+    return n1tt,n1ee,n1eb,n1te,n1tb  
+    
 def compute_n1clphiphi_py(
     phifile=None,
     normarray=None,
@@ -466,12 +459,90 @@ def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
     leg.get_frame().set_alpha(0.0)
     pl.savefig('Biases.pdf')
     pl.clf()
-	
+    
+    
+def minimum_variance_n0(N0_array, N0_names, checkit=False):
+	'''
+	Compute the variance of the minimum variance estimator and the associated weights.
+	Input:
+		* N0_array: ndarray, contain the N0s to combine
+		* N0_names: ndarray of string, contain the name of the N0s to combine (['TTTT', 'EEEE', etc.])
+	Output:
+		* minimum_variance_n0: 1D array, the MV N0
+		* weights*minimum_variance_n0: ndarray, the weights for each spectrum (TT, EE, etc.)
+		* N0_names_ordered: 1D array, contain the name of the spectra (TT, EE, etc.)
+	'''
+	N0_array = np.reshape(N0_array, (len(N0_array)**2, len(N0_array[0][0])))
+	N0_names_full = ['%s%s'%(i, j) for i in N0_names for j in N0_names]
 
-            
-"""
-def initialize_norm(solint,ch,lmin,lmax,tag='SO'):
-    ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
-    ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
-    return initialize_generic_norm(lmin,lmax,ls=ls,nells=nells,nells_P=nells_P,tag=tag)
-"""
+	## Fill matrix
+	sub_vec = [[name, pos] for pos, name in enumerate(N0_names)]
+	dic_mat = {'%s%s'%(XY, ZW):[i, j] for XY, i in sub_vec for ZW, j in sub_vec}
+
+	## Build the inverse matrix for each ell
+	def build_inv_submatrix(vector_ordered, names_ordered, dic_mat, nsub_element):
+		mat = np.zeros((nsub_element, nsub_element))
+		for pos, name in enumerate(names_ordered):
+			mat[dic_mat[name][0]][dic_mat[name][1]] = mat[dic_mat[name][1]][dic_mat[name][0]] = vector_ordered[pos]
+		return np.linalg.pinv(mat)
+
+	inv_submat_array = np.array([
+		build_inv_submatrix(
+			vector_ordered,
+			N0_names_full,
+			dic_mat,
+			len(N0_names)) for vector_ordered in np.transpose(N0_array)])
+	inv_N0_array = np.array([ np.sum(submat) for submat in inv_submat_array ])
+	minimum_variance_n0 = 1. / inv_N0_array
+
+    
+        
+	weights = np.array([[np.sum(submat[i]) for submat in inv_submat_array] for i in range(6) ])
+	#weights = np.array([np.sum(submat[i]) for submat in inv_submat_array])
+
+	if checkit:
+		print ('Sum of weights = ', np.sum(weights * minimum_variance_n0) / len(minimum_variance_n0))
+		print ('Is sum of weights 1? ',np.sum(weights * minimum_variance_n0) / len(minimum_variance_n0) == 1.0)
+
+	return minimum_variance_n0, weights * minimum_variance_n0
+
+def minimum_variance_n1(bins, N1_array, weights_for_MV, spectra_names, bin_function=None):
+	'''
+	Takes all N1 and form the mimimum variance estimator.
+	Assumes N1 structure is coming from Biases_n1mat.f90
+	Input:
+		* N1: ndarray, contain the N1 (output of Biases_n1mat.f90)
+		* weights_for_MV: ndarray, contain the weights used for MV
+		* spectra_names: ndarray of string, contain the name of the spectra ordered
+	'''
+	## Ordering: i_TT=0,i_EE=1,i_EB=2,i_TE=3,i_TB=4, i_BB=5 (from Frotran)
+	names_N1 = ['%s%s'%(i, j) for i in spectra_names for j in spectra_names]
+
+	if bin_function is not None:
+		n1_tot = np.zeros_like(bin_centers)
+	else:
+		n1_tot = np.zeros_like(weights_for_MV[0])
+
+	for estimator_name in names_N1:
+		## Indices for arrays
+		index_x = spectra_names.index(estimator_name[0:2])
+		index_y = spectra_names.index(estimator_name[2:])
+
+		## Interpolate N1 if necessary
+		n1_not_interp = N1_array[index_x][index_y]
+		if bin_function is not None:
+			n1_interp = np.interp(bin_centers, bins, n1_not_interp)
+		else:
+			n1_interp = n1_not_interp
+
+		## Weights
+		wXY_index = spectra_names.index(estimator_name[0:2])
+		wZW_index = spectra_names.index(estimator_name[2:4])
+
+		## Update N1
+		if bin_function is not None:
+			n1_tot += bin_function(weights_for_MV[wXY_index]) * bin_function(weights_for_MV[wZW_index]) * n1_interp
+		else:
+			n1_tot += weights_for_MV[wXY_index] * weights_for_MV[wZW_index] * n1_interp
+	return n1_tot
+
