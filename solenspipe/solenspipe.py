@@ -171,8 +171,9 @@ class SOLensInterface(object):
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
 
 
-    def get_kmap(self,channel,X,seed,lmin,lmax,filtered=True):
+    def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
+        xs = {'T':0,'E':1,'B':2}
         return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 
     def get_mv_kappa(self,polcomb,talm,ealm,balm):

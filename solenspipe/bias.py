@@ -54,20 +54,21 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     # Data
-    X = get_kmap(eX,(0,0,0))
-    Y = get_kmap(eY,(0,0,0))
-    A = get_kmap(eA,(0,0,0))
-    B = get_kmap(eB,(0,0,0))
+    X = get_kmap((0,0,0))
+    Y = get_kmap((0,0,0))
+    A = get_kmap((0,0,0))
+    B = get_kmap((0,0,0))
+    return power(qa(X,Y),qb(A,B)) # !!!!
     # Sims
     rdn0 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
-        Xs  = get_kmap(eX,(icov,0,i))
-        Ys  = get_kmap(eY,(icov,0,i))
-        As  = get_kmap(eA,(icov,0,i))
-        Bs  = get_kmap(eB,(icov,0,i))
-        Ysp = get_kmap(eY,(icov,1,i))
-        Asp = get_kmap(eA,(icov,1,i))
-        Bsp = get_kmap(eB,(icov,1,i))
+        Xs  = get_kmap((icov,0,i))
+        Ys  = get_kmap((icov,0,i))
+        As  = get_kmap((icov,0,i))
+        Bs  = get_kmap((icov,0,i))
+        Ysp = get_kmap((icov,1,i))
+        Asp = get_kmap((icov,1,i))
+        Bsp = get_kmap((icov,1,i))
         rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
             + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
@@ -86,18 +87,18 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     n1 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
-        Xsk   = get_kmap(eX,(icov,2,i))
-        Yskp  = get_kmap(eY,(icov,3,i))
-        Ask   = get_kmap(eA,(icov,2,i))
-        Bskp  = get_kmap(eB,(icov,3,i))
-        Askp  = get_kmap(eA,(icov,3,i))
-        Bsk   = get_kmap(eB,(icov,2,i))
-        Xs    = get_kmap(eX,(icov,0,i))
-        Ysp   = get_kmap(eY,(icov,1,i))
-        As    = get_kmap(eA,(icov,0,i))
-        Bsp   = get_kmap(eB,(icov,1,i))
-        Asp   = get_kmap(eA,(icov,1,i))
-        Bs    = get_kmap(eB,(icov,0,i))
+        Xsk   = get_kmap((icov,2,i))
+        Yskp  = get_kmap((icov,3,i))
+        Ask   = get_kmap((icov,2,i))
+        Bskp  = get_kmap((icov,3,i))
+        Askp  = get_kmap((icov,3,i))
+        Bsk   = get_kmap((icov,2,i))
+        Xs    = get_kmap((icov,0,i))
+        Ysp   = get_kmap((icov,1,i))
+        As    = get_kmap((icov,0,i))
+        Bsp   = get_kmap((icov,1,i))
+        Asp   = get_kmap((icov,1,i))
+        Bs    = get_kmap((icov,0,i))
         term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
         n1 = n1 + term

@@ -21,7 +21,7 @@ lmax = 3000
 polcomb = 'TT'
 
 # Number of sims
-nsims = 2
+nsims = 1
 
 # CAR resolution is decided based on lmax
 res = np.deg2rad(2.0 *(3000/lmax) /60.)
@@ -58,9 +58,10 @@ for task in my_tasks:
     seed = (0,0,task)
 
     # Get the simulated, prepared T, E, B maps
-    t_alm,e_alm,b_alm = [solint.get_kmap(channel,X,seed,lmin,lmax,filtered=True) for X in ['T','E','B']]
+    t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
+    print(t_alm.shape,e_alm.shape,b_alm.shape)
     # Get the reconstructed map for the TT estimator
-    recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm)[0],maps.interp(ls,Als[polcomb]))
+    recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ls,Als[polcomb]))
     
     kalms = solint.get_kappa_alm(task)
     xcl = hp.alm2cl(recon_alms,kalms)
