@@ -57,8 +57,8 @@ assert ls[0]==0
 assert len(ls) == Als[polcomb].size
 nmax = len(ls)
 
-#rdn0 = bias.rdn0(icov=0,alpha="TT",beta="TT",qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-rdn0 = bias.mcn1(0,'TT','TT',qfunc,get_kmap,comm,power,nsims,verbose=True)
+rdn0 = bias.rdn0(icov=0,alpha="TT",beta="TT",qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+#rdn0 = bias.mcn1(0,'TT','TT',qfunc,get_kmap,comm,power,nsims,verbose=True)
 
 rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 rdn0[nmax:] = 0
