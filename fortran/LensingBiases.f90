@@ -88,10 +88,8 @@ contains
         xlc= 180*sqrt(8.*log(2.))/pi
         sigma2 = (noise_fwhm_deg/xlc)**2
         do l=2, lmax
-            NT(L) = AN(l)*exp(l*(l+1)*sigma2)
-            if (l>lmax_TT) NT(L) = NT(L) + ( 0.000001*pi/180/60.)**2 *exp(l*(l+1)*(15./60./xlc)**2)
-            if (l<lcorr_TT) NT(L) = NT(L) * (1 + (real(lcorr_TT,dp)/real(l,dp))**4)
-            NP(L) = ANP(l)*exp(l*(l+1)*sigma2)
+            NT(L) = AN(l)
+            NP(L) = ANP(l)
         end do
 
     end subroutine NoiseInit
@@ -670,6 +668,145 @@ contains
     
         end do
     end subroutine loadNorm
+    
+    
+     subroutine getmixNorm(WantIntONly,sampling,doCurl,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n0ttee,n0ttte,n0eete,n0ebtb)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Main routine to compute N0 bias.
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+
+        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est
+        real(dp), intent(in) :: CPhi(lmaxmax)
+        real(dp), intent(in) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
+        real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp), intent(in) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        character(LEN=50), intent(in) :: dir
+        character(LEN=50), intent(in) :: vartag
+        logical, intent(in) :: WantIntONly, sampling, doCurl
+
+        integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
+        integer L, Lix, l1, nphi, phiIx, L2int
+        real(dp) dphi
+        real(dp) L1Vec(2), L2vec(2), LVec(2)
+        real(dp) phi, cos2L1L2, sin2
+        real(dP) norm, L2
+        real(dp) cosfac,f12(n_est),f21(n_est),Win21(n_est),Win12(n_est), fac
+        integer, parameter :: dL1=1
+        integer file_id, i,j, icurl, nPhiSample,Phi_Sample(lmaxmax)
+        logical isCurl
+        real(dp) N0(n_est,n_est), N0_L(n_est,n_est),dPhi_Sample(lmaxmax)
+        real(dp), intent(out) ::  n0ttee(150),n0ttte(150),n0eete(150),n0ebtb(150)
+        real(dp) Norms(lmaxmax,n_est)
+        CHARACTER(LEN=13) :: creturn
+
+   call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
+        ! print *,nPhiSample
+
+        !Order TT, EE, EB, TE, TB, BB
+        do icurl = 0,1
+            isCurl = icurl==1
+            if (IsCurl) then
+                if (.not. doCurl) cycle
+                print *,''
+                print *,'N0 computation (curl)'
+            else
+                print *,'N0 computation (phi)'
+                open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='replace')
+            end if
+
+
+            do Lix =1, nPhiSample
+                write(*,*) Lix
+                creturn = achar(13)
+                WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(Lix,kind=dp)/nPhiSample*100.,kind=I4B)
+                101     FORMAT( a , 'Progression : ',i7,' % ')
+                L = Phi_Sample(Lix)
+                Lvec(1) = L
+                LVec(2)= 0
+                N0_L=0
+
+!$OMP           PARALLEL DO&
+!$OMP&          default(shared) private(L1,nphi,dphi,N0, &
+!$OMP&          PhiIx,phi,L1vec,L2vec,L2,L2int,cos2L1L2, &
+!$OMP&          sin2,cosfac,f12,f21,Win12,Win21,i,j) &
+!$OMP&          reduction(+:N0_L)
+
+                do L1=lmin_filter, lmax, dL1
+
+                nphi=(2*L1+1)
+                dphi=(2*Pi/nphi)
+                N0=0
+
+                do PhiIx=0,(nphi-1)/2
+                    phi= dphi*PhiIx
+                    L1vec(1)=L1*cos(phi)
+                    L1vec(2)=L1*sin(phi)
+                    L2vec = Lvec-L1vec
+                    L2=(sqrt(L2vec(1)**2+L2vec(2)**2))
+                    if (L2<lmin_filter .or. L2>lmax) cycle
+                    L2int=nint(L2)
+
+      
+                    call getResponseFull(n_est,lmaxmax,L1vec(1)*L,L2vec(1)*L, L1vec,real(L1,dp),&
+                    & L1, L2vec,L2, L2int,f12,f21, CT, CE, CX, CB)
+                    call getWins(n_est,lmaxmax,L1vec(1)*L,L2vec(1)*L, L1vec,real(L1,dp),&
+                    & L1, L2vec,L2, L2int, CX, CTf, CEf, CXf, CBf,CTobs, CEobs, CBobs,Win12, Win21)
+                   
+
+                    do i=1,n_est
+                        N0(i,i) = N0(i,i) + f12(i)*Win12(i)
+                    end do
+
+
+                    !Important to use symmetric form here if only doing half PhiIx integral
+                    N0(i_TT,i_TE) = N0(i_TT,i_TE) + Win12(i_TT)*(Win12(i_TE)*&
+                    &CTobs(L1)*CXf(L2int) + Win21(i_TE)*CXf(L1)*CTobs(L2int))
+                    
+
+                    N0(i_TT,i_EE) = N0(i_TT,i_EE) + 2*Win12(i_TT)*Win12(i_EE)*CXf(L1)*CXf(L2int)
+
+                    N0(i_EE,i_TE) = N0(i_EE,i_TE) + Win12(i_EE)*(Win12(i_TE)*&
+                    &CXf(L1)*CEobs(L2int) + Win21(i_TE)*CEobs(L1)*CXf(L2int))
+
+                    N0(i_EB,i_TB) = N0(i_EB,i_TB) + (Win12(i_EB)*(Win12(i_TB)*CXf(L1)*CBobs(L2int)) + &
+                        & Win21(i_EB)*(Win21(i_TB)*CXf(L2int)*CBobs(L1)))/2
+
+                    if (PhiIx==0) N0 = N0/2
+                end do
+                fac = dphi* L1*dL1 *2
+                N0_L = N0_L + N0 * fac
+
+            end do
+            !$OMP END PARALLEL DO
+            N0_L = N0_L/(twopi**2)
+
+            N0=0
+            do i=1,n_est
+                do j=i,n_est
+                    if (WantIntONly) then
+                        N0(i,j) = N0_L(i,j)
+                    else
+                        N0(i,j) = N0_L(i,j)/N0_L(i,i)/N0_L(j,j)
+                    end if
+                    N0(j,i) = N0(i,j)
+                end do
+            end do
+            n0ttee(Lix)=N0(1,2)
+            n0ttte(Lix)=N0(1,4)
+            n0eete(Lix)=N0(2,4)
+            n0ebtb(Lix)=N0(3,5)
+
+
+            ! print *, L, CPhi(L)*norm, N0(i_TT,i_TT)*norm
+        end do
+        end do
+        print *,''
+
+    end subroutine getmixNorm 
     
     subroutine GetN1General(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n1theta,n1ee,n1eb,n1te,n1tb)
@@ -1287,7 +1424,340 @@ contains
 
     end subroutine compute_n1_derivatives
 
+
+    subroutine compute_n0mix(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,&
+    &  n0ttee,n0ttte,n0eete,n0ebtb)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Interface to python to compute N0 bias
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        implicit none
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        ! Order 1 2 3 = T E B
+        ! Estimator order TT, EE, EB, TE, TB, BB
+        integer(I4B), parameter :: n_est = 6
+        integer, intent(in) ::  lmaxmax 
+        real(dp), intent(in)     :: noise_fwhm_deg
+        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
+        character(LEN=50), intent(in) :: dir
+        real, intent(in) :: lensedcmbfile(5,*)
+        real(dp), intent(in) :: phifile(lmaxmax)
+        real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax)
+        character(LEN=:), allocatable :: root
+        logical :: doCurl = .True.
+        character(LEN=50) vartag
+        real(dp) :: CPhi(lmaxmax)
+        real(dp) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
+        real(dp) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp) :: NT(lmaxmax), NP(lmaxmax)
+        real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        integer(I4B) :: LMin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+        real(dp), intent(out) ::   n0ttee(150),n0ttte(150),n0eete(150),n0ebtb(150) 
+ 
+
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
+        LMin = lmin_filter
+
+        call system('mkdir -p '//dir)
+
+        call ReadPhiPhi(phifile,lmax,lmaxmax,CPhi)
+        call ReadPowernum(lensedcmbfile,Tfile,Efile,Bfile,Xfile,lmax,lmaxmax,CT,CE,CB,CX,CTf,CEf,CBf,CXf)
+
+        call NoiseInit(NoiseVar, NoiseVarP,noise_fwhm_deg,lmax,lmax_TT,lcorr_TT,lmaxmax,NT,NP)
+        CTobs = CTf + NT
+        CEobs = CEf + NP
+        CBobs = CBf + NP
+
+        root = 'analytical'
+        vartag = '_'//root
+
+        call getmixNorm( .false. , .false. ,.False.,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                            & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,n0ttee,&
+                        & n0ttte,n0eete,n0ebtb)
+
+    end subroutine compute_n0mix
+
+   subroutine GetN1mix(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n1ttee,&
+                        &n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Main routine to compute N1 bias.
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+
+        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est
+        real(dp), intent(in) :: CPhi(lmaxmax)
+        real(dp), intent(in) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
+        real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp), intent(in) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        character(LEN=50), intent(in) :: dir
+        character(LEN=50), intent(in) :: vartag
+        logical, intent(in) :: sampling
+
+        integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
+        integer(I4B), parameter :: Lstep = 20, dL = 20
+        integer  :: lumped_indices(2,n_est)
+        integer L, Lix, l1, nphi, phiIx, L2int,PhiL_nphi,PhiL_phi_ix,L3int,L4int
+        integer PhiL
+        real(dp) dphi,PhiL_phi_dphi
+        real(dp) L1Vec(2), L2vec(2), LVec(2), L3Vec(2),L4Vec(2), phiLVec(2)
+        real(dp) phi, PhiL_phi
+        real(dP) L2, L4, L3
+        real(dp) dPh
+        real(dp) phiL_dot_L2, phiL_dot_L3, phiL_dot_L1, phiL_dot_L4
+        real(dp) fact(n_est,n_est),tmp(n_est,n_est), N1(n_est,n_est), N1_L1(n_est,n_est),N1_PhiL(n_est,n_est)
+        real(dp) Win12(n_est), Win34(n_est), Win43(n_est)
+        real(dp) WinCurl12(n_est), WinCurl34(n_est), WinCurl43(n_est), tmpCurl(n_est,n_est), &
+            factCurl(n_est,n_est),N1_PhiL_Curl(n_est,n_est), N1_L1_Curl(n_est,n_est),  N1_Curl(n_est,n_est)
+        real(dp) f24(n_est), f13(n_est),f31(n_est), f42(n_est)
+        integer file_id, nPhiSample,Phi_Sample(lmaxmax)
+        integer file_id_Curl, PhiLix
+        integer ij(2),pq(2), est1, est2
+        real(dp) tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl, N1_L1_PS_Curl, N1_L1_PS, N1_PS, N1_PS_Curl
+        real(dp) dPhi_Sample(lmaxmax)
+        real, intent(in) :: normarray(6,*)
+        real(dp):: Norms(lmaxout,n_est)
+        integer file_id_PS
+        real(dp) this13, this24
+        real(dp),  DIMENSION((lmaxout-lmin_filter)/Lstep+1),intent(out) ::  n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
+        character(LEN=10) outtag
+        CHARACTER(LEN=13) :: creturn
+
+        lumped_indices = transpose(reshape((/ 1,2,2,1,1,3,1,2,3,2,3,3 /), (/ n_est, 2 /)  ))
+        call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
+
+        outtag = 'N1_All'
+        
+        call loadNorm(normarray,n_est,lmin_filter,lmaxout, Lstep,Norms)
+        call WriteRanges(lmin_filter, lmaxout,lmaxmax, Lstep,Phi_Sample,dPhi_Sample,nPhiSample,outtag,vartag,dir)
+        open(file=trim(dir)//'/'//trim(outtag)//trim(vartag)//'.dat', newunit = file_id, form='formatted',&
+        & status='replace')
+        Lix=0
+        print *,'N1 computation (phi, curl, PS)'
+        do L=lmin_filter, lmaxout, Lstep
+            creturn = achar(13)
+            WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(L,kind=dp)/lmaxout*100.,kind=I4B)
+            101     FORMAT( a , 'Progression : ',i7,' % ')
+            Lix=Lix+1
+            write(*,*) Lix
+            Lvec(1) = L
+            LVec(2)= 0
+            N1=0
+
+            do L1=max(lmin_filter,dL/2), lmax, dL
+                N1_L1 = 0
+
+
+
+                nphi=(2*L1+1)
+                if (L1>3*dL) nphi=2*nint(L1/real(2*dL))+1
+                dphi=(2*Pi/nphi)
+
+                !$OMP PARALLEL DO default(shared), private(PhiIx,phi,PhiL_nphi, PhiL_phi_dphi, PhiL_phi_ix, PhiL_phi,PhiLix, dPh), &
+                !$OMP private(L1vec,L2,L2vec, L2int,  L3, L3vec, L3int, L4, L4vec, L4int),&
+                !$OMP private(tmp, Win12, Win34, Win43, fact,phiL_dot_L1, phiL_dot_L2, phiL_dot_L3, phiL_dot_L4), &
+                !$OMP private(tmpCurl, WinCurl12, WinCurl34, WinCurl43, factCurl, N1_PhiL_Curl), &
+                !$OMP private(f13, f31, f42, f24, ij, pq, est1, est2,this13,this24), &
+                !$OMP private(tmpPS, tmpPSCurl, N1_PhiL_PS, N1_PhiL_PS_Curl), &
+
+                !$OMP private(PhiL, PhiLVec, N1_PhiL), schedule(STATIC), reduction(+:N1_L1), reduction(+:N1_L1_Curl), &
+                !$OMP reduction(+:N1_L1_PS), reduction(+:N1_L1_PS_Curl)
+                !do phiIx= -(nphi-1)/2, (nphi-1)/2
+                do phiIx=0,(nphi-1)/2 !
+                phi= dphi*PhiIx
+                L1vec(1)=L1*cos(phi)
+                L1vec(2)=L1*sin(phi)
+                L2vec = Lvec-L1vec
+                L2=(sqrt(L2vec(1)**2+L2vec(2)**2))
+                if (L2<lmin_filter .or. L2>lmax) cycle
+                L2int=nint(L2)
+
+                call getWins(n_est,lmaxmax,L*L1vec(1),L*L2vec(1), L1vec,real(L1,dp),L1, L2vec,L2, L2int,  &
+                & CX, CTf, CEf, CXf, CBf,CTobs, CEobs, CBobs, Win12)
+
+
+                N1_PhiL=0
+                N1_PhiL_PS=0
+                
+                do PhiLIx = 1, nPhiSample
+                    PhiL = Phi_Sample(PhiLIx)
+                    dPh = dPhi_Sample(PhiLIx)
+                    PhiL_nphi=(2*PhiL+1)
+                    if (phiL>20) PhiL_nphi=2*nint(real(PhiL_nphi)/dPh/2)+1
+                    PhiL_phi_dphi=(2*Pi/PhiL_nphi)
+                    tmp=0
+                    do PhiL_phi_ix=-(PhiL_nphi-1)/2, (PhiL_nphi-1)/2
+                        PhiL_phi= PhiL_phi_dphi*PhiL_phi_ix
+                        PhiLvec(1)=PhiL*cos(PhiL_phi)
+                        PhiLvec(2)=PhiL*sin(PhiL_phi)
+                        L3vec= PhiLvec - L1vec
+                        L3 = sqrt(L3vec(1)**2+L3vec(2)**2)
+                        if (L3>=lmin_filter .and. L3<=lmax) then
+                            L3int = nint(L3)
+                            L4vec = -Lvec-L3vec
+                            L4 = sqrt(L4vec(1)**2+L4vec(2)**2)
+                            L4int=nint(L4)
+                            if (L4>=lmin_filter .and. L4<=lmax) then
+                                call getWins(n_est,lmaxmax,-L*L3vec(1),-L*L4vec(1), L3vec,L3,L3int, L4vec,L4, L4int,  &
+                                & CX, CTf, CEf, CXf, CBf,CTobs, CEobs, CBobs, Win34, Win43)
+
+                                phiL_dot_L1=dot_product(PhiLVec,L1vec)
+                                phiL_dot_L2=-dot_product(PhiLVec,L2vec)
+                                phiL_dot_L3=dot_product(PhiLVec,L3vec)
+                                phiL_dot_L4=-dot_product(PhiLVec,L4vec)
+
+                                call getResponse(n_est,lmaxmax,phiL_dot_L1,phiL_dot_L3, L1vec,real(L1,dp),L1, L3vec,L3, &
+                                & L3int, CT, CE, CX, CB, f13, f31)
+                                call getResponse(n_est,lmaxmax,phiL_dot_L2,phiL_dot_L4, L2vec,L2,L2int, L4vec,L4, &
+                                & L4int, CT, CE, CX, CB, f24, f42)
+
+                                do est1=1,n_est
+                                    ij=lumped_indices(:,est1)
+                                    do est2=est1,n_est
+                                        pq=lumped_indices(:,est2)
+                                        this13 = responseFor(n_est,ij(1),pq(1),f13,f31)
+                                        this24 = responseFor(n_est,ij(2),pq(2),f24,f42)
+                                        tmp(est1,est2)=tmp(est1,est2)+this13*this24*Win34(est2)
+                                        !tmp(est1,est2)=tmp(est1,est2)+this13*this24
+                                        !tmp(est1,est2)=tmp(est1,est2)+Win34(est2)
+                               
+
+                                        this13 = responseFor(n_est,ij(1),pq(2),f13,f31)
+                                        this24 = responseFor(n_est,ij(2),pq(1),f24,f42)
+                                        !tmp(est1,est2)=tmp(est1,est2)+this13*this24
+                                        tmp(est1,est2)=tmp(est1,est2)+this13*this24*Win43(est2)
+                                        !tmp(est1,est2)=tmp(est1,est2)+Win43(est2)
+                                 
+                                    end do
+                                end do
+                            end if
+                        end if
+                    end do
+                    if (phiIx/=0) tmp=tmp*2 !integrate 0-Pi for phi_L1
+                    fact = tmp* PhiL_phi_dphi* PhiL
+                    N1_PhiL= N1_PhiL + fact * Cphi(PhiL)*dPh
+    
+
+                end do
+                do est1=1,n_est
+                    N1_PhiL(est1,:)=N1_PhiL(est1,:)*Win12(est1)
+                    !N1_PhiL(est1,:)=N1_PhiL(est1,:)
+    
+                end do
+                N1_L1 = N1_L1+N1_PhiL
+
+            end do
+            !$OMP END PARALLEL DO
+            N1= N1 + N1_L1 * dphi* L1*dL
+
+
+        end do
+        do est1=1,n_est
+            do est2=est1,n_est
+                N1(est1,est2) = norms(L,est1)*norms(L,est2)*N1(est1,est2) / (twopi**4)
+                N1(est2,est1) = N1(est1,est2)
+            end do
+        
+        end do
+        
+        write(file_id,'(1I5)',advance='NO') L
+        call WriteMatrixLine(file_id, N1,n_est)
+
+
+        ! print *,L, N1(i_TT,i_TT), N1(i_eb,i_eb), N1(i_eb, i_ee)
+        ! print *, 'Psi',L, N1_Curl(i_TT,i_TT), N1_Curl(i_tb,i_eb), N1_Curl(i_eb, i_ee)
+        ! print *, 'PS', L, N1_PS, N1_PS_Curl
+        
+        n1ttee(Lix)=N1(1,2)
+        n1tteb(Lix)=N1(1,3)
+        n1ttte(Lix)=N1(1,4)
+        n1tttb(Lix)=N1(1,5)
+        n1eeeb(Lix)=N1(2,3)
+        n1eete(Lix)=N1(2,4)
+        n1eetb(Lix)=N1(2,5)
+        n1ebte(Lix)=N1(3,4)
+        n1ebtb(Lix)=N1(3,5)
+        n1tetb(Lix)=N1(4,5)
+        end do
+        print *,''
+        close(file_id)
+
+    end subroutine GetN1mix
+
+    subroutine compute_n1mix(phifile,normarray,lensedcmbfile,Tfile,Efile,Bfile,Xfile,noise_fwhm_deg,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,&
+                &n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Interface to python to compute N1 bias
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        implicit none
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        ! Order 1 2 3 = T E B
+        ! Estimator order TT, EE, EB, TE, TB, BB
+        integer(I4B), parameter :: n_est = 6,Lstep=20
+        integer, intent(in) ::  lmaxmax 
+        real(dp), intent(in)     :: noise_fwhm_deg
+        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
+        character(LEN=50), intent(in) :: dir
+        real, intent(in) :: lensedcmbfile(5,*)
+        !character(LEN=200), intent(in) ::  lensedcmbfile
+        real(dp), intent(in) :: phifile(lmaxmax)
+        real, intent(in) :: normarray(6,*)
+        real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax)
+        character(LEN=:), allocatable :: root
+        character(LEN=50) vartag
+        real(dp) :: CPhi(lmaxmax)
+        real(dp) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax),CTm(lmaxmax)
+        real(dp) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp) :: NT(lmaxmax), NP(lmaxmax)
+        real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        integer(I4B) :: LMin,L
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+        real(dp),dimension((lmaxout-lmin_filter)/Lstep+1), intent(out) ::  n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
+        
   
+        NoiseVar =  nll  !nll is the temperature noise power spectrum from so-obs
+        NoiseVarP=nlp    !nlp is the polarization noise power 
+        LMin = lmin_filter
+        LMin = lmin_filter
+
+        call system('mkdir -p '//dir)
+
+        call ReadPhiPhi(phifile,lmax,lmaxmax,CPhi)
+        call ReadPowernum(lensedcmbfile,Tfile,Efile,Bfile,Xfile,lmax,lmaxmax,CT,CE,CB,CX,CTf,CEf,CBf,CXf)
+        call NoiseInit(NoiseVar, NoiseVarP,noise_fwhm_deg,lmax,lmax_TT,lcorr_TT,lmaxmax,NT,NP)
+        CTobs = CTf + NT
+        CEobs = CEf + NP
+        CBobs = CBf + NP
+
+        root = 'analytical'
+        vartag = '_'//root
+        
+        call GetN1mix(normarray, .true. ,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                            & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,&
+                            &n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb)
+
+    end subroutine compute_n1mix
+
+
+
+
+
+
+
+
+
+
+
+
 end module
 
 module checkproc
@@ -1310,5 +1780,4 @@ contains
   end function get_threads
 
 end module checkproc
-! Copyright (C) 2016 Lewis, Peloton      
-        
+! Copyright (C) 2016 Lewis, Peloton  
