@@ -84,7 +84,7 @@ print(bins.shape)
 Ls = np.arange(LMIN,LMAXOUT+20,20)
 n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 io.save_cols("analytic_N1_tt.txt",(Ls,n1tt))
-
+sys.exit()
 n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 #derivative wrt clphi
