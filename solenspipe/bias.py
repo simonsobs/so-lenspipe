@@ -58,7 +58,6 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
     Y = get_kmap((0,0,0))
     A = get_kmap((0,0,0))
     B = get_kmap((0,0,0))
-    return power(qa(X,Y),qb(A,B)) # !!!!
     # Sims
     rdn0 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        

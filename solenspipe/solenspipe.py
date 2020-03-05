@@ -140,8 +140,6 @@ class SOLensInterface(object):
         """
         # Convert the solenspipe convention to the Alex convention
         s_i,s_set,noise_seed = convert_seeds(seed)
-        print(s_i,s_set,noise_seed)
-        
 
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = self.alm2map(cmb_alm)
