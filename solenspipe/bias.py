@@ -115,8 +115,8 @@ def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
     ntot = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
         for j in range(2):
-            kx   = get_kmap(eX,(icov,j,i))
-            ky   = get_kmap(eY,(icov,j,i))
+            kx   = get_kmap((icov,j,i))
+            ky   = get_kmap((icov,j,i))
             mf += qe(kx,ky)
             ntot += 1.
     mftot = utils.allreduce(mf,comm) 
