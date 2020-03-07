@@ -245,7 +245,6 @@ def compute_n0_py(
     clee=None,
     clbb=None,
     cleb=None,
-    FWHM=None,
     noise_level=None,
     noisep=None,
     lmin=None,
@@ -262,7 +261,6 @@ def compute_n0_py(
         clee,
         clbb,
         cleb,
-        FWHM/60.,
         noise_level,
         noisep,
         lmin,
@@ -273,30 +271,38 @@ def compute_n0_py(
     return n0tt,n0ee,n0eb,n0te,n0tb
 
 	
-def loadn0(file_path,sample_size):
-#prepare N0 to be used by N1 Fortran
-#BB has 2990 rows
-#sample size, the nth bin where n1 is calculated, determined by L_step in Fortran. Set to 20
-    fname = file_path+"N0_analytical.txt" 
-    try:
-        return np.loadtxt(fname)
-        print("NO file present")
-    except:
-        bb=file_path+"bb.txt" 
-        Als = {}
-        with bench.show("norm"):
-            ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
-        bin=ls[2:][::sample_size]
-        TT=Als['TT'][2:][::sample_size]
-        EE=Als['EE'][2:][::sample_size]
-        EB=Als['EB'][2:][::sample_size]
-        TE=Als['TE'][2:][::sample_size]
-        TB=Als['TB'][2:][::sample_size]
-        BB=bb
-        ar=[bin,TT/bin**2,EE/bin**2,EB/bin**2,TE/bin**2,TB/bin**2,BB/bin**2]
-        y=np.transpose(ar)
-        np.savetxt(fname,y)
-        print("saved N0 in: "+fname)
+def compute_n0mix_py(
+    phifile=None,
+    lensedcmbfile=None,
+    cltt=None,
+    clee=None,
+    clbb=None,
+    cleb=None,
+    noise_level=None,
+    noisep=None,
+    lmin=None,
+    lmaxout=None,
+    lmax_TT=None,
+    lcorr_TT=None,
+    tmp_output=None):
+    """returns derivatives of kappa N0 noise with respect to the Cls"""
+    bins=np.arange(2,2992,20)
+    n0ttee,n0ttte,n0eete,n0ebtb=lensingbiases_f.compute_n0mix(
+        phifile,
+        lensedcmbfile,
+        cltt,
+        clee,
+        clbb,
+        cleb,
+        noise_level,
+        noisep,
+        lmin,
+        lmaxout,
+        lmax_TT,
+        lcorr_TT,
+        tmp_output)
+        
+    return n0ttee,n0ttte,n0eete,n0ebtb
 
 def compute_n1_py(
     phifile=None,
@@ -306,14 +312,16 @@ def compute_n1_py(
     clee=None,
     clbb=None,
     cleb=None,
-    FWHM=None,
     noise_level=None,
     noisep=None,
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
+    tmp_output=None,
+    Lstep=None,
+    Lmin_out=None
+    ):
 
     n1tt,n1ee,n1eb,n1te,n1tb=lensingbiases_f.compute_n1(
         phifile,
@@ -323,45 +331,56 @@ def compute_n1_py(
         clee,
         clbb,
         cleb,
-        FWHM/60.,
         noise_level,
         noisep,
         lmin,
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,
+        Lstep,
+        Lmin_out)
     
     return n1tt,n1ee,n1eb,n1te,n1tb  
     
-def compute_n1clphiphi_py(
+def compute_n1mix(
     phifile=None,
     normarray=None,
     lensedcmbfile=None,
-    FWHM=None,
+    cltt=None,
+    clee=None,
+    clbb=None,
+    cleb=None,
     noise_level=None,
     noisep=None,
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
+    tmp_output=None,
+    Lstep=None,
+    Lmin_out=None):
 
-    n1dtt,n1dee,n1deb,n1dte,n1dtb=lensingbiases_f.compute_n1_derivatives(
+    n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=lensingbiases_f.compute_n1mix(
         phifile,
         normarray,
         lensedcmbfile,
-        FWHM/60.,
+        cltt,
+        clee,
+        clbb,
+        cleb,
         noise_level,
         noisep,
         lmin,
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,
+        Lstep,
+        Lmin_out)
     
-    return n1dtt,n1dee,n1deb,n1dte,n1dtb #returns n1tt array
-
+    return n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb  
+    
 	
 def n1_derivatives(
     x,
@@ -369,179 +388,34 @@ def n1_derivatives(
     phifile=None,
     normarray=None,
     lensedcmbfile=None,
-    FWHM=None,
     noise_level=None,
     noisep=None,
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
+    tmp_output=None,
+    Lstep=None,
+    Lmin_out=None
+    ):
     #x= First set i.e 'TT'
     #y= Second set i.e 'EB'
     lensingbiases_f.compute_n1_derivatives(
         phifile,
         normarray,
         lensedcmbfile,
-        FWHM/60.,
         noise_level,
         noisep,
         lmin,
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,
+        Lstep,
+        Lmin_out)
     n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
     #column L refer to N(L) being differenciated.
     #row L refer to the C_L(phi) values
     #Output already in convergence kappa format. No need for L**4/4 scaling.
 
     return n1
-
-
-def n0_TT(
-    phifile=None,
-    lensedcmbfile=None,
-    FWHM=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None):
-    #x= First set i.e 'TT'
-    #y= Second set i.e 'EB'
-    lensingbiases_f.compute_n0_tt(
-        phifile,
-        lensedcmbfile,
-        FWHM/60.,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output)
-    print("saved file to")
-    print(tmp_output)
-    
-def plot_biases(bins, phiphi, MV_n1=None, N1_array=None):
-    '''
-    Quick plot for inspection
-    '''
-    tphi = lambda l: (l + 0.5)**4 / (2. * np.pi) # scaling to apply to cl_phiphi when plotting.
-    colors = lambda i: matplotlib.cm.jet(i * 60)
-
-    ## Plot lensing
-    pl.loglog(bins, phiphi, color='grey', label='Lensing')
-
-
-    ## Plot N1
-    if MV_n1 is not None:
-        pl.loglog(bins, MV_n1 * tphi(bins), color='black', lw=2, ls='--', label='N1 bias')
-    if N1_array is not None:
-        indices = ['TT','EE','EB','TE','TB','BB']
-        for i in range(len(N1_array)):
-            pl.loglog(
-                bins,
-                N1_array[i][i][:] * tphi(bins),
-                color=colors(i),
-                ls='--',
-                lw=2,
-                alpha=1,
-                label=indices[i]+indices[i])
-
-    pl.xlabel('$\ell$', fontsize=20)
-    pl.ylabel(r"$[\ell(\ell+1)]^2/(2\pi)C_\ell^{\phi^{XY} \phi^{ZW}}$", fontsize=20)
-    leg=pl.legend(loc='best', ncol=2, fontsize=12.5)
-    leg.get_frame().set_alpha(0.0)
-    pl.savefig('Biases.pdf')
-    pl.clf()
-    
-    
-def minimum_variance_n0(N0_array, N0_names, checkit=False):
-	'''
-	Compute the variance of the minimum variance estimator and the associated weights.
-	Input:
-		* N0_array: ndarray, contain the N0s to combine
-		* N0_names: ndarray of string, contain the name of the N0s to combine (['TTTT', 'EEEE', etc.])
-	Output:
-		* minimum_variance_n0: 1D array, the MV N0
-		* weights*minimum_variance_n0: ndarray, the weights for each spectrum (TT, EE, etc.)
-		* N0_names_ordered: 1D array, contain the name of the spectra (TT, EE, etc.)
-	'''
-	N0_array = np.reshape(N0_array, (len(N0_array)**2, len(N0_array[0][0])))
-	N0_names_full = ['%s%s'%(i, j) for i in N0_names for j in N0_names]
-
-	## Fill matrix
-	sub_vec = [[name, pos] for pos, name in enumerate(N0_names)]
-	dic_mat = {'%s%s'%(XY, ZW):[i, j] for XY, i in sub_vec for ZW, j in sub_vec}
-
-	## Build the inverse matrix for each ell
-	def build_inv_submatrix(vector_ordered, names_ordered, dic_mat, nsub_element):
-		mat = np.zeros((nsub_element, nsub_element))
-		for pos, name in enumerate(names_ordered):
-			mat[dic_mat[name][0]][dic_mat[name][1]] = mat[dic_mat[name][1]][dic_mat[name][0]] = vector_ordered[pos]
-		return np.linalg.pinv(mat)
-
-	inv_submat_array = np.array([
-		build_inv_submatrix(
-			vector_ordered,
-			N0_names_full,
-			dic_mat,
-			len(N0_names)) for vector_ordered in np.transpose(N0_array)])
-	inv_N0_array = np.array([ np.sum(submat) for submat in inv_submat_array ])
-	minimum_variance_n0 = 1. / inv_N0_array
-
-    
-        
-	weights = np.array([[np.sum(submat[i]) for submat in inv_submat_array] for i in range(6) ])
-	#weights = np.array([np.sum(submat[i]) for submat in inv_submat_array])
-
-	if checkit:
-		print ('Sum of weights = ', np.sum(weights * minimum_variance_n0) / len(minimum_variance_n0))
-		print ('Is sum of weights 1? ',np.sum(weights * minimum_variance_n0) / len(minimum_variance_n0) == 1.0)
-
-	return minimum_variance_n0, weights * minimum_variance_n0
-
-def minimum_variance_n1(bins, N1_array, weights_for_MV, spectra_names, bin_function=None):
-	'''
-	Takes all N1 and form the mimimum variance estimator.
-	Assumes N1 structure is coming from Biases_n1mat.f90
-	Input:
-		* N1: ndarray, contain the N1 (output of Biases_n1mat.f90)
-		* weights_for_MV: ndarray, contain the weights used for MV
-		* spectra_names: ndarray of string, contain the name of the spectra ordered
-	'''
-	## Ordering: i_TT=0,i_EE=1,i_EB=2,i_TE=3,i_TB=4, i_BB=5 (from Frotran)
-	names_N1 = ['%s%s'%(i, j) for i in spectra_names for j in spectra_names]
-
-	if bin_function is not None:
-		n1_tot = np.zeros_like(bin_centers)
-	else:
-		n1_tot = np.zeros_like(weights_for_MV[0])
-
-	for estimator_name in names_N1:
-		## Indices for arrays
-		index_x = spectra_names.index(estimator_name[0:2])
-		index_y = spectra_names.index(estimator_name[2:])
-
-		## Interpolate N1 if necessary
-		n1_not_interp = N1_array[index_x][index_y]
-		if bin_function is not None:
-			n1_interp = np.interp(bin_centers, bins, n1_not_interp)
-		else:
-			n1_interp = n1_not_interp
-
-		## Weights
-		wXY_index = spectra_names.index(estimator_name[0:2])
-		wZW_index = spectra_names.index(estimator_name[2:4])
-
-		## Update N1
-		if bin_function is not None:
-			n1_tot += bin_function(weights_for_MV[wXY_index]) * bin_function(weights_for_MV[wZW_index]) * n1_interp
-		else:
-			n1_tot += weights_for_MV[wXY_index] * weights_for_MV[wZW_index] * n1_interp
-	return n1_tot
-

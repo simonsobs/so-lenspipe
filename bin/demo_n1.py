@@ -44,13 +44,13 @@ NOISE_LEVEL=nells
 polnoise=nells_P
 
 
-FWHM=1.4
-LMIN=100
-LMAXOUT=3000
-LMAX=3000
+lmin=200
+LMAXOUT=2992
 LMAX_TT=3000
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
+Lstep=20
+Lmin_out=2
 
 lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
 cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
@@ -79,41 +79,36 @@ norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bin
 """
 Input normalisation as an array of arrays of deflection n0s.
 """
+"""
 #N1 bias calculation
 print(bins.shape)
 Ls = np.arange(LMIN,LMAXOUT+20,20)
-n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 io.save_cols("analytic_N1_tt.txt",(Ls,n1tt))
 sys.exit()
-n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-
+n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+"""
 #derivative wrt clphi
-#n1=s.n1_derivatives('TB','TB',clpp,norms,cls,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#n1=s.n1_derivatives('TB','TB',clpp,norms,cls,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+#print(n1)
+#a=s.compute_n0mix_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#a=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+Ls = np.arange(Lmin_out,LMAXOUT+Lstep,Lstep)
+a=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+#print(a)
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/n1debug.txt",a)
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/bins.txt",Ls)
 
+#b=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+#np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/n1mix.txt",b)
 
-#np.savetxt('../data/norms.txt',c)
 #cls and clpp must have same dimensions.
 
-#s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+#s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 
 
-# indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
-# n0 = np.loadtxt(os.path.join(TMP_OUTPUT, 'N0_analytical.dat')).T
-# bins = n0[0]
-# phiphi = n0[1]
-# n0_mat = np.reshape(n0[2:], (len(indices), len(indices), len(bins)))
 
-# MV_n0, weights = s.minimum_variance_n0(n0_mat, indices, checkit=False)
+#s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
-
-#s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-n1 = np.loadtxt(os.path.join(TMP_OUTPUT, 'N1_All_analytical.dat')).T
-indices = ['TT', 'EE', 'EB', 'TE', 'TB', 'BB']
-indices = ['TT']
-bins = n1[0]
-n1_mat = np.reshape(n1[1:], (len(indices), len(indices), len(bins)))
-MV_n1 = s.minimum_variance_n1(bins, n1_mat, weights, indices, bin_function=None)
-print(MV_n1.shape)
-print(bins.shape)
 
