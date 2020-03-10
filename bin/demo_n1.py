@@ -79,36 +79,18 @@ norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bin
 """
 Input normalisation as an array of arrays of deflection n0s.
 """
-"""
+
 #N1 bias calculation
 print(bins.shape)
-Ls = np.arange(LMIN,LMAXOUT+20,20)
-n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
+Ls = np.arange(Lmin_out,LMAXOUT,20)
+n1tt,n1ee,n1eb,n1te,n1tb=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
 io.save_cols("analytic_N1_tt.txt",(Ls,n1tt))
 sys.exit()
-n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-"""
-#derivative wrt clphi
-#n1=s.n1_derivatives('TB','TB',clpp,norms,cls,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-#print(n1)
-#a=s.compute_n0mix_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-#a=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-Ls = np.arange(Lmin_out,LMAXOUT+Lstep,Lstep)
-a=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-#print(a)
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/n1debug.txt",a)
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/bins.txt",Ls)
 
-#b=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-#np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/07March2020/n1mix.txt",b)
+#N1 mixed bias calculation
+n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
 
-#cls and clpp must have same dimensions.
+#n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
-#s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
-
-
-
-
-#s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 
