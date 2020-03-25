@@ -21,11 +21,11 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 
 
-def convert_seeds(seed,nsims=2000,ndiv=4):
+def convert_seeds(seed,nsims=100,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
-    nstep = nsims//ndiv
+    nstep = nsims//ndiv #changed this to access roght files
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep
         s_set = 0
@@ -168,6 +168,31 @@ class SOLensInterface(object):
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
 
+    def prepare_shear_map(self,channel,seed,lmin,lmax):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        # Convert the solenspipe convention to the Alex convention
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
+        cmb_map = self.alm2map(cmb_alm)
+        
+        noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
+        noise_map[noise_map<-1e24] = 0
+        noise_map[np.isnan(noise_map)] = 0
+
+        imap = (cmb_map + noise_map)*self.mask
+        nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
+        nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
+        
+        oalms = self.map2alm(imap)
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
+        almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
+        return almt
 
     def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
