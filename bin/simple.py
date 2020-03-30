@@ -15,8 +15,8 @@ No mask.
 """
 
 # Lensing reconstruction ell range
-lmin = 100
-lmax = 3000
+lmin = 2
+lmax = 5000
 
 polcomb = 'TT'
 

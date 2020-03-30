@@ -301,7 +301,7 @@ contains
     end subroutine WriteMatrixder
     
     subroutine getNorm(WantIntONly,sampling,doCurl,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
-                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n0tt,n0ee,n0eb,n0te,n0tb)
+                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n0tt,n0ee,n0eb,n0te,n0tb,L_min, Lstep)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Main routine to compute N0 bias.
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -309,7 +309,7 @@ contains
         integer, parameter :: I4B = 4
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
 
-        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est
+        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est,L_min, Lstep
         real(dp), intent(in) :: CPhi(lmaxmax)
         real(dp), intent(in) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
         real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
@@ -329,8 +329,8 @@ contains
         integer file_id, i,j, icurl, nPhiSample,Phi_Sample(lmaxmax)
         logical isCurl
         real(dp) N0(n_est,n_est), N0_L(n_est,n_est),dPhi_Sample(lmaxmax)
-        real(dp), intent(out) ::  n0tt(150),n0ee(150),n0eb(150),n0te(150),n0tb(150)
-        real(dp) Norms(lmaxmax,n_est)
+        
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0tt,n0ee,n0eb,n0te,n0tb
         CHARACTER(LEN=13) :: creturn
 
         call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
@@ -348,13 +348,13 @@ contains
                 open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='replace')
             end if
 
-
-            do Lix =1, nPhiSample
+            Lix=0
+            do L=L_min, lmaxout, Lstep
+                Lix=Lix+1
                 write(*,*) Lix
                 creturn = achar(13)
                 WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(Lix,kind=dp)/nPhiSample*100.,kind=I4B)
                 101     FORMAT( a , 'Progression : ',i7,' % ')
-                L = Phi_Sample(Lix)
                 Lvec(1) = L
                 LVec(2)= 0
                 N0_L=0
@@ -430,16 +430,13 @@ contains
             n0te(Lix)=N0(4,4)
             n0tb(Lix)=N0(5,5)
 
-            do i=1,n_est
-                Norms(L,i) = N0(i,i)
-            end do
+        
 
             norm = real(L*(L+1),dp)**2/twopi
             write (file_id,'(1I5, 1E16.6)',Advance='NO') L, CPhi(L)*norm
 
             call WriteMatrixLine(file_id,N0,n_est)
 
-            ! print *, L, CPhi(L)*norm, N0(i_TT,i_TT)*norm
         end do
         close(file_id)
         end do
@@ -668,7 +665,7 @@ contains
     
     
      subroutine getmixNorm(WantIntONly,sampling,doCurl,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
-                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n0ttee,n0ttte,n0eete,n0ebtb)
+                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n0ttee,n0ttte,n0eete,n0ebtb,L_min, Lstep)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Main routine to compute N0 bias.
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -676,7 +673,7 @@ contains
         integer, parameter :: I4B = 4
         real(dp), parameter :: pi =  3.1415927, twopi=2*pi
 
-        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est
+        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est,L_min, Lstep
         real(dp), intent(in) :: CPhi(lmaxmax)
         real(dp), intent(in) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
         real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
@@ -696,7 +693,7 @@ contains
         integer file_id, i,j, icurl, nPhiSample,Phi_Sample(lmaxmax)
         logical isCurl
         real(dp) N0(n_est,n_est), N0_L(n_est,n_est),dPhi_Sample(lmaxmax)
-        real(dp), intent(out) ::  n0ttee(150),n0ttte(150),n0eete(150),n0ebtb(150)
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0ttee,n0ttte,n0eete,n0ebtb
         real(dp) Norms(lmaxmax,n_est)
         CHARACTER(LEN=13) :: creturn
 
@@ -716,12 +713,12 @@ contains
             end if
 
 
-            do Lix =1, nPhiSample
-                write(*,*) Lix
+            Lix=0
+            do L=L_min, lmaxout, Lstep
+                Lix=Lix+1
                 creturn = achar(13)
                 WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(Lix,kind=dp)/nPhiSample*100.,kind=I4B)
                 101     FORMAT( a , 'Progression : ',i7,' % ')
-                L = Phi_Sample(Lix)
                 Lvec(1) = L
                 LVec(2)= 0
                 N0_L=0
@@ -1214,7 +1211,7 @@ contains
 
     
   
-    subroutine compute_n0(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,n0tt,n0ee,n0eb,n0te,n0tb)
+    subroutine compute_n0(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,n0tt,n0ee,n0eb,n0te,n0tb,L_min, Lstep)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N0 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1226,7 +1223,7 @@ contains
         ! Estimator order TT, EE, EB, TE, TB, BB
         integer(I4B), parameter :: n_est = 6
         integer, intent(in) ::  lmaxmax 
-        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
+        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT,L_min, Lstep
         character(LEN=50), intent(in) :: dir
         real, intent(in) :: lensedcmbfile(5,*)
         real(dp), intent(in) :: phifile(lmaxmax)
@@ -1242,7 +1239,7 @@ contains
         integer(I4B) :: LMin
         real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
-        real(dp), intent(out) ::  n0tt(150),n0ee(150),n0eb(150),n0te(150),n0tb(150)
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0tt,n0ee,n0eb,n0te,n0tb
  
 
         NoiseVar =  nll  !muKArcmin becomes the input array
@@ -1263,7 +1260,7 @@ contains
         vartag = '_'//root
 
         call getNorm( .false. , .false. ,.False.,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
-                            & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,n0tt,n0ee,n0eb,n0te,n0tb)
+                            & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,n0tt,n0ee,n0eb,n0te,n0tb,L_min, Lstep)
 
     end subroutine compute_n0
     
@@ -1413,7 +1410,7 @@ contains
 
 
     subroutine compute_n0mix(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,&
-    &  n0ttee,n0ttte,n0eete,n0ebtb)
+    &  n0ttee,n0ttte,n0eete,n0ebtb,L_min, Lstep)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N0 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1425,7 +1422,7 @@ contains
         ! Estimator order TT, EE, EB, TE, TB, BB
         integer(I4B), parameter :: n_est = 6
         integer, intent(in) ::  lmaxmax 
-        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT
+        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT,L_min, Lstep
         character(LEN=50), intent(in) :: dir
         real, intent(in) :: lensedcmbfile(5,*)
         real(dp), intent(in) :: phifile(lmaxmax)
@@ -1441,7 +1438,7 @@ contains
         integer(I4B) :: LMin
         real(dp),dimension(lmax), intent(in) :: nll,nlp
         real(dp),dimension(lmax):: NoiseVar, NoiseVarP
-        real(dp), intent(out) ::   n0ttee(150),n0ttte(150),n0eete(150),n0ebtb(150) 
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0ttee,n0ttte,n0eete,n0ebtb 
  
 
         NoiseVar =  nll  !muKArcmin becomes the input array
@@ -1463,7 +1460,7 @@ contains
 
         call getmixNorm( .false. , .false. ,.False.,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                             & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir, vartag,n0ttee,&
-                        & n0ttte,n0eete,n0ebtb)
+                        & n0ttte,n0eete,n0ebtb,L_min, Lstep)
 
     end subroutine compute_n0mix
 

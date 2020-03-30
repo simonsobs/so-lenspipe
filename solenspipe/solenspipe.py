@@ -276,7 +276,9 @@ def compute_n0_py(
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
+    tmp_output=None,
+    Lmin_out=None,
+    Lstep=None):
     """returns derivatives of kappa N0 noise with respect to the Cls"""
     bins=np.arange(2,2992,20)
     n0tt,n0ee,n0eb,n0te,n0tb=lensingbiases_f.compute_n0(
@@ -292,7 +294,7 @@ def compute_n0_py(
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,Lmin_out,Lstep)
     return n0tt,n0ee,n0eb,n0te,n0tb
 
 	
@@ -309,8 +311,9 @@ def compute_n0mix_py(
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
-    """returns derivatives of kappa N0 noise with respect to the Cls"""
+    tmp_output=None
+    Lmin_out=None,
+    Lstep=None):
     bins=np.arange(2,2992,20)
     n0ttee,n0ttte,n0eete,n0ebtb=lensingbiases_f.compute_n0mix(
         phifile,
@@ -325,7 +328,7 @@ def compute_n0mix_py(
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,Lmin_out,Lstep)
         
     return n0ttee,n0ttte,n0eete,n0ebtb
 

@@ -19,7 +19,7 @@ No mask.
 lmin = 100
 lmax = 3000
 
-polcomb = 'TT'
+polcomb = 'EE'
 
 # Number of sims
 nsims = 100
@@ -57,11 +57,11 @@ assert ls[0]==0
 assert len(ls) == Als[polcomb].size
 nmax = len(ls)
 
-mcn1 = bias.mcn1(0,'TT','TT',qfunc,get_kmap,comm,power,nsims,verbose=True)
+mcn1 = bias.mcn1(0,polcomb,polcomb,qfunc,get_kmap,comm,power,nsims,verbose=True)
 
-mcn1[:nmax] = mcn1[:nmax] * Als[polcomb]**2.
+mcn1[:nmax] = mcn1[:nmax] * Als[polcomb]**2.  #why not multiply by 0.25
 mcn1[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/n1_tt.txt',(ls,mcn1[:nmax]))
+io.save_cols(f'{solenspipe.opath}/n1_ee.txt',(ls,mcn1[:nmax]))
 
 
 if rank==0:
