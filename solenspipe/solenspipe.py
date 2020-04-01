@@ -76,8 +76,9 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None):
         self.mask = mask
+        self._debug = False
         if mask.ndim==1:
             self.nside = hp.npix2nside(mask.size)
             self.shape,self.wcs = enmap.fullsky_geometry(res=np.deg2rad(0.5*8192/self.nside/60.))
@@ -86,16 +87,23 @@ class SOLensInterface(object):
             self.npix = hp.nside2npix(self.nside)
             self.pmap = 4*np.pi / self.npix
         else:
-            self.shape,self.wcs = mask.shape,mask.wcs
+            self.shape,self.wcs = mask.shape[-2:],mask.wcs
             self.nside = None
             self.healpix = False
             res_arcmin = np.rad2deg(enmap.pixshape(self.shape, self.wcs)[0])*60.
             self.mlmax = int(5000 * (2.0/res_arcmin))
             self.pmap = enmap.pixsizemap(self.shape,self.wcs)
-        self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
-                                           shape=self.shape if not(self.healpix) else None,wcs=self.wcs if not(self.healpix) else None, 
-                                           apply_beam_correction=True,scanning_strategy=scanning_strategy,
-                                           fsky={'LA':fsky})    
+
+        if white_noise is None:
+            self.wnoise = None
+            self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
+                                               shape=self.shape if not(self.healpix) else None,
+                                               wcs=self.wcs if not(self.healpix) else None, 
+                                               apply_beam_correction=True,scanning_strategy=scanning_strategy,
+                                               fsky={'LA':fsky})    
+        else:
+            self.wnoise = white_noise
+            self.beam = beam_fwhm
         thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
         self.cltt = lambda x: theory.lCl('TT',x) 
@@ -131,7 +139,16 @@ class SOLensInterface(object):
 
     def get_kappa_alm(self,i):
         kalms = get_kappa_alm(i,path=config['signal_path'])
-        return maps.change_alm_lmax(kalms, self.mlmax)
+        return self.map2alm(curvedsky.alm2map(kalms,enmap.empty((1,)+self.shape,self.wcs))[0]*self.mask)
+
+    def rand_map(self,power,seed):
+        if self.healpix:
+            raise NotImplementedError
+            np.random.seed(seed)
+            return hp.synfast(power,self.nside)
+        else:
+            return enmap.rand_map((3,)+self.shape,self.wcs,power)
+            
 
     def prepare_map(self,channel,seed,lmin,lmax):
         """
@@ -144,18 +161,32 @@ class SOLensInterface(object):
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
         cmb_map = self.alm2map(cmb_alm)
         
-        noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
-        noise_map[noise_map<-1e24] = 0
-        noise_map[np.isnan(noise_map)] = 0
+        ls,nells,nells_P = self.get_noise_power(channel)
+        nseed = noise_seed+(int(channel.band),)
+        if self.wnoise is None:
+            noise_map = self.nsim.simulate(channel,seed=nseed)
+            noise_map[noise_map<-1e24] = 0
+            noise_map[np.isnan(noise_map)] = 0
+        else:
+            npower = np.zeros((3,3,ls.size))
+            npower[0,0] = nells
+            npower[1,1] = nells_P
+            npower[2,2] = nells_P
+            noise_map = self.rand_map(npower,nseed)
+            
 
         imap = (cmb_map + noise_map)*self.mask
+
+        #self._debug = True
+        if self._debug:
+            for i in range(3): io.hplot(imap[i],f'imap_{i}')
 
         
         oalms = self.map2alm(imap)
         
 
-        nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
-        nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
+        nells_T = maps.interp(ls,nells)
+        nells_P = maps.interp(ls,nells_P)
         filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
         filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
         filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
@@ -207,6 +238,50 @@ class SOLensInterface(object):
         return qe.qe_all(self.shape,self.wcs,lambda x,y: self.theory.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+
+    def get_noise_power(self,channel=None):
+        if self.wnoise is not None:
+            ls = np.arange(self.mlmax+1)
+            nells = (self.wnoise*np.pi/180./60.)**2. / maps.gauss_beam(self.beam,ls)**2.
+            nells_P = nells * 2.
+        else:
+            ls,nells = self.nsim.ell,self.nsim.noise_ell_T[ch.telescope][int(ch.band)]
+            ls,nells_P = self.nsim.ell,self.nsim.noise_ell_P[ch.telescope][int(ch.band)]
+        assert ls[0]==0
+        assert ls[1]==1
+        assert ls[2]==2
+        return ls,nells,nells_P
+    
+
+    def initialize_norm(self,ch,lmin,lmax,recalculate=False,quicklens=False,label=None):
+        lstr = "" if label is None else f"{label}_"
+        wstr = "" if self.wnoise is None else "wnoise_"
+        onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        try:
+            if recalculate: raise
+            return np.loadtxt(onormfname,unpack=True)
+        except:
+            thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
+            theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+            ls,nells,nells_P = self.get_noise_power(ch)
+            if quicklens:
+                Als = {}
+                for polcomb in ['TT','TE','EE','EB','TB']:
+                    ls,Als[polcomb] = quicklens_norm(polcomb,nells,nells_P,nells_P,theory,lmin,lmax,lmin,lmax)
+                al_mv_pol = Als['TT']*0 ; al_mv = Als['TT']*0 ; Al_te_hdv = Als['TT']*0 
+            else:
+                ells = np.arange(lmax+100)
+                uctt = theory.lCl('TT',ells)
+                ucee = theory.lCl('EE',ells)
+                ucte = theory.lCl('TE',ells)
+                ucbb = theory.lCl('BB',ells)
+                tctt = uctt + maps.interp(ls,nells)(ells)
+                tcee = ucee + maps.interp(ls,nells_P)(ells)
+                tcte = ucte 
+                tcbb = ucbb + maps.interp(ls,nells_P)(ells)
+                ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
+            io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
+            return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
         
 
 def initialize_mask(nside,smooth_deg):
@@ -222,28 +297,57 @@ def initialize_mask(nside,smooth_deg):
         return mask
 
 
-def initialize_norm(solint,ch,lmin,lmax):
-    onormfname = opath+"norm_lmin_%d_lmax_%d.txt" % (lmin,lmax)
-    try:
-        return np.loadtxt(onormfname,unpack=True)
-    except:
-        thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
-        theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-        ells = np.arange(lmax+100)
-        uctt = theory.lCl('TT',ells)
-        ucee = theory.lCl('EE',ells)
-        ucte = theory.lCl('TE',ells)
-        ucbb = theory.lCl('BB',ells)
-        ls,nells = solint.nsim.ell,solint.nsim.noise_ell_T[ch.telescope][int(ch.band)]
-        ls,nells_P = solint.nsim.ell,solint.nsim.noise_ell_P[ch.telescope][int(ch.band)]
-        tctt = uctt + maps.interp(ls,nells)(ells)
-        tcee = ucee + maps.interp(ls,nells_P)(ells)
-        tcte = ucte 
-        tcbb = ucbb + maps.interp(ls,nells_P)(ells)
-        ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
-        io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
-        return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
         
+
+def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax,Lmax=None):
+    import quicklens as ql
+    fmap = {'TT':ql.qest.lens.phi_TT,
+            'TE':ql.qest.lens.phi_TE,
+            'EE':ql.qest.lens.phi_EE,
+            'EB':ql.qest.lens.phi_EB,
+            'TB':ql.qest.lens.phi_TB}
+    rcl = {'TT':'TT',
+            'TE':'TE',
+            'EE':'EE',
+            'EB':'EE',
+            'TB':'TE'}
+    nls = {'TT': nltt,'EE': nlee,'BB': nlbb}
+    assert nltt.size > (tellmax+1)
+    assert nlee.size > (pellmax+1)
+    assert nlbb.size > (pellmax+1)
+
+    if Lmax is None: Lmax = max(tellmax,pellmax)+1
+    ls = np.arange(0,Lmax+1)
+    qest = fmap[polcomb](theory.lCl(rcl[polcomb],ls))
+
+    X,Y = polcomb
+
+    clx = theory.lCl(X+X,ls) + nls[X+X][:ls.size]
+    cly = theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
+    
+    flx        = np.zeros( Lmax+1 ); flx[2:] = 1./clx[2:]
+    fly        = np.zeros( Lmax+1 ); fly[2:] = 1./cly[2:]
+
+    if X=='T':
+        flx[ls<tellmin] = 0
+        flx[ls>tellmax] = 0
+    else:
+        flx[ls<pellmin] = 0
+        flx[ls>pellmax] = 0
+
+    if Y=='T':
+        fly[ls<tellmin] = 0
+        fly[ls>tellmax] = 0
+    else:
+        fly[ls<pellmin] = 0
+        fly[ls>pellmax] = 0
+
+    resp_fullsky = qest.fill_resp(qest, np.zeros(Lmax+1, dtype=np.complex), flx, fly)
+    nlqq_fullsky = 1 / resp_fullsky
+    if X!=Y: nlqq_fullsky = nlqq_fullsky / 2.
+
+    return ls,(ls*(ls+1.)) * nlqq_fullsky.real
+
 	
 def checkproc_py():
     '''
