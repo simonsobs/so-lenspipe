@@ -15,7 +15,7 @@ import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
 parser.add_argument("polcomb", type=str,help='Polarization combination. Possibilities include mv (all), mvpol (all pol), TT, EE, TE, EB or TB.')
-parser.add_argument("--nsims",     type=int,  default=10,help="nsims")
+parser.add_argument("--nsims",     type=int,  default=100,help="nsims")
 parser.add_argument("--nside",     type=int,  default=2048,help="nside")
 parser.add_argument("--smooth-deg",     type=float,  default=4.,help="Gaussian smoothing sigma for mask in degrees.")
 parser.add_argument("--lmin",     type=int,  default=100,help="lmin")
@@ -64,7 +64,8 @@ for task in my_tasks:
     talm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[0]
     ealm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[1]
     balm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[2]
-    rkalm = qe.filter_alms(solint.get_mv_kappa(polcomb,talm,ealm,balm),maps.interp(ls,al_mv))
+    rkalm=hp.almxfl(solint.get_mv_kappa(polcomb,talm,ealm,balm),Als[polcomb])
+    #rkalm = qe.filter_alms(solint.get_mv_kappa(polcomb,talm,ealm,balm),maps.interp(ls,al_mv))
     s.add_to_stack("mf_alm",rkalm)  #This is just an accumulator it adds rkalm to a an array known as mf_alm
 s.get_stacks()  #calculate the mean of the stack
 
@@ -80,7 +81,8 @@ if rank==0:
     ealm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[1]
     balm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[2]
     with bench.show("recon"):
-        alm = qe.filter_alms(solint.get_mv_kappa(polcomb,talm,ealm,balm),maps.interp(ls,al_mv))
+        alm = hp.almxfl(solint.get_mv_kappa(polcomb,talm,ealm,balm),Als[polcomb])
+        #alm = qe.filter_alms(solint.get_mv_kappa(polcomb,talm,ealm,balm),maps.interp(ls,al_mv))
     
 
     ekalm=alm-mf_alm
@@ -88,4 +90,4 @@ if rank==0:
     #rec-mean
     rmcls=hp.alm2cl(ekalm,ekalm)/w4
     print(rmcls)
-    np.savetxt(config['data_path']+"200hatfield_%s100_3000.txt"% polcomb,rmcls)
+    np.savetxt(config['data_path']+"200hatfield_%s100_3000t.txt"% polcomb,rmcls)
