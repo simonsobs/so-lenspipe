@@ -1,4 +1,6 @@
 from __future__ import print_function
+import matplotlib
+matplotlib.use("Agg")
 from orphics import maps,io,cosmology # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky
 import numpy as np
@@ -11,10 +13,6 @@ from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
 import os
 import glob
-import matplotlib
-matplotlib.use("Agg")
-import pylab as pl
-pl.ioff()
 
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -76,31 +74,34 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True):
         self.mask = mask
         self._debug = False
+        self.atmosphere = atmosphere
         if mask.ndim==1:
             self.nside = hp.npix2nside(mask.size)
-            self.shape,self.wcs = enmap.fullsky_geometry(res=np.deg2rad(0.5*8192/self.nside/60.))
             self.healpix = True
             self.mlmax = 2*self.nside
             self.npix = hp.nside2npix(self.nside)
             self.pmap = 4*np.pi / self.npix
+            self.px = qe.pixelization(nside=self.nside)
         else:
             self.shape,self.wcs = mask.shape[-2:],mask.wcs
             self.nside = None
             self.healpix = False
             res_arcmin = np.rad2deg(enmap.pixshape(self.shape, self.wcs)[0])*60.
-            self.mlmax = int(5000 * (2.0/res_arcmin))
+            self.mlmax = int(4000 * (2.0/res_arcmin))
             self.pmap = enmap.pixsizemap(self.shape,self.wcs)
+            self.px = qe.pixelization(shape=self.shape,wcs=self.wcs)
 
-        if white_noise is None:
+        self.disable_noise = disable_noise
+        if (white_noise is None) and not(disable_noise):
             self.wnoise = None
             self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
                                                shape=self.shape if not(self.healpix) else None,
                                                wcs=self.wcs if not(self.healpix) else None, 
-                                               apply_beam_correction=True,scanning_strategy=scanning_strategy,
-                                               fsky={'LA':fsky})    
+                                               apply_beam_correction=False,scanning_strategy=scanning_strategy,
+                                               fsky={'LA':fsky} if fsky is not None else None)    
         else:
             self.wnoise = white_noise
             self.beam = beam_fwhm
@@ -124,31 +125,51 @@ class SOLensInterface(object):
         #     self.
 
 
-    def alm2map(self,alm):
+    def alm2map(self,alm,ncomp=3):
         if self.healpix:
-            return hp.alm2map(alm,nside=self.nside)
+            hmap = hp.alm2map(alm.astype(np.complex128),nside=self.nside,verbose=False)
+            return hmap[None] if ncomp==1 else hmap
         else:
-            return curvedsky.alm2map(alm,enmap.empty((3,)+self.shape,self.wcs))
+            return curvedsky.alm2map(alm,enmap.empty((ncomp,)+self.shape,self.wcs))
         
     def map2alm(self,imap):
         if self.healpix:
-            return hp.map2alm(imap,lmax=self.mlmax)
+            return hp.map2alm(imap,lmax=self.mlmax,iter=0)
         else:
             return curvedsky.map2alm(imap,lmax=self.mlmax)
 
 
     def get_kappa_alm(self,i):
         kalms = get_kappa_alm(i,path=config['signal_path'])
-        return self.map2alm(curvedsky.alm2map(kalms,enmap.empty((1,)+self.shape,self.wcs))[0]*self.mask)
+        return self.map2alm(self.alm2map(kalms,ncomp=1)[0]*self.mask)
 
     def rand_map(self,power,seed):
         if self.healpix:
-            raise NotImplementedError
             np.random.seed(seed)
-            return hp.synfast(power,self.nside)
+            pmap = (4.*np.pi / self.npix)*((180.*60./np.pi)**2.)
+            return (self.wnoise/np.sqrt(pmap))*np.random.standard_normal((self.npix,))
+            #return hp.synfast(power,self.nside)
         else:
-            return enmap.rand_map((3,)+self.shape,self.wcs,power)
-            
+            return maps.white_noise((3,)+self.shape,self.wcs,self.wnoise,seed=seed)
+            #return enmap.rand_map((3,)+self.shape,self.wcs,power)
+
+    def get_noise_map(self,channel):
+        if not(self.disable_noise):
+            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
+            nseed = noise_seed+(int(channel.band),)
+            if self.wnoise is None:
+                noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere)
+                noise_map[np.isnan(noise_map)] = 0
+            else:
+                npower = np.zeros((3,3,ls.size))
+                npower[0,0] = nells
+                npower[1,1] = nells_P
+                npower[2,2] = nells_P
+                noise_map = self.rand_map(npower,nseed)
+        else:
+            noise_map = 0
+
+        return noise_map
 
     def prepare_map(self,channel,seed,lmin,lmax):
         """
@@ -158,24 +179,17 @@ class SOLensInterface(object):
         # Convert the solenspipe convention to the Alex convention
         s_i,s_set,noise_seed = convert_seeds(seed)
 
+        if self.beam is None:
+            self.beam = self.nsim.get_beam_fwhm(channel)
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
+        cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
         cmb_map = self.alm2map(cmb_alm)
-        
-        ls,nells,nells_P = self.get_noise_power(channel)
-        nseed = noise_seed+(int(channel.band),)
-        if self.wnoise is None:
-            noise_map = self.nsim.simulate(channel,seed=nseed)
-            noise_map[noise_map<-1e24] = 0
-            noise_map[np.isnan(noise_map)] = 0
-        else:
-            npower = np.zeros((3,3,ls.size))
-            npower[0,0] = nells
-            npower[1,1] = nells_P
-            npower[2,2] = nells_P
-            noise_map = self.rand_map(npower,nseed)
-            
 
-        imap = (cmb_map + noise_map)*self.mask
+        noise_map = self.get_noise_map(channel)
+
+        imap = (cmb_map + noise_map)
+        imap = imap - imap.mean()
+        imap = imap * self.mask
 
         #self._debug = True
         if self._debug:
@@ -183,18 +197,20 @@ class SOLensInterface(object):
 
         
         oalms = self.map2alm(imap)
-        
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        oalms[~np.isfinite(oalms)] = 0
 
-        nells_T = maps.interp(ls,nells)
-        nells_P = maps.interp(ls,nells_P)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
         filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
         filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
         
 
-        almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
-        alme = qe.filter_alms(oalms[1],filt_e,lmin=lmin,lmax=lmax)
-        almb = qe.filter_alms(oalms[2],filt_b,lmin=lmin,lmax=lmax)
+        almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
+        alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
+        almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
 
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
@@ -235,18 +251,28 @@ class SOLensInterface(object):
 
     def qfunc(self,alpha,X,Y):
         polcomb = alpha
-        return qe.qe_all(self.shape,self.wcs,lambda x,y: self.theory.lCl(x,y),
+        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
-    def get_noise_power(self,channel=None):
-        if self.wnoise is not None:
+    def get_noise_power(self,channel=None,beam_deconv=False):
+        if (self.wnoise is not None) or self.disable_noise:
             ls = np.arange(self.mlmax+1)
-            nells = (self.wnoise*np.pi/180./60.)**2. / maps.gauss_beam(self.beam,ls)**2.
-            nells_P = nells * 2.
+            if not(self.disable_noise):
+                bfact = maps.gauss_beam(self.beam,ls)**2. if beam_deconv else np.ones(ls.size)
+                nells = (self.wnoise*np.pi/180./60.)**2. / bfact
+                nells_P = nells * 2.
+            else:
+                nells = ls*0
+                nells_P = ls*0
         else:
-            ls,nells = self.nsim.ell,self.nsim.noise_ell_T[ch.telescope][int(ch.band)]
-            ls,nells_P = self.nsim.ell,self.nsim.noise_ell_P[ch.telescope][int(ch.band)]
+            if self.atmosphere:
+                ls,nells = self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)]
+                ls,nells_P = self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)]
+            else:
+                ls = np.arange(self.mlmax+1)
+                nells = ls*0 + self.nsim.get_white_noise_power(channel) 
+                nells_P = 2 * nells
         assert ls[0]==0
         assert ls[1]==1
         assert ls[2]==2
@@ -263,7 +289,7 @@ class SOLensInterface(object):
         except:
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-            ls,nells,nells_P = self.get_noise_power(ch)
+            ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
             if quicklens:
                 Als = {}
                 for polcomb in ['TT','TE','EE','EB','TB']:
