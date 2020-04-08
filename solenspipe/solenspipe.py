@@ -97,6 +97,7 @@ class SOLensInterface(object):
         self.disable_noise = disable_noise
         if (white_noise is None) and not(disable_noise):
             self.wnoise = None
+            self.beam = None
             self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
                                                shape=self.shape if not(self.healpix) else None,
                                                wcs=self.wcs if not(self.healpix) else None, 
