@@ -154,7 +154,7 @@ class SOLensInterface(object):
             return maps.white_noise((3,)+self.shape,self.wcs,self.wnoise,seed=seed)
             #return enmap.rand_map((3,)+self.shape,self.wcs,power)
 
-    def get_noise_map(self,channel):
+    def get_noise_map(self,noise_seed,channel):
         if not(self.disable_noise):
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
             nseed = noise_seed+(int(channel.band),)
@@ -186,7 +186,7 @@ class SOLensInterface(object):
         cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
         cmb_map = self.alm2map(cmb_alm)
 
-        noise_map = self.get_noise_map(channel)
+        noise_map = self.get_noise_map(noise_seed,channel)
 
         imap = (cmb_map + noise_map)
         imap = imap - imap.mean()
