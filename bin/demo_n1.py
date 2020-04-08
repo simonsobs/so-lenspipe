@@ -7,7 +7,7 @@ import healpy as hp
 from enlib import bench
 from mapsims import noise,SOChannel
 from falafel import qe
-from solenspipe import initialize_mask, initialize_norm, SOLensInterface,get_kappa_alm
+from solenspipe import initialize_mask, SOLensInterface,get_kappa_alm
 import solenspipe as s
 import argparse
 # Parse command line
@@ -30,7 +30,10 @@ mask = initialize_mask(nside,smooth_deg) #solenspipe code that creates the mask
 solint = SOLensInterface(mask)
 thloc = "../data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-
+nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3001]
+nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:3001]
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noiseTT.txt",nells)
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noiseEE.txt",nells_P)
 
 # norm dict
 Als = {}
@@ -38,8 +41,7 @@ with bench.show("norm"):
     ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
 Als['mv'] = al_mv
 Als['mvpol'] = al_mv_pol
-nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3000]
-nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:3000]
+
 #noisetheory=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noisetheory.txt")
 #julnoise=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/julnoise.txt")
 NOISE_LEVEL=nells

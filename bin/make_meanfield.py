@@ -73,8 +73,7 @@ if rank==0:
     mf_alm = s.stacks['mf_alm']
     
     hp.write_alm(config['data_path']+"meanfield_alm_%s.fits" % polcomb,mf_alm,overwrite=True)
-    shape,wcs = enmap.band_geometry(np.deg2rad((-70,30)),res=np.deg2rad(0.5*8192/512/60.))
-    omap = cs.alm2map(mf_alm, enmap.empty(shape,wcs))
+ 
     #io.hplot(omap,config['data_path']+"meanfield_%s" % polcomb)
 
     talm  = solint.get_kmap(ch,(0,0,0),lmin,lmax,filtered=True)[0]
