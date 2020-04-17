@@ -191,6 +191,7 @@ class SOLensInterface(object):
         noise_map = self.get_noise_map(noise_seed,channel)
         noise_map[1 : ]*= np.sqrt(2.)
   
+
         imap = (cmb_map + noise_map)
         imap = imap - imap.mean()  #what does this do?
         imap = imap * self.mask
