@@ -91,11 +91,11 @@ class SOLensInterface(object):
             self.shape,self.wcs = mask.shape[-2:],mask.wcs
             self.nside = None
             self.healpix = False
+            #self.beam = None
             res_arcmin = np.rad2deg(enmap.pixshape(self.shape, self.wcs)[0])*60.
             self.mlmax = int(4000 * (2.0/res_arcmin))
             self.pmap = enmap.pixsizemap(self.shape,self.wcs)
             self.px = qe.pixelization(shape=self.shape,wcs=self.wcs)
-
         self.disable_noise = disable_noise
         if (white_noise is None) and not(disable_noise):
             self.wnoise = None
@@ -150,7 +150,7 @@ class SOLensInterface(object):
         if self.healpix:
             np.random.seed(seed)
             pmap = (4.*np.pi / self.npix)*((180.*60./np.pi)**2.)
-            return (self.wnoise/np.sqrt(pmap))*np.random.standard_normal((self.npix,))
+            return (self.wnoise/np.sqrt(pmap))*np.random.standard_normal((3,self.npix,))
             #return hp.synfast(power,self.nside)
         else:
             return maps.white_noise((3,)+self.shape,self.wcs,self.wnoise,seed=seed)
@@ -158,8 +158,10 @@ class SOLensInterface(object):
 
     def get_noise_map(self,noise_seed,channel):
         if not(self.disable_noise):
+            #s_i,s_set,noise_seed = convert_seeds(seed)
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
             nseed = noise_seed+(int(channel.band),)
+            
             if self.wnoise is None:
                 noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere)
                 noise_map[np.isnan(noise_map)] = 0
@@ -194,19 +196,26 @@ class SOLensInterface(object):
 
         cmb_map = self.get_beamed_signal(channel,s_i,s_set)
         noise_map = self.get_noise_map(noise_seed,channel)
+        noise_map[1 : ]*= np.sqrt(2.)
+  
 
         imap = (cmb_map + noise_map)
-        imap = imap - imap.mean()
+        imap = imap - imap.mean()  #what does this do?
         imap = imap * self.mask
-
+    
         #self._debug = True
         if self._debug:
             for i in range(3): io.hplot(imap[i],f'imap_{i}')
 
         
         oalms = self.map2alm(imap)
+        #hp.fitsfunc.write_alm("/global/homes/j/jia_qu/cmblensplus/example/cmblens/selm.fits", oalms[1])
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
+        clte = hp.alm2cl(oalms[0],oalms[1])
+        ecl = hp.alm2cl(oalms[1])
+        np.savetxt("/global/homes/j/jia_qu/cmblensplus/example/cmblens/scltemap.txt",clte)
+        np.savetxt("/global/homes/j/jia_qu/cmblensplus/example/cmblens/scleemap.txt",ecl)
 
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
@@ -214,7 +223,7 @@ class SOLensInterface(object):
         filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
         filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
         filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
-        
+
 
         almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
         alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
@@ -297,12 +306,13 @@ class SOLensInterface(object):
         except:
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+
             ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
             if quicklens:
                 Als = {}
                 for polcomb in ['TT','TE','EE','EB','TB']:
                     ls,Als[polcomb] = quicklens_norm(polcomb,nells,nells_P,nells_P,theory,lmin,lmax,lmin,lmax)
-                al_mv_pol = Als['TT']*0 ; al_mv = Als['TT']*0 ; Al_te_hdv = Als['TT']*0 
+                al_mv_pol = 1/(1/Als['EB']+1/Als['TB']); al_mv = 1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']) ; Al_te_hdv = Als['TT']*0 
             else:
                 ells = np.arange(lmax+100)
                 uctt = theory.lCl('TT',ells)
@@ -414,7 +424,9 @@ def compute_n0_py(
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
+    tmp_output=None,
+    Lmin_out=None,
+    Lstep=None):
     """returns derivatives of kappa N0 noise with respect to the Cls"""
     bins=np.arange(2,2992,20)
     n0tt,n0ee,n0eb,n0te,n0tb=lensingbiases_f.compute_n0(
@@ -430,7 +442,7 @@ def compute_n0_py(
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,Lmin_out,Lstep)
     return n0tt,n0ee,n0eb,n0te,n0tb
 
 	
@@ -447,8 +459,9 @@ def compute_n0mix_py(
     lmaxout=None,
     lmax_TT=None,
     lcorr_TT=None,
-    tmp_output=None):
-    """returns derivatives of kappa N0 noise with respect to the Cls"""
+    tmp_output=None,
+    Lmin_out=None,
+    Lstep=None):
     bins=np.arange(2,2992,20)
     n0ttee,n0ttte,n0eete,n0ebtb=lensingbiases_f.compute_n0mix(
         phifile,
@@ -463,7 +476,7 @@ def compute_n0mix_py(
         lmaxout,
         lmax_TT,
         lcorr_TT,
-        tmp_output)
+        tmp_output,Lmin_out,Lstep)
         
     return n0ttee,n0ttte,n0eete,n0ebtb
 
@@ -582,3 +595,28 @@ def n1_derivatives(
     #Output already in convergence kappa format. No need for L**4/4 scaling.
 
     return n1
+    
+def covmatrix(N0,CMB_noise,polcomb):
+    """load N0 and CMB_noise as array of arrays ['TT','TE','EE','TB','EB']"""
+    #on diagonal elements only
+    field_weight={}
+    for i,pol in enumerate(polcomb):
+        field_weight[pol]=1/(N0[i]+CMB_noise[i])
+        
+    weights={}
+    weights['TTTT']=field_weight['TT']**2
+    weights['TETE']=field_weight['TE']**2
+    weights['EEEE']=field_weight['EE']**2
+    weights['TBTB']=field_weight['TB']**2
+    weights['EBEB']=field_weight['EB']**2
+    weights['TTTE']=field_weight['TT']*field_weight['TE']
+    weights['TTEE']=field_weight['TT']*field_weight['EE']
+    weights['TTTB']=field_weight['TT']*field_weight['TB']
+    weights['TTEB']=field_weight['TT']*field_weight['EB']
+    weights['TEEE']=field_weight['EE']*field_weight['TE']
+    weights['TETB']=field_weight['TE']*field_weight['TB']
+    weights['TEEB']=field_weight['EB']*field_weight['TE']
+    weights['EETB']=field_weight['EE']*field_weight['TB']
+    weights['EEEB']=field_weight['EE']*field_weight['EB']
+    weights['TBEB']=field_weight['TB']*field_weight['EB']
+    return weights

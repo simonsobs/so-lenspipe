@@ -62,6 +62,7 @@ rdn0 = bias.rdn0(icov=0,alpha="TT",beta="TT",qfunc=qfunc,get_kmap=get_kmap,comm=
 
 rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 rdn0[nmax:] = 0
+io.save_cols(f'{solenspipe.opath}/rdn0_tt.txt',(ls,rdn0[:nmax]))
 
 
 if rank==0:

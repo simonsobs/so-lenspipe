@@ -26,7 +26,6 @@ import os,sys
 import healpy as hp
 from enlib import bench
 from mapsims import noise,SOChannel
-from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe
 from solenspipe import initialize_mask, initialize_norm, SOLensInterface,get_kappa_alm
 import solenspipe as s
@@ -37,7 +36,7 @@ parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
 parser.add_argument("polcomb", type=str,help='Polarization combination. Possibilities include mv (all), mvpol (all pol), TT, EE, TE, EB or TB.')
 parser.add_argument("--nside",     type=int,  default=2048,help="nside")
 parser.add_argument("--smooth-deg",     type=float,  default=4.,help="Gaussian smoothing sigma for mask in degrees.")
-parser.add_argument("--lmin",     type=int,  default=300,help="lmin")
+parser.add_argument("--lmin",     type=int,  default=100,help="lmin")
 parser.add_argument("--lmax",     type=int,  default=3000,help="lmax")
 parser.add_argument("--freq",     type=int,  default=145,help="channel freq")
 args = parser.parse_args()
@@ -77,46 +76,25 @@ wfilt[ls>500] = 0
 wfilt[~np.isfinite(wfilt)] = 0
 
 
-#calculate N1
-s.loadn0(config['data_path'],20) #laod N0 file used for N1 calculation
-nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:2990] #Prepare noise levels for temperature
-nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:2990] #Prepare noise levels for polarization
-NOISE_LEVEL=nells
-polnoise=nells_P
-phi='../data/cosmo2017_10K_acc3_lenspotentialCls.dat'
-lensed='../data/cosmo2017_10K_acc3_lensedCls.dat'
-FWHM=1.4
-LMIN=2
-LMAXOUT=2990
-LMAX=2990
-LMAX_TT=2990
-TMP_OUTPUT=config['data_path']
-LCORR_TT=0
-bins, n1_mat, indices = s.compute_n1_py(phi,lensed,FWHM,NOISE_LEVEL,polnoise,LMIN,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT)
 
 
-indices = ['TT','EE','EB','TE','TB']
-dict_int={'TT':0,'EE':1,'EB':2,'TE':3,'TB':4}
-i=dict_int[polcomb]
-N1=n1_mat[i][i][:]*bins**4*0.25
-#save the N0 used
-N0=Als[polcomb][::20]*bins**2*0.25
+
+
 
 # Filtered alms
-talm  = solint.get_kmap(ch,"T",(0,0,0),lmin,lmax,filtered=True)
-ealm  = solint.get_kmap(ch,"E",(0,0,0),lmin,lmax,filtered=True)
-balm  = solint.get_kmap(ch,"B",(0,0,0),lmin,lmax,filtered=True)
+seed = (0,0,0)
+t_alm,e_alm,b_alm = solint.get_kmap(ch,seed,lmin,lmax,filtered=True)
 
 # Reconstruction
 with bench.show("recon"):
-    rkalm = hp.almxfl(solint.get_mv_kappa(polcomb,talm,ealm,balm)[0],al_mv)
+    rkalm = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ls,Als[polcomb]))
 hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_map.fits",hp.alm2map(rkalm,nside),overwrite=True)
 hp.write_map(config['data_path']+"mbs_sim_v0.1.0_mv_lensing_mask.fits",mask,overwrite=True)
 
 # Filtered reconstruction
 fkalm = hp.almxfl(rkalm,wfilt)
 frmap = hp.alm2map(fkalm,nside=256)
-
+rmap=hp.alm2map(rkalm,nside=256)
 # Input kappa
 # TODO: Does this really need to be masked?
 ikalm = maps.change_alm_lmax(hp.map2alm(hp.alm2map(get_kappa_alm(0).astype(np.complex128),nside=solint.nside)*solint.mask),2*solint.nside)
@@ -136,7 +114,6 @@ pl.add(ells,clkk,ls="-",lw=3,label='theory input')
 pl.add(ells,xcls,alpha=0.4,label='input x recon')
 pl.add(ells,icls,alpha=0.4,label='input x input')
 clkk=clkk[:2989:20]
-pl.add(bins,clkk+N1+N0,alpha=0.5,label='clkk+N1+N0')
 pl.add(ells,rcls,alpha=0.4,label='rec x rec')
 pl.add(ls,nls,ls="--",label='theory noise per mode')
 pl._ax.set_xlim(20,4000)
@@ -147,22 +124,24 @@ pl.done(config['data_path']+"xcls_%s.png" % polcomb)
 fikalm = hp.almxfl(ikalm,wfilt)
 fimap = hp.alm2map(fikalm,nside=256)
 
+
+
 # Resampled mask
 dmask = hp.ud_grade(mask,nside_out=256)
 dmask[dmask<0] = 0
 
 
 # Mollview plots
-io.mollview(frmap*dmask,config['data_path']+"wrmap.png",xsize=1600,lim=8e-6)
-io.mollview(fimap*dmask,config['data_path']+"wimap.png",xsize=1600,lim=8e-6)
+io.mollview(frmap*dmask,config['data_path']+"wrmap1.png",xsize=1600,lim=8e-6)
+io.mollview(fimap*dmask,config['data_path']+"wimap1.png",xsize=1600,lim=8e-6)
 
 # CAR plots
 shape,wcs = enmap.band_geometry(np.deg2rad((-70,30)),res=np.deg2rad(0.5*8192/512/60.))
 omask = reproject.enmap_from_healpix(dmask, shape, wcs,rot=None)
 omap = cs.alm2map(fkalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,config['data_path']+"cwrmap",grid=True,ticks=20,color='gray')
+io.hplot(omap*omask,config['data_path']+"cwrmap1",grid=True,ticks=20,color='gray')
 omap = cs.alm2map(fikalm, enmap.empty(shape,wcs))
-io.hplot(omap*omask,config['data_path']+"cwimap",grid=True,ticks=20,color='gray')
+io.hplot(omap*omask,config['data_path']+"cwimap1",grid=True,ticks=20,color='gray')
 
 
 
