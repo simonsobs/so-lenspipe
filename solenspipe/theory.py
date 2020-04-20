@@ -60,14 +60,6 @@ where S is the O(m^2) split estimator, but with the quadratic estimator Q(X,Y) f
 to X and l2 to Y. The subscripts like "data_theory" tell us whether to use realized data or theory for variables
 of l1 and l2, e.g "data_theory" means use data for l1 variables and theory for l2 variables.
 
-5. Very approximate theory RDN0 for the coadd
-D_1({\ell_1},{\ell_2}) = C^{XU}_data_{\ell_1} C^{YV}_data_{\ell_2} 
-D_2({\ell_1},{\ell_2}) = C^{XV}_data_{\ell_1} C^{YU}_data_{\ell_2} 
-
-6. Very approximate theory RDN0 for the coadd
-D_1({\ell_1},{\ell_2}) = S_XUYV_data_data(l1,l2)
-D_2({\ell_1},{\ell_2}) = S_XVYU_data_data(l1,l2)
-
 """
 
 def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm,gradt=False,cross_fields=None):
@@ -123,13 +115,19 @@ def N0_split_theory():
                                                 estimator_type,XY,UV,kmask_t,
                                                 AlXY=AlXY,AlUV=AlUV,kmask=kmask)
 
-def RDN0_approx_coadd():
+def RDN0_approx_coadd(shape,wcs,theory,estimator,XY,UV,kmask_t,AlXY=None,AlUV=None,kmask=None):
+    """
+    dict should have
+    dC_T_T, etc.
+    tC_T_T, etc.
+    uC_T_T, etc.
+    """
 
     Dexpr1 = tCXU_data_l1*tCYV_theory_l2 + tCXU_theory_l1*tCYV_data_l2 - tCXU_theory_l1*tCYV_theory_l2
-    Dexpr2 = tCad_l1*tCbc_l2
+    Dexpr2 = tCXV_data_l1*tCYU_theory_l2 + tCXV_theory_l1*tCYU_data_l2 - tCXV_theory_l1*tCYU_theory_l2
 
-    generic_cross_integral(shape,wcs,feed_dict,alpha_XY,beta_XY,Falpha,Fbeta,Fbeta_rev,Dexpr1,Dexpr2,
-                           xmask=xmask,ymask=ymask,
+    return 0.25 * Aalpha * Abeta * generic_cross_integral(shape,wcs,feed_dict,XY,UV,Falpha,Fbeta,Fbeta_rev,Dexpr1,Dexpr2,
+                           xmask=,kmask_t,ymask=kmask_t,
                            field_names_alpha=field_names_alpha,field_names_beta=field_names_beta,groups=groups)
 
 

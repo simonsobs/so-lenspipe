@@ -74,7 +74,9 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50):
+
+        self.rolloff_ell = rolloff_ell
         self.mask = mask
         self._debug = False
         self.atmosphere = atmosphere
@@ -102,7 +104,7 @@ class SOLensInterface(object):
                                                shape=self.shape if not(self.healpix) else None,
                                                wcs=self.wcs if not(self.healpix) else None, 
                                                apply_beam_correction=False,scanning_strategy=scanning_strategy,
-                                               fsky={'LA':fsky} if fsky is not None else None)    
+                                               fsky={'LA':fsky} if fsky is not None else None,rolloff_ell=rolloff_ell)    
         else:
             self.wnoise = white_noise
             self.beam = beam_fwhm
@@ -172,6 +174,15 @@ class SOLensInterface(object):
 
         return noise_map
 
+
+    def get_beamed_signal(self,channel,s_i,s_set):
+        if self.beam is None:
+            self.beam = self.nsim.get_beam_fwhm(channel)
+        cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
+        cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
+        cmb_map = self.alm2map(cmb_alm)
+        return cmb_map
+
     def prepare_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -180,12 +191,8 @@ class SOLensInterface(object):
         # Convert the solenspipe convention to the Alex convention
         s_i,s_set,noise_seed = convert_seeds(seed)
 
-        if self.beam is None:
-            self.beam = self.nsim.get_beam_fwhm(channel)
-        cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-        cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
-        cmb_map = self.alm2map(cmb_alm)
 
+        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
         noise_map = self.get_noise_map(noise_seed,channel)
 
         imap = (cmb_map + noise_map)
