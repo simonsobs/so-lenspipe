@@ -74,7 +74,7 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=200):
 
         self.rolloff_ell = rolloff_ell
         self.mask = mask
