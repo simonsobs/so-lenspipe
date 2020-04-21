@@ -10,40 +10,17 @@ from falafel import qe
 from solenspipe import initialize_mask, SOLensInterface,get_kappa_alm
 import solenspipe as s
 import argparse
-# Parse command line
-parser = argparse.ArgumentParser(description='Demo lensing pipeline.')
-parser.add_argument("--nside",     type=int,  default=2048,help="nside")
-parser.add_argument("--smooth-deg",     type=float,  default=4.,help="Gaussian smoothing sigma for mask in degrees.")
-parser.add_argument("--lmin",     type=int,  default=100,help="lmin")
-parser.add_argument("--lmax",     type=int,  default=3000,help="lmax")
-parser.add_argument("--freq",     type=int,  default=145,help="channel freq")
-args = parser.parse_args()
 
-nside = args.nside
-smooth_deg = args.smooth_deg
-ch = SOChannel('LA',args.freq)
-lmin = args.lmin
-lmax = args.lmax
 
 config = io.config_from_yaml("../input/config.yml")
-mask = initialize_mask(nside,smooth_deg) #solenspipe code that creates the mask
-solint = SOLensInterface(mask)
-thloc = "../data/" + config['theory_root']
-theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-nells=solint.nsim.noise_ell_T[ch.telescope][int(ch.band)][0:3001]
-nells_P =solint.nsim.noise_ell_P[ch.telescope][int(ch.band)][0:3001]
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noiseTT.txt",nells)
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noiseEE.txt",nells_P)
 
-# norm dict
-Als = {}
-with bench.show("norm"):
-    ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = initialize_norm(solint,ch,lmin,lmax)
-Als['mv'] = al_mv
-Als['mvpol'] = al_mv_pol
-
-#noisetheory=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/noisetheory.txt")
-#julnoise=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/julnoise.txt")
+#load noise nells
+beam=7.0
+wnoise=30
+ell=np.arange(0,3000)
+bfact = maps.gauss_beam(beam,ell)**2.
+nells = (wnoise*np.pi/180/60)**2./(np.ones(len(ell))*bfact)
+nells_P=2*nells
 NOISE_LEVEL=nells
 polnoise=nells_P
 
@@ -70,6 +47,7 @@ clee=cls[2]
 clbb=cls[3]
 clte=cls[4]
 
+#load the N0s
 norms=np.loadtxt(config['data_path']+"norm_lmin_300_lmax_3000.txt")
 bins=norms[2:,0]
 ntt=norms[2:,1]
@@ -81,7 +59,7 @@ nbb=np.ones(len(ntb))
 norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bins**2],[nbb]])
 
 """
-Input normalisation as an array of arrays of deflection n0s.
+Input normalisation as an array of arrays of lensing potential phi n0s.
 """
 """
 #N1 bias calculation
@@ -92,11 +70,11 @@ io.save_cols("analytic_N1_tt.txt",(Ls,n1tt))
 sys.exit()
 """
 #N1 mixed bias calculation
-#n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)#s.compute_n0mix_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=s.compute_n1mix(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)#s.compute_n0mix_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
 
-n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out, Lstep)
+#n0tt,n0ee,n0eb,n0te,n0tb=s.compute_n0_py(clpp,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out, Lstep)
 #a=s.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/bin/11March2020/n0test.txt",n0ee)
+np.savetxt(config['data_path']+"n1.txt",a)
 #s.n1_derivatives('TT','TT',clpp,norms,cls,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
 
 

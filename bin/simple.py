@@ -62,9 +62,9 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 deg = 2
 afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
-mask = enmap.read_map(afname)[0]
+#mask = enmap.read_map(afname)[0]
 
-if rank==0: io.plot_img(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
+#if rank==0: io.plot_img(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
 
 # Initialize the lens simulation interface
 solint = solenspipe.SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)
