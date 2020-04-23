@@ -253,3 +253,31 @@ def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
     return ( m**4. * C_phixA_phixB- 4. * m**2. * sum_CphiixA_phiixB + \
                4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
 
+
+def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm):
+    modlmap = enmap.modlmap(shape,wcs)
+    feed_dict = {}
+    feed_dict['uC_T_T'] = theory.lCl('TT',modlmap)
+    feed_dict['uC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['uC_E_E'] = theory.lCl('EE',modlmap)
+    feed_dict['tC_T_T'] = theory.lCl('TT',modlmap) + (noise_t * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['tC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['tC_E_E'] = theory.lCl('EE',modlmap) + (noise_p * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['tC_B_B'] = theory.lCl('BB',modlmap) + (noise_p * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['cC_T_T'] = theory.lCl('TT',modlmap)
+    feed_dict['cC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['cC_E_E'] = theory.lCl('EE',modlmap)
+    feed_dict['cC_B_B'] = theory.lCl('BB',modlmap)
+    return feed_dict
+
+
+def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,xmask,ymask,kmask,AXY,AUV,split_estimator=False):
+    feed_dict = get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm)
+    feed_dict['dC_T_T'] = powdict['TT']
+    feed_dict['dC_T_E'] = powdict['TE']
+    feed_dict['dC_E_E'] = powdict['EE']
+    feed_dict['dC_B_B'] = powdict['BB']
+    return symlens.RDN0_analytic(shape,wcs,feed_dict,estimator,XY,estimator,UV,
+                                 Aalpha=AXY,Abeta=AUV,xmask=xmask,ymask=ymask,kmask=kmask,
+                                 field_names_alpha=None,field_names_beta=None,skip_filter_field_names=False,
+                                 split_estimator=split_estimator)
