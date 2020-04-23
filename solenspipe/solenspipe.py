@@ -9,8 +9,6 @@ import healpy as hp
 from enlib import bench
 from mapsims import noise,Channel,SOStandalonePrecomputedCMB
 from falafel import qe
-from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
-from solenspipe._lensing_biases import checkproc as checkproc_f
 import os
 import glob
 
@@ -74,7 +72,7 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=200):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50):
 
         self.rolloff_ell = rolloff_ell
         self.mask = mask
@@ -411,191 +409,7 @@ def checkproc_py():
         print ('export OMP_NUM_THREADS=n')
         print ('###################################')
 
-def compute_n0_py(
-    phifile=None,
-    lensedcmbfile=None,
-    cltt=None,
-    clee=None,
-    clbb=None,
-    cleb=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lmin_out=None,
-    Lstep=None):
-    """returns derivatives of kappa N0 noise with respect to the Cls"""
-    bins=np.arange(2,2992,20)
-    n0tt,n0ee,n0eb,n0te,n0tb=lensingbiases_f.compute_n0(
-        phifile,
-        lensedcmbfile,
-        cltt,
-        clee,
-        clbb,
-        cleb,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,Lmin_out,Lstep)
-    return n0tt,n0ee,n0eb,n0te,n0tb
 
-	
-def compute_n0mix_py(
-    phifile=None,
-    lensedcmbfile=None,
-    cltt=None,
-    clee=None,
-    clbb=None,
-    cleb=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lmin_out=None,
-    Lstep=None):
-    bins=np.arange(2,2992,20)
-    n0ttee,n0ttte,n0eete,n0ebtb=lensingbiases_f.compute_n0mix(
-        phifile,
-        lensedcmbfile,
-        cltt,
-        clee,
-        clbb,
-        cleb,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,Lmin_out,Lstep)
-        
-    return n0ttee,n0ttte,n0eete,n0ebtb
-
-def compute_n1_py(
-    phifile=None,
-    normarray=None,
-    lensedcmbfile=None,
-    cltt=None,
-    clee=None,
-    clbb=None,
-    cleb=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lstep=None,
-    Lmin_out=None
-    ):
-
-    n1tt,n1ee,n1eb,n1te,n1tb=lensingbiases_f.compute_n1(
-        phifile,
-        normarray,
-        lensedcmbfile,
-        cltt,
-        clee,
-        clbb,
-        cleb,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,
-        Lstep,
-        Lmin_out)
-    
-    return n1tt,n1ee,n1eb,n1te,n1tb  
-    
-def compute_n1mix(
-    phifile=None,
-    normarray=None,
-    lensedcmbfile=None,
-    cltt=None,
-    clee=None,
-    clbb=None,
-    cleb=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lstep=None,
-    Lmin_out=None):
-
-    n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=lensingbiases_f.compute_n1mix(
-        phifile,
-        normarray,
-        lensedcmbfile,
-        cltt,
-        clee,
-        clbb,
-        cleb,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,
-        Lstep,
-        Lmin_out)
-    
-    return n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb  
-    
-	
-def n1_derivatives(
-    x,
-    y,
-    phifile=None,
-    normarray=None,
-    lensedcmbfile=None,
-    noise_level=None,
-    noisep=None,
-    lmin=None,
-    lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lstep=None,
-    Lmin_out=None
-    ):
-    #x= First set i.e 'TT'
-    #y= Second set i.e 'EB'
-    lensingbiases_f.compute_n1_derivatives(
-        phifile,
-        normarray,
-        lensedcmbfile,
-        noise_level,
-        noisep,
-        lmin,
-        lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,
-        Lstep,
-        Lmin_out)
-    n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
-    #column L refer to N(L) being differenciated.
-    #row L refer to the C_L(phi) values
-    #Output already in convergence kappa format. No need for L**4/4 scaling.
-
-    return n1
-    
 def covmatrix(N0,CMB_noise,polcomb):
     """load N0 and CMB_noise as array of arrays ['TT','TE','EE','TB','EB']"""
     #on diagonal elements only
