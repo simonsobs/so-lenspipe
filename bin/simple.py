@@ -28,6 +28,8 @@ parser.add_argument("--use-cached-norm", action='store_true',help='Use  cached n
 parser.add_argument("--wnoise",     type=float,  default=None,help="Override white noise.")
 parser.add_argument("--beam",     type=float,  default=None,help="Override beam.")
 parser.add_argument("--disable-noise", action='store_true',help='Disable noise.')
+parser.add_argument("--healpix", action='store_true',help='Use healpix.')
+parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 args = parser.parse_args()
@@ -55,16 +57,25 @@ comm,rank,my_tasks = mpi.distribute(nsims)
 
 isostr = "isotropic_" if args.isotropic else ""
 
-# CAR resolution is decided based on lmax
-res = np.deg2rad(2.0 *(3000/lmax) /60.)
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
-deg = 2
-afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
-mask = enmap.read_map(afname)[0]
+if args.healpix:
+    mask = np.ones((hp.nside2npix(2048),)) if args.no_mask else solenspipe.initialize_mask(2048,4.0)
+else:
+    if args.no_mask:
+        # CAR resolution is decided based on lmax
+        res = np.deg2rad(2.0 *(3000/lmax) /60.)
+        shape,wcs = enmap.fullsky_geometry(res=res)
+        mask = enmap.ones(shape,wcs)
+    else:
+        deg = 2
+        afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
+        mask = enmap.read_map(afname) 
 
-if rank==0: io.plot_img(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
+if rank==0: 
+    if mask.ndim==2: io.plot_img(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
+    elif mask.ndim==1: io.mollview(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
 
 # Initialize the lens simulation interface
 solint = solenspipe.SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)

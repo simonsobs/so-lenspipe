@@ -163,7 +163,7 @@ class SOLensInterface(object):
             nseed = noise_seed+(int(channel.band),)
             
             if self.wnoise is None:
-                noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere)
+                noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere,mask_value=np.nan)
                 noise_map[np.isnan(noise_map)] = 0
             else:
                 npower = np.zeros((3,3,ls.size))
@@ -185,6 +185,12 @@ class SOLensInterface(object):
         cmb_map = self.alm2map(cmb_alm)
         return cmb_map
 
+    def plot(self,imap,name,**kwargs):
+        if self.healpix:
+            io.mollview(imap,f'{name}.png',**kwargs)
+        else:
+            self.hplot(imap,name,**kwargs)
+
     def prepare_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -196,26 +202,18 @@ class SOLensInterface(object):
 
         cmb_map = self.get_beamed_signal(channel,s_i,s_set)
         noise_map = self.get_noise_map(noise_seed,channel)
-        noise_map[1 : ]*= np.sqrt(2.)
-  
 
         imap = (cmb_map + noise_map)
-        imap = imap - imap.mean()  #what does this do?
         imap = imap * self.mask
     
-        #self._debug = True
         if self._debug:
-            for i in range(3): io.hplot(imap[i],f'imap_{i}')
+            for i in range(3): self.plot(imap[i],f'imap_{i}')
+            for i in range(3): self.plot(noise_map[i],f'nmap_{i}',lim=300)
 
         
         oalms = self.map2alm(imap)
-        #hp.fitsfunc.write_alm("/global/homes/j/jia_qu/cmblensplus/example/cmblens/selm.fits", oalms[1])
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
-        clte = hp.alm2cl(oalms[0],oalms[1])
-        ecl = hp.alm2cl(oalms[1])
-        np.savetxt("/global/homes/j/jia_qu/cmblensplus/example/cmblens/scltemap.txt",clte)
-        np.savetxt("/global/homes/j/jia_qu/cmblensplus/example/cmblens/scleemap.txt",ecl)
 
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
