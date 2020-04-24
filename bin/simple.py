@@ -60,6 +60,7 @@ isostr = "isotropic_" if args.isotropic else ""
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+
 if args.healpix:
     mask = np.ones((hp.nside2npix(2048),)) if args.no_mask else solenspipe.initialize_mask(2048,4.0)
 else:
@@ -73,12 +74,12 @@ else:
         afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
         mask = enmap.read_map(afname) 
 
-if rank==0: 
-    if mask.ndim==2: io.plot_img(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
-    elif mask.ndim==1: io.mollview(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask.png')
 
 # Initialize the lens simulation interface
 solint = solenspipe.SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)
+
+if rank==0: solint.plot(mask,f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}mask')
+
       
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)

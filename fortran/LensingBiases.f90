@@ -1000,6 +1000,7 @@ contains
     end subroutine GetN1General
     
 
+
     !
     subroutine GetN1MatrixGeneral(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,Lstep,L_min)
@@ -1200,7 +1201,7 @@ contains
           do est2=est1,n_est
             outtag = 'N1_'//estnames(est1)//estnames(est2)
             !  call WriteMatrix(outtag, matrix(:,:,est1,est2),n_est)
-            call WriteMatrix(outtag, vartag,dir, matrix(:,:,est1,est2),lmin_filter, lmaxout, &
+            call WriteMatrix(outtag, vartag,dir, matrix(:,:,est1,est2),L_min, lmaxout, &
             & lmaxmax,Lstep,nPhiSample,Phi_Sample)
           end do
         end do
