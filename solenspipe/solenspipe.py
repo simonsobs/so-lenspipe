@@ -1,13 +1,14 @@
 from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
-from orphics import maps,io,cosmology # msyriac/orphics ; pip install -e . --user
+from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky
 import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
 from mapsims import noise,Channel,SOStandalonePrecomputedCMB
+import mapsims
 from falafel import qe
 import os
 import glob
@@ -16,6 +17,62 @@ import glob
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
+def initialize_args(args):
+    # Lensing reconstruction ell range
+    lmin = args.lmin
+    lmax = args.lmax
+    use_cached_norm = args.use_cached_norm
+    quicklens = not(args.flat_sky_norm)
+
+    disable_noise = args.disable_noise
+    debug_cmb = args.debug
+
+    wnoise = args.wnoise
+    beam = args.beam
+    atmosphere = not(args.no_atmosphere)
+
+    polcomb = args.polcomb
+
+    # Number of sims
+    nsims = args.nsims
+    sindex = args.sindex
+    comm,rank,my_tasks = mpi.distribute(nsims)
+
+    isostr = "isotropic_" if args.isotropic else ""
+
+
+    config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+    opath = config['data_path']
+
+    if args.healpix:
+        mask = np.ones((hp.nside2npix(2048),)) if args.no_mask else initialize_mask(2048,4.0)
+    else:
+        if args.no_mask:
+            # CAR resolution is decided based on lmax
+            res = np.deg2rad(2.0 *(3000/lmax) /60.)
+            shape,wcs = enmap.fullsky_geometry(res=res)
+            mask = enmap.ones(shape,wcs)
+        else:
+            deg = 2
+            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
+            mask = enmap.read_map(afname) 
+
+
+    # Initialize the lens simulation interface
+    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)
+    if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
+    
+    # Choose the frequency channel
+    channel = mapsims.SOChannel("LA", 145)
+
+    # norm dict
+    Als = {}
+    ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,label=args.label)
+    Als['mv'] = al_mv
+    Als['mvpol'] = al_mv_pol
+    al_mv = Als[polcomb]
+    Nl = al_mv * ils*(ils+1.) / 4.
+    return solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
 def convert_seeds(seed,nsims=100,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
@@ -187,7 +244,7 @@ class SOLensInterface(object):
         if self.healpix:
             io.mollview(imap,f'{name}.png',**kwargs)
         else:
-            self.hplot(imap,name,**kwargs)
+            io.hplot(imap,name,**kwargs)
 
     def prepare_map(self,channel,seed,lmin,lmax):
         """
