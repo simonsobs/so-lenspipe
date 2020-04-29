@@ -41,13 +41,22 @@ elif set==2 or set==3:
 =================
 """
     
-def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
+def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,include_meanfield=True,include_gauss=True,multisim=False):
     """
-    RDN0 for alpha=XY cross beta=AB
-    qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
 
     e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+
+    By default, include_meanfield=True, this corrects for both the data and sim mean-field, so no map-level
+    subtraction of mean-field is required. However, you typically want
+    the mean-field to be more converged, so you could run it separately with higher nsims
+    (setting include_gauss=False), and then do a different run with include_meanfield=False, include_gauss=True
+    with lower number of nsims.
+
+    multisim=True can be used with include_meanfield=False to obtain the Sherwin et. al. 1611.09753
+    Eq 7 calculation (which does not correct for the data mean-field).
     """
     eX,eY = alpha
     eA,eB = beta
@@ -65,12 +74,18 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
         Ys  = get_kmap((icov,0,i))
         As  = get_kmap((icov,0,i))
         Bs  = get_kmap((icov,0,i))
-        Ysp = get_kmap((icov,1,i))
-        Asp = get_kmap((icov,1,i))
-        Bsp = get_kmap((icov,1,i))
-        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-            + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+        if include_gauss:
+            rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                   + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+        if include_meanfield:
+            rdn0 += power(qa(Xs,Ys),qb(A,B)) + power(qa(X,Y),qb(As,Bs))
+        if multisim:
+            Ysp = get_kmap((icov,1,i))
+            Asp = get_kmap((icov,1,i))
+            Bsp = get_kmap((icov,1,i))
+            rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+        else:
+            rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
@@ -254,10 +269,12 @@ def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
                4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
 
 
-def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm):
+def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm,gtfunc=None):
+    from pixell import enmap
+    import symlens
     modlmap = enmap.modlmap(shape,wcs)
     feed_dict = {}
-    feed_dict['uC_T_T'] = theory.lCl('TT',modlmap)
+    feed_dict['uC_T_T'] = theory.lCl('TT',modlmap) if (gtfunc is None) else gtfunc(modlmap)
     feed_dict['uC_T_E'] = theory.lCl('TE',modlmap)
     feed_dict['uC_E_E'] = theory.lCl('EE',modlmap)
     feed_dict['tC_T_T'] = theory.lCl('TT',modlmap) + (noise_t * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
@@ -271,8 +288,10 @@ def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm):
     return feed_dict
 
 
-def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,xmask,ymask,kmask,AXY,AUV,split_estimator=False):
-    feed_dict = get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm)
+def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
+                  xmask,ymask,kmask,AXY,AUV,split_estimator=False,gtfunc=None):
+    import symlens
+    feed_dict = get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm,gtfunc=gtfunc)
     feed_dict['dC_T_T'] = powdict['TT']
     feed_dict['dC_T_E'] = powdict['TE']
     feed_dict['dC_E_E'] = powdict['EE']

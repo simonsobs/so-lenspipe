@@ -5,17 +5,8 @@ import numpy as np
 import os,sys
 import healpy as hp
 
-def galactic_mask(shape,wcs,nside,theta1,theta2):
-    npix = hp.nside2npix(nside)
-    orig = np.ones(npix)
-    orig[hp.query_strip(nside,theta1,theta2)] = 0
-    return reproject.ivar_hp_to_cyl(orig, shape, wcs, rot=True,do_mask=False,extensive=False)
+from orphics.maps import galactic_mask, north_galactic_mask, south_galactic_mask
 
-def north_galactic_mask(shape,wcs,nside):
-    return galactic_mask(shape,wcs,nside,0,np.deg2rad(90))
-
-def south_galactic_mask(shape,wcs,nside):
-    return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180))
 
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")

@@ -55,7 +55,7 @@ def initialize_args(args):
         else:
             deg = 2
             afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
-            mask = enmap.read_map(afname) 
+            mask = enmap.read_map(afname)[0]
 
 
     # Initialize the lens simulation interface
@@ -396,7 +396,8 @@ def initialize_mask(nside,smooth_deg):
 
         
 
-def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax,Lmax=None):
+def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax,Lmax=None,
+                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
     import quicklens as ql
     fmap = {'TT':ql.qest.lens.phi_TT,
             'TE':ql.qest.lens.phi_TE,
@@ -439,11 +440,27 @@ def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax
         fly[ls<pellmin] = 0
         fly[ls>pellmax] = 0
 
-    resp_fullsky = qest.fill_resp(qest, np.zeros(Lmax+1, dtype=np.complex), flx, fly)
-    nlqq_fullsky = 1 / resp_fullsky
-    if X!=Y: nlqq_fullsky = nlqq_fullsky / 2.
 
-    return ls,(ls*(ls+1.)) * nlqq_fullsky.real
+    if flatsky:
+        nx         = flatsky_nx  # number of pixels for flat-sky calc.
+        dx         = flatsky_dx_arcmin/60./180.*np.pi # pixel width in radians.
+        pix        = ql.maps.pix(nx,dx)
+        clxy = theory.lCl(X+Y,ls)
+        resp = qest.fill_resp(qest, ql.maps.cfft(nx, dx), flx, fly)
+    else:
+        resp = qest.fill_resp(qest, np.zeros(Lmax+1, dtype=np.complex), flx, fly)
+    nlqq = 1 / resp
+
+    if X!=Y: nlqq = nlqq / 2.
+
+    if flatsky:
+        t          = lambda l: (l*(l+1.))
+        bcl = nlqq.get_ml(flatsky_bin_edges, t=t)
+        ls = bcl.ls
+        return ls,bcl.specs['cl']
+    else:
+        ret = nlqq.real
+        return ls,(ls*(ls+1.)) * ret
 
 	
 def checkproc_py():
