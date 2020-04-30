@@ -22,7 +22,7 @@ parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
 parser.add_argument("--isotropic", action='store_true',help='Isotropic sims.')
 parser.add_argument("--no-atmosphere", action='store_true',help='Disable atmospheric noise.')
-parser.add_argument("--use-cached-norm", action='store_false',help='Use  cached norm.')
+parser.add_argument("--use-cached-norm", action='store_true',help='Use  cached norm.')
 parser.add_argument("--wnoise",     type=float,  default=None,help="Override white noise.")
 parser.add_argument("--beam",     type=float,  default=None,help="Override beam.")
 parser.add_argument("--disable-noise", action='store_true',help='Disable noise.')

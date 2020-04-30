@@ -41,7 +41,9 @@ elif set==2 or set==3:
 =================
 """
     
-def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,include_meanfield=True,include_gauss=True,multisim=False):
+def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+         include_meanfield=False,include_gauss=True,multisim=True,
+         qxy=None,qab=None):
     """
     Anisotropic MC-RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction 
@@ -67,6 +69,9 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,include_meanfield=True,
     Y = get_kmap((0,0,0))
     A = get_kmap((0,0,0))
     B = get_kmap((0,0,0))
+    if include_meanfield: 
+        qxy = qa(X,Y) if qxy is None else qxy
+        qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
@@ -78,7 +83,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,include_meanfield=True,
             rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
                    + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
         if include_meanfield:
-            rdn0 += power(qa(Xs,Ys),qb(A,B)) + power(qa(X,Y),qb(As,Bs))
+            rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
         if multisim:
             Ysp = get_kmap((icov,1,i))
             Asp = get_kmap((icov,1,i))

@@ -12,7 +12,7 @@ import mapsims
 from falafel import qe
 import os
 import glob
-
+import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
@@ -263,8 +263,7 @@ class SOLensInterface(object):
     
         if self._debug:
             for i in range(3): self.plot(imap[i],f'imap_{i}')
-            for i in range(3): self.plot(noise_map[i],f'nmap_{i}',lim=300)
-
+            for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
         
         oalms = self.map2alm(imap)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
@@ -354,9 +353,10 @@ class SOLensInterface(object):
         wstr = "" if self.wnoise is None else "wnoise_"
         onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
         try:
-            if recalculate: raise
+            assert not(recalculate), "Recalculation of norm requested."
             return np.loadtxt(onormfname,unpack=True)
         except:
+            print(traceback.format_exc())
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
