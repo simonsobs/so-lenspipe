@@ -17,6 +17,21 @@ import traceback
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
+
+def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
+    if healpix:
+        mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
+    else:
+        if no_mask:
+            # CAR resolution is decided based on lmax
+            res = np.deg2rad(2.0 *(3000/lmax) /60.)
+            shape,wcs = enmap.fullsky_geometry(res=res)
+            mask = enmap.ones(shape,wcs)
+        else:
+            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
+            mask = enmap.read_map(afname)[0]
+    return mask
+
 def initialize_args(args):
     # Lensing reconstruction ell range
     lmin = args.lmin
@@ -44,19 +59,7 @@ def initialize_args(args):
     config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
     opath = config['data_path']
 
-    if args.healpix:
-        mask = np.ones((hp.nside2npix(2048),)) if args.no_mask else initialize_mask(2048,4.0)
-    else:
-        if args.no_mask:
-            # CAR resolution is decided based on lmax
-            res = np.deg2rad(2.0 *(3000/lmax) /60.)
-            shape,wcs = enmap.fullsky_geometry(res=res)
-            mask = enmap.ones(shape,wcs)
-        else:
-            deg = 2
-            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{deg:.1f}_deg.fits'
-            mask = enmap.read_map(afname)[0]
-
+    mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
     # Initialize the lens simulation interface
     solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)
