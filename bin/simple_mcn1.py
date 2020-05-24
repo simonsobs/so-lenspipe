@@ -16,7 +16,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
-parser.add_argument("-N", "--nsims",     type=int,  default=10,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Declination band.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -33,7 +33,8 @@ parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky no
 args = parser.parse_args()
 
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
-      
+car = "healpix_" if args.healpix else "car_"
+    
 
 w4 = solint.wfactor(4)
 get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
@@ -49,19 +50,18 @@ if not(args.no_mask):
     
 
 mcn1[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/n1_{polcomb}.txt',(ls,mcn1[:nmax]))
+io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{car}.txt',(ils,mcn1[:nmax]))
 
 
 if rank==0:
     theory = cosmology.default_theory()
     
-    ls = np.arange(rdn0.size)
+    ls = np.arange(mcn1.size)
     pl = io.Plotter('CL')
     pl.add(ls,mcn1)
     pl.add(ls,theory.gCl('kk',ls))
     #pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(f'{solenspipe.opath}/recon_mcn1.png')
-                                                                                   
+    pl.done(f'{solenspipe.opath}/recon_mcn1.png')                       
 
                                                                                 
 

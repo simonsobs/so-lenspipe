@@ -1,6 +1,8 @@
 import numpy as np
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
+from enlib import bench
+
 """
 Extremely general functions for lensing power spectrum bias subtraction
 ======================================================================
@@ -69,32 +71,29 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     # Sims
     rdn0 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):  
-        #load alms by _cov and nsim
-        print(i)
-        #X = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{0}_{i}.fits",hdu=(1,2,3))
-        X=get_kmap((icov,0,i))
-        Y = X
-        A = X
-        B = X
-        j=i+nsims
-        Xs=get_kmap((icov,0,j))
-        #Xs  = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{0}_{j}.fits",hdu=(1,2,3))
-        Ys  = Xs
-        As  = Xs
-        Bs  = Xs
-        if include_meanfield:
-            rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
-        if include_main:
-            rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-                    + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
-        if not(gaussian_sims):
-            Ysp=get_kmap((icov,1,i))
-            #Ysp = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{1}_{i}.fits",hdu=(1,2,3))
-            Asp=Ysp
-            Bsp = Ysp
-            rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
-        else:
-            rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+            X=get_kmap((icov,0,i))
+            Y = get_kmap((icov,0,i))
+            A = get_kmap((icov,0,i))
+            B = get_kmap((icov,0,i))
+            j=i+nsims
+            Xs=get_kmap((icov,0,j))
+            #Xs  = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{0}_{j}.fits",hdu=(1,2,3))
+            Ys  = get_kmap((icov,0,j))
+            As  = get_kmap((icov,0,j))
+            Bs  = get_kmap((icov,0,j))
+            if include_meanfield:
+                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+            if include_main:
+                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+            if not(gaussian_sims):
+                Ysp=get_kmap((icov,1,i))
+                #Ysp = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{1}_{i}.fits",hdu=(1,2,3))
+                Asp=get_kmap((icov,1,i))
+                Bsp = get_kmap((icov,1,i))
+                rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+            else:
+                rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
