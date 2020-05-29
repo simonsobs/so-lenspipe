@@ -1,5 +1,6 @@
 import numpy as np
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
+from enlib import bench
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
