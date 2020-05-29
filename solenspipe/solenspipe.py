@@ -17,7 +17,6 @@ import traceback
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
         mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
@@ -53,7 +52,7 @@ def initialize_args(args):
     sindex = args.sindex
     comm,rank,my_tasks = mpi.distribute(nsims)
 
-    isostr = "isotropic_" if args.isotropic else ""
+    isostr = "isotropic_" if args.isotropic else "classical"
 
 
     config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -298,7 +297,8 @@ class SOLensInterface(object):
 
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
-
+        icov,s_set,i=seed
+        #hp.fitsfunc.write_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{s_set}_{i}.fits",self.cache[seed][:3],overwrite=True)
     def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -307,18 +307,23 @@ class SOLensInterface(object):
         # Convert the solenspipe convention to the Alex convention
         s_i,s_set,noise_seed = convert_seeds(seed)
 
-        cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-        cmb_map = self.alm2map(cmb_alm)
-        
-        noise_map = self.nsim.simulate(channel,seed=noise_seed+(int(channel.band),))
-        noise_map[noise_map<-1e24] = 0
-        noise_map[np.isnan(noise_map)] = 0
+
+        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+        noise_map = self.get_noise_map(noise_seed,channel)
+
+        imap = (cmb_map + noise_map)
+        imap = imap * self.mask
 
         imap = (cmb_map + noise_map)*self.mask
-        nells_T = maps.interp(self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)])
-        nells_P = maps.interp(self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)])
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         
         oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        oalms[~np.isfinite(oalms)] = 0
+
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
         filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
@@ -497,27 +502,3 @@ def checkproc_py():
         print ('###################################')
 
 
-def covmatrix(N0,CMB_noise,polcomb):
-    """load N0 and CMB_noise as array of arrays ['TT','TE','EE','TB','EB']"""
-    #on diagonal elements only
-    field_weight={}
-    for i,pol in enumerate(polcomb):
-        field_weight[pol]=1/(N0[i]+CMB_noise[i])
-        
-    weights={}
-    weights['TTTT']=field_weight['TT']**2
-    weights['TETE']=field_weight['TE']**2
-    weights['EEEE']=field_weight['EE']**2
-    weights['TBTB']=field_weight['TB']**2
-    weights['EBEB']=field_weight['EB']**2
-    weights['TTTE']=field_weight['TT']*field_weight['TE']
-    weights['TTEE']=field_weight['TT']*field_weight['EE']
-    weights['TTTB']=field_weight['TT']*field_weight['TB']
-    weights['TTEB']=field_weight['TT']*field_weight['EB']
-    weights['TEEE']=field_weight['EE']*field_weight['TE']
-    weights['TETB']=field_weight['TE']*field_weight['TB']
-    weights['TEEB']=field_weight['EB']*field_weight['TE']
-    weights['EETB']=field_weight['EE']*field_weight['TB']
-    weights['EEEB']=field_weight['EE']*field_weight['EB']
-    weights['TBEB']=field_weight['TB']*field_weight['EB']
-    return weights

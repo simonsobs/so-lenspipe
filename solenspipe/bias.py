@@ -1,5 +1,6 @@
 import numpy as np
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
+import healpy as hp
 from enlib import bench
 
 """
@@ -42,6 +43,7 @@ elif set==2 or set==3:
 =================
 """
     
+    
 def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
          qxy=None,qab=None):
@@ -60,29 +62,32 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
-    # Data
-    X = get_kmap((0,0,0))
-    Y = get_kmap((0,0,0))
-    A = get_kmap((0,0,0))
-    B = get_kmap((0,0,0))
+    # Data #need to shuffle this so that make all sims same as data
+    #for loop here as well, change the data
+
     if include_meanfield: 
         qxy = qa(X,Y) if qxy is None else qxy
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):        
-        Xs  = get_kmap((icov,0,i))
-        Ys  = get_kmap((icov,0,i))
-        As  = get_kmap((icov,0,i))
-        Bs  = get_kmap((icov,0,i))
-        if include_meanfield:
-            rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
-        if include_main:
-            rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-                    + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+    for i in range(comm.rank+1, nsims+1, comm.size):  
+            X=get_kmap((icov,0,i))
+            Y = get_kmap((icov,0,i))
+            A = get_kmap((icov,0,i))
+            B = get_kmap((icov,0,i))
+            j=i+nsims
+            Xs=get_kmap((icov,0,j))
+            Ys  = get_kmap((icov,0,j))
+            As  = get_kmap((icov,0,j))
+            Bs  = get_kmap((icov,0,j))
+            if include_meanfield:
+                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+            if include_main:
+                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
             if not(gaussian_sims):
-                Ysp = get_kmap((icov,1,i))
-                Asp = get_kmap((icov,1,i))
+                Ysp=get_kmap((icov,1,i))
+                Asp=get_kmap((icov,1,i))
                 Bsp = get_kmap((icov,1,i))
                 rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
             else:

@@ -10,13 +10,12 @@ from enlib import bench
 import healpy as hp
 from solenspipe import bias
 
-
 import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
-parser.add_argument("-N", "--nsims",     type=int,  default=10,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Declination band.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -34,6 +33,7 @@ parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky no
 args = parser.parse_args()
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
       
+car = "healpix_" if args.healpix else "car_"
 
 w4 = solint.wfactor(4)
 get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
@@ -49,7 +49,7 @@ rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}.txt',(ils,rdn0[:nmax]))
+io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_new.txt',(ils,rdn0[:nmax]))
 
 
 if rank==0:
