@@ -1,4 +1,7 @@
 import numpy as np
+from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
+import healpy as hp
+from enlib import bench
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
@@ -40,37 +43,55 @@ elif set==2 or set==3:
 =================
 """
     
-def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims):
+    
+def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+         include_meanfield=False,gaussian_sims=False,include_main=True,
+         qxy=None,qab=None):
     """
-    RDN0 for alpha=XY cross beta=AB
-    qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
 
     e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+
+
+    gaussian_sims=True indicates we don't need to involve pairs
+    of sims because the sims are not lensed.
     """
     eX,eY = alpha
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
-    # Data
-    X = get_kmap(eX,(0,0,0))
-    Y = get_kmap(eY,(0,0,0))
-    A = get_kmap(eA,(0,0,0))
-    B = get_kmap(eB,(0,0,0))
+    # Data #need to shuffle this so that make all sims same as data
+    #for loop here as well, change the data
+
+    if include_meanfield: 
+        qxy = qa(X,Y) if qxy is None else qxy
+        qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):        
-        Xs  = get_kmap(eX,(icov,0,i))
-        Ys  = get_kmap(eY,(icov,0,i))
-        As  = get_kmap(eA,(icov,0,i))
-        Bs  = get_kmap(eB,(icov,0,i))
-        Ysp = get_kmap(eY,(icov,1,i))
-        Asp = get_kmap(eA,(icov,1,i))
-        Bsp = get_kmap(eB,(icov,1,i))
-        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-            + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
-    from pixell import utils
+    for i in range(comm.rank+1, nsims+1, comm.size):  
+            X=get_kmap((icov,0,i))
+            Y = get_kmap((icov,0,i))
+            A = get_kmap((icov,0,i))
+            B = get_kmap((icov,0,i))
+            j=i+nsims
+            Xs=get_kmap((icov,0,j))
+            Ys  = get_kmap((icov,0,j))
+            As  = get_kmap((icov,0,j))
+            Bs  = get_kmap((icov,0,j))
+            if include_meanfield:
+                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+            if include_main:
+                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+            if not(gaussian_sims):
+                Ysp=get_kmap((icov,1,i))
+                Asp=get_kmap((icov,1,i))
+                Bsp = get_kmap((icov,1,i))
+                rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+            else:
+                rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
@@ -83,26 +104,25 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
-    mcn1 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):
+    n1 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
-        Xsk   = get_kmap(eX,(icov,2,i))
-        Yskp  = get_kmap(eY,(icov,3,i))
-        Ask   = get_kmap(eA,(icov,2,i))
-        Bskp  = get_kmap(eB,(icov,3,i))
-        Askp  = get_kmap(eA,(icov,3,i))
-        Bsk   = get_kmap(eB,(icov,2,i))
-        Xs    = get_kmap(eX,(icov,0,i))
-        Ysp   = get_kmap(eY,(icov,1,i))
-        As    = get_kmap(eA,(icov,0,i))
-        Bsp   = get_kmap(eB,(icov,1,i))
-        Asp   = get_kmap(eA,(icov,1,i))
-        Bs    = get_kmap(eB,(icov,0,i))
-        mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)) # FIXME: make mpi aware
-    from pixell import utils
-    totmcn1 = utils.allreduce(mcn1,comm) 
-    return mcn1/nsims
+        Xsk   = get_kmap((icov,2,i))
+        Yskp  = get_kmap((icov,3,i))
+        Ask   = get_kmap((icov,2,i))
+        Bskp  = get_kmap((icov,3,i))
+        Askp  = get_kmap((icov,3,i))
+        Bsk   = get_kmap((icov,2,i))
+        Xs    = get_kmap((icov,0,i))
+        Ysp   = get_kmap((icov,1,i))
+        As    = get_kmap((icov,0,i))
+        Bsp   = get_kmap((icov,1,i))
+        Asp   = get_kmap((icov,1,i))
+        Bs    = get_kmap((icov,0,i))
+        term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+        n1 = n1 + term
+    return  utils.allreduce(n1,comm) /nsims
 
 
 def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
@@ -116,11 +136,10 @@ def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
     ntot = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
         for j in range(2):
-            kx   = get_kmap(eX,(icov,j,i))
-            ky   = get_kmap(eY,(icov,j,i))
+            kx   = get_kmap((icov,j,i))
+            ky   = get_kmap((icov,j,i))
             mf += qe(kx,ky)
             ntot += 1.
-    from pixell import utils
     mftot = utils.allreduce(mf,comm) 
     totnot = utils.allreduce(ntot,comm) 
     return mftot/totntot
@@ -164,10 +183,11 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
 
 
     """
+    from sympy import Symbol
     X,Y,U,V = xyuv
     XY = X + Y
     UV = U + V
-    m = float(_validate_splits(xyuv,xsplits,ysplits,usplits,vsplits))
+    m = _validate_splits(xyuv,xsplits,ysplits,usplits,vsplits)
     xs = np.asanyarray(xsplits)
     ys = np.asanyarray(ysplits)
     us = np.asanyarray(usplits)
@@ -177,28 +197,122 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
     yc = cfunc(ys)
     uc = cfunc(us)
     vc = cfunc(vs)
-    phi_A_coadd = qe_func(XY,xc,yc)
-    phi_B_coadd = qe_func(UV,uc,vc)
-    sum_phiiiA = 0.
-    sum_phiiiB = 0.
-    sum_CphiixA_phiixB = 0.
-    sum_CphiijA_phiijB = 0.
+    feed_dict = {'xc': xc, 'yc': yc, 'uc': uc,'vc': vc}
     for i in range(int(m)):
-        phiiA = (qe_func(XY,xs[i],yc)+qe_func(XY,xc,ys[i]))/2.
-        phiiB = (qe_func(UV,us[i],vc)+qe_func(UV,uc,vs[i]))/2.
-        phiiiA = qe_func(XY,xs[i],ys[i]) # = (qe_func(XY,xs[i],ys[i])+qe_func(XY,xs[i],ys[i]))/2.
-        phiiiB = qe_func(UV,us[i],vs[i]) # = (qe_func(UV,us[i],vs[i])+qe_func(UV,us[i],vs[i]))/2.
+        feed_dict[f'xs{i}'] = xs[i]
+        feed_dict[f'ys{i}'] = ys[i]
+        feed_dict[f'us{i}'] = us[i]
+        feed_dict[f'vs{i}'] = vs[i]
+    return cross_estimator_symbolic(xyuv,m,qe_func,pow_func,eval_feed_dict=feed_dict)
+
+def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
+                             coadd_name_func = lambda x: f'{x}c',field_names=['x','y','u','v'],
+                             split_name_func = lambda x,y: f'{x}s{y}',eval_feed_dict=None):
+
+    """
+    Returns a symbolic expression for the cross-only estimate of the raw 4-point 
+    lensing power spectrum given splits of the data and functions for 
+    lensing reconstrucion and power spectrum calculation.
+
+    xyuv: string containing 4-letter lensing power spectrum combination. e.g. TTTT,
+    TTTE, EEEB, etc. These are used in function calls with qe_func.
+
+    nsplits: number of splits
+
+    qe_func: function for lensing reconstruction. This function should either operate
+    on symbols and return symbols, or alternatively, eval_feed_dict can be provided
+    which will be used to evaluate the symbols prior to application of the function.
+
+    pow_func: function for power spectrum estimation. This function should either operate
+    on symbols and return symbols, or alternatively, eval_feed_dict can be provided
+    which will be used to evaluate the symbols prior to application of the function.
+
+    """
+    from sympy import Symbol
+    X,Y,U,V = xyuv
+    XY = X + Y
+    UV = U + V
+    m = nsplits
+    c = coadd_name_func
+    f = field_names
+    s = split_name_func
+    e = lambda inp: eval_feed_dict[inp.name] if eval_feed_dict is not None else inp
+    xc = e(Symbol(f'{c(f[0])}'))
+    yc = e(Symbol(f'{c(f[1])}'))
+    uc = e(Symbol(f'{c(f[2])}'))
+    vc = e(Symbol(f'{c(f[3])}'))
+    xs = [None]*m ; ys = [None]*m ; us = [None]*m ; vs = [None]*m
+    for i in range(m):
+        xs[i] = e(Symbol(f'{s(f[0],i)}'))
+        ys[i] = e(Symbol(f'{s(f[1],i)}'))
+        us[i] = e(Symbol(f'{s(f[2],i)}'))
+        vs[i] = e(Symbol(f'{s(f[3],i)}'))
+
+    phi_A_coadd = qe_func(XY,xc,yc,term=0)
+    phi_B_coadd = qe_func(UV,uc,vc,term=1)
+    sum_phiiiA = 0
+    sum_phiiiB = 0
+    sum_CphiixA_phiixB = 0
+    sum_CphiijA_phiijB = 0
+    for i in range(int(m)):
+        phiiA = (qe_func(XY,xs[i],yc,term=0)+qe_func(XY,xc,ys[i],term=0))/2.
+        phiiB = (qe_func(UV,us[i],vc,term=1)+qe_func(UV,uc,vs[i],term=1))/2.
+        phiiiA = qe_func(XY,xs[i],ys[i],term=0) # = (qe_func(XY,xs[i],ys[i])+qe_func(XY,xs[i],ys[i]))/2.
+        phiiiB = qe_func(UV,us[i],vs[i],term=1) # = (qe_func(UV,us[i],vs[i])+qe_func(UV,us[i],vs[i]))/2.
         sum_phiiiA += phiiiA
         sum_phiiiB += phiiiB
         phiixA = phiiA - phiiiA/m
         phiixB = phiiB - phiiiB/m
         sum_CphiixA_phiixB += pow_func(phiixA,phiixB)
         for j in range(i+1,int(m)):
-            phiijA = (qe_func(XY,xs[i],ys[j])+qe_func(XY,xs[j],ys[i]))/2.
-            phiijB = (qe_func(UV,us[i],vs[j])+qe_func(UV,us[j],vs[i]))/2.
+            phiijA = (qe_func(XY,xs[i],ys[j],term=0)+qe_func(XY,xs[j],ys[i],term=0))/2.
+            phiijB = (qe_func(UV,us[i],vs[j],term=1)+qe_func(UV,us[j],vs[i],term=1))/2.
             sum_CphiijA_phiijB += pow_func(phiijA,phiijB)
     phixA = phi_A_coadd - sum_phiiiA / m**2
     phixB = phi_B_coadd - sum_phiiiB / m**2
     C_phixA_phixB = pow_func(phixA,phixB)
     return ( m**4. * C_phixA_phixB- 4. * m**2. * sum_CphiixA_phiixB + \
                4. *sum_CphiijA_phiijB ) /m / (m-1.) / (m-2.) / (m-3.)
+
+
+def get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm,gtfunc=None,split_estimator=False,noise_scale=1.):
+    from pixell import enmap
+    import symlens
+    modlmap = enmap.modlmap(shape,wcs)
+    feed_dict = {}
+    feed_dict['uC_T_T'] = theory.lCl('TT',modlmap) if (gtfunc is None) else gtfunc(modlmap)
+    feed_dict['uC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['uC_E_E'] = theory.lCl('EE',modlmap)
+
+    feed_dict['tC_T_T'] = theory.lCl('TT',modlmap) + (noise_t * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['tC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['tC_E_E'] = theory.lCl('EE',modlmap) + (noise_p * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['tC_B_B'] = theory.lCl('BB',modlmap) + (noise_p * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+
+    if split_estimator:
+        ntt = 0
+        npp = 0
+    else:
+        ntt = noise_scale*(noise_t * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+        npp = noise_scale*(noise_p * np.pi/180./60.)**2. / symlens.gauss_beam(modlmap,fwhm)**2.
+    feed_dict['nC_T_T'] = theory.lCl('TT',modlmap) + ntt
+    feed_dict['nC_T_E'] = theory.lCl('TE',modlmap)
+    feed_dict['nC_E_E'] = theory.lCl('EE',modlmap) + npp
+    feed_dict['nC_B_B'] = theory.lCl('BB',modlmap) + npp
+
+    return feed_dict
+
+
+def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
+                  xmask,ymask,kmask,AXY,AUV,split_estimator=False,gtfunc=None,noise_scale=1.):
+    import symlens
+    feed_dict = get_feed_dict(shape,wcs,theory,noise_t,noise_p,fwhm,gtfunc=gtfunc,
+                              split_estimator=split_estimator,noise_scale=noise_scale)
+    feed_dict['dC_T_T'] = powdict['TT']
+    feed_dict['dC_T_E'] = powdict['TE']
+    feed_dict['dC_E_E'] = powdict['EE']
+    feed_dict['dC_B_B'] = powdict['BB']
+    return symlens.RDN0_analytic(shape,wcs,feed_dict,estimator,XY,estimator,UV,
+                                 Aalpha=AXY,Abeta=AUV,xmask=xmask,ymask=ymask,kmask=kmask,
+                                 field_names_alpha=None,field_names_beta=None,skip_filter_field_names=False,
+                                 split_estimator=split_estimator)
