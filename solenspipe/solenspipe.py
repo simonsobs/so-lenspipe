@@ -417,7 +417,7 @@ def initialize_mask(nside,smooth_deg):
         
 
 def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax,Lmax=None,
-                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
+                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None,tot_power=False):
     import quicklens as ql
     fmap = {'TT':ql.qest.lens.phi_TT,
             'TE':ql.qest.lens.phi_TE,
@@ -440,8 +440,8 @@ def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax
 
     X,Y = polcomb
 
-    clx = theory.lCl(X+X,ls) + nls[X+X][:ls.size]
-    cly = theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
+    clx = nls[X+X][:ls.size] if tot_power else theory.lCl(X+X,ls) + nls[X+X][:ls.size]
+    cly = nls[Y+Y][:ls.size] if tot_power else theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
     
     flx        = np.zeros( Lmax+1 ); flx[2:] = 1./clx[2:]
     fly        = np.zeros( Lmax+1 ); fly[2:] = 1./cly[2:]
