@@ -39,21 +39,21 @@ Demo
 		usage: simple.py [-h] [-N NSIMS] [--sindex SINDEX] [--lmin LMIN] [--lmax LMAX]
 						 [--isotropic] [--no-atmosphere] [--use-cached-norm]
 						 [--wnoise WNOISE] [--beam BEAM] [--disable-noise]
-						 [--zero-sim] [--healpix] [--no-mask] [--debug]
-						 [--flat-sky-norm]
+						 [--zero-sim] [--write-meanfield] [--read-meanfield]
+						 [--healpix] [--no-mask] [--debug] [--flat-sky-norm]
 						 label polcomb
 
-		Do a thing.
+		Simple lensing reconstruction test.
 
 		positional arguments:
-		  label                 Label.
-		  polcomb               polcomb.
+		  label                 Version label.
+		  polcomb               Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.
 
 		optional arguments:
 		  -h, --help            show this help message and exit
 		  -N NSIMS, --nsims NSIMS
 								Number of sims.
-		  --sindex SINDEX       Declination band.
+		  --sindex SINDEX       Start index for sims.
 		  --lmin LMIN           Minimum multipole.
 		  --lmax LMAX           Minimum multipole.
 		  --isotropic           Isotropic sims.
@@ -63,7 +63,9 @@ Demo
 		  --beam BEAM           Override beam.
 		  --disable-noise       Disable noise.
 		  --zero-sim            Just make a sim of zeros. Useful for benchmarking.
-		  --healpix             Use healpix.
+		  --write-meanfield     Calculate and save mean-field map.
+		  --read-meanfield      Read and subtract mean-field map.
+		  --healpix             Use healpix instead of CAR.
 		  --no-mask             No mask. Use with the isotropic flag.
 		  --debug               Debug plots.
 		  --flat-sky-norm       Use flat-sky norm.
