@@ -9,11 +9,16 @@ Pipeline libraries and scripts for L3.1
 Dependencies
 ------------
 
-* simonsobs/mapsims, simonsobs/pixell, simonsobs/falafel, simonsobs/symlens
-* simonsobs/mapsims requires simonsobs/so_pysm_models and healpy/pysm
-* msyriac/quicklens (Python 3 fork of Duncan Hanson's code used to get
-  normalization of lensing estimators)
-* msyriac/orphics, amaurea/enlib (just bench.py for benchmarking)
+* mapsims_ (python setup.py develop --user)
+* pixell_ (python setup.py install --user)
+* falafel_ (pip install -e . --user)
+* symlens_ (pip install -e . --user)
+* mapsims requires so-pysm-models_ and pysm_ (python setup.py install --user)
+* quicklens_ (Python 3 fork of Duncan Hanson's code used to get
+  normalization of lensing estimators ; python setup.py build_ext -i ; and then
+  add to PYTHONPATH)
+* General utilities: orphics_ (pip install -e . --user), enlib_ (just
+  enlib/bench.py for benchmarking ; git clone and add to PYTHONPATH)
 * healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow (Python Image Library)
 
 Installing
@@ -83,3 +88,13 @@ If you have write access to this repository, please:
 
 If you do not have write access, create a fork of this repository and proceed as described above. 
   
+
+.. _pixell: https://github.com/simonsobs/pixell/
+.. _mapsims: https://github.com/simonsobs/mapsims/
+.. _so-pysm-models: https://github.com/simonsobs/so_pysm_models/
+.. _pysm: https://github.com/healpy/pysm/
+.. _falafel: https://github.com/simonsobs/falafel/
+.. _symlens: https://github.com/simonsobs/symlens/
+.. _orphics: https://github.com/msyriac/orphics/
+.. _quicklens: https://github.com/msyriac/quicklens/
+.. _enlib: https://github.com/amaurea/enlib/
