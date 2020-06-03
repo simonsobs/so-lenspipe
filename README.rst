@@ -9,7 +9,7 @@ Pipeline libraries and scripts for L3.1
 Dependencies
 ------------
 
-* so-pysm-models_ and pysm_ (python setup.py install --user) required by mapsims
+* so-pysm-models_ (python setup.py install --user) and pysm_ (pip install pysm3 --user) required by mapsims
 * mapsims_ (python setup.py develop --user)
 * pixell_ (python setup.py install --user)
 * falafel_ (pip install -e . --user)
