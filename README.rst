@@ -9,11 +9,11 @@ Pipeline libraries and scripts for L3.1
 Dependencies
 ------------
 
+* so-pysm-models_ and pysm_ (python setup.py install --user) required by mapsims
 * mapsims_ (python setup.py develop --user)
 * pixell_ (python setup.py install --user)
 * falafel_ (pip install -e . --user)
 * symlens_ (pip install -e . --user)
-* mapsims requires so-pysm-models_ and pysm_ (python setup.py install --user)
 * quicklens_ (Python 3 fork of Duncan Hanson's code used to get
   normalization of lensing estimators ; python setup.py build_ext -i ; and then
   add to PYTHONPATH)
