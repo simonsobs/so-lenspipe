@@ -128,7 +128,3 @@ if rank==0:
 
                                                                                 
 
-# Cross correlate with input
-
-# Calculate autospectrum
-# Subtract biases

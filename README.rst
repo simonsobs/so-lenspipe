@@ -11,6 +11,8 @@ Dependencies
 
 * simonsobs/mapsims, simonsobs/pixell, simonsobs/falafel, simonsobs/symlens
 * simonsobs/mapsims requires simonsobs/so_pysm_models and healpy/pysm
+* msyriac/quicklens (Python 3 fork of Duncan Hanson's code used to get
+  normalization of lensing estimators)
 * msyriac/orphics, amaurea/enlib (just bench.py for benchmarking)
 * healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow (Python Image Library)
 
@@ -21,6 +23,7 @@ To install, run:
 
 .. code-block:: console
 		
+   $ python setup.py build_ext -i
    $ pip install -e . --user
 
 
@@ -32,26 +35,38 @@ Demo
 
 .. code-block:: console
 
-				$ python bin/demo.py -h
-				usage: demo.py [-h] [--nside NSIDE] [--smooth-deg SMOOTH_DEG] [--lmin LMIN]
-				[--lmax LMAX] [--freq FREQ]
-				polcomb
+		$ python bin/simple.py -h
+		usage: simple.py [-h] [-N NSIMS] [--sindex SINDEX] [--lmin LMIN] [--lmax LMAX]
+						 [--isotropic] [--no-atmosphere] [--use-cached-norm]
+						 [--wnoise WNOISE] [--beam BEAM] [--disable-noise]
+						 [--zero-sim] [--healpix] [--no-mask] [--debug]
+						 [--flat-sky-norm]
+						 label polcomb
 
-				Demo lensing pipeline.
+		Do a thing.
 
-				positional arguments:
-				polcomb               Polarization combination. Possibilities include mv
-                (all), mvpol (all pol), TT, EE, TE, EB or TB.
+		positional arguments:
+		  label                 Label.
+		  polcomb               polcomb.
 
-				optional arguments:
-				-h, --help            show this help message and exit
-				--nside NSIDE         nside
-				--smooth-deg SMOOTH_DEG
-                Gaussian smoothing sigma for mask in degrees.
-				--lmin LMIN           lmin
-				--lmax LMAX           lmax
-				--freq FREQ           channel freq
-				
+		optional arguments:
+		  -h, --help            show this help message and exit
+		  -N NSIMS, --nsims NSIMS
+								Number of sims.
+		  --sindex SINDEX       Declination band.
+		  --lmin LMIN           Minimum multipole.
+		  --lmax LMAX           Minimum multipole.
+		  --isotropic           Isotropic sims.
+		  --no-atmosphere       Disable atmospheric noise.
+		  --use-cached-norm     Use cached norm.
+		  --wnoise WNOISE       Override white noise.
+		  --beam BEAM           Override beam.
+		  --disable-noise       Disable noise.
+		  --zero-sim            Just make a sim of zeros. Useful for benchmarking.
+		  --healpix             Use healpix.
+		  --no-mask             No mask. Use with the isotropic flag.
+		  --debug               Debug plots.
+		  --flat-sky-norm       Use flat-sky norm.
 
 
 Contributing
