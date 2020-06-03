@@ -25,6 +25,7 @@ parser.add_argument("--use-cached-norm", action='store_true',help='Use  cached n
 parser.add_argument("--wnoise",     type=float,  default=None,help="Override white noise.")
 parser.add_argument("--beam",     type=float,  default=None,help="Override beam.")
 parser.add_argument("--disable-noise", action='store_true',help='Disable noise.')
+parser.add_argument("--zero-sim", action='store_true',help='Just make a sim of zeros. Useful for benchmarking.')
 parser.add_argument("--healpix", action='store_true',help='Use healpix.')
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')

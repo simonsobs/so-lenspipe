@@ -77,7 +77,6 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
             B = get_kmap((icov,0,i))
             j=i+nsims
             Xs=get_kmap((icov,0,j))
-            #Xs  = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{0}_{j}.fits",hdu=(1,2,3))
             Ys  = get_kmap((icov,0,j))
             As  = get_kmap((icov,0,j))
             Bs  = get_kmap((icov,0,j))
@@ -88,7 +87,6 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
             if not(gaussian_sims):
                 Ysp=get_kmap((icov,1,i))
-                #Ysp = hp.fitsfunc.read_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{1}_{i}.fits",hdu=(1,2,3))
                 Asp=get_kmap((icov,1,i))
                 Bsp = get_kmap((icov,1,i))
                 rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))

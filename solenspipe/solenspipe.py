@@ -61,7 +61,7 @@ def initialize_args(args):
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
     # Initialize the lens simulation interface
-    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere)
+    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere,zero_sim=args.zero_sim)
     if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
     
     # Choose the frequency channel
@@ -131,12 +131,13 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50):
+    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
 
         self.rolloff_ell = rolloff_ell
         self.mask = mask
         self._debug = False
         self.atmosphere = atmosphere
+        self.zero_map = zero_sim
         if mask.ndim==1:
             self.nside = hp.npix2nside(mask.size)
             self.healpix = True
@@ -253,36 +254,46 @@ class SOLensInterface(object):
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-        # Convert the solenspipe convention to the Alex convention
-    
-        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if not(self.zero_map):
+            # Convert the solenspipe convention to the Alex convention
+            s_i,s_set,noise_seed = convert_seeds(seed)
 
 
-        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-        noise_map = self.get_noise_map(noise_seed,channel)
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
 
-        imap = (cmb_map + noise_map)
-        imap = imap * self.mask
-    
-        if self._debug:
-            for i in range(3): self.plot(imap[i],f'imap_{i}')
-            for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
-        
-        oalms = self.map2alm(imap)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-        oalms[~np.isfinite(oalms)] = 0
+            imap = (cmb_map + noise_map)
+            imap = imap * self.mask
 
-        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
-        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
-        filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
-        filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
-        filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
+            if self._debug:
+                for i in range(3): self.plot(imap[i],f'imap_{i}')
+                for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
+
+            oalms = self.map2alm(imap)
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+
+            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+            nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+            nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+            filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
+            filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
+            filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
 
 
-        almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
-        alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
-        almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
+            almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
+            alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
+            almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
+        else:
+            nalms = hp.Alm.getsize(self.mlmax)
+            almt = np.zeros((nalms,),dtype=np.complex128)
+            alme = np.zeros((nalms,),dtype=np.complex128)
+            almb = np.zeros((nalms,),dtype=np.complex128)
+            oalms = []
+            for i in range(3):
+                oalms.append( np.zeros((nalms,),dtype=np.complex128) )
+            
 
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
