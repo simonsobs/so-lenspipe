@@ -21,13 +21,16 @@ lmax = 3000
 shape,wcs  = enmap.fullsky_geometry(res=2.5 * utils.arcmin)
 px = qe.pixelization(shape=shape,wcs=wcs)
 theory = cosmology.default_theory()
+
 thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
 #theory_cross=cosmology.load_theory_from_glens(thloc+"_camb_1.0.12",total=False,lpad=9000,TCMB=2.7255e6)
+# Create a custom theory grad object
 ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
 class T:
     def __init__(self):
         self.lCl = lambda p,x: maps.interp(ells,gt)(x)
 theory_cross = T()
+###
 
 ls = np.arange(mlmax)
 cltt = theory.lCl('TT',ls)
