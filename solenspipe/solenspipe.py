@@ -168,11 +168,13 @@ class SOLensInterface(object):
             self.beam = beam_fwhm
         thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+        theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6)
         self.cltt = lambda x: theory.lCl('TT',x) 
         self.clee = lambda x: theory.lCl('EE',x) 
         self.clbb = lambda x: theory.lCl('BB',x) 
         self.cache = {}
         self.theory = theory
+        self.theory_cross=theory_cross 
         self.set_data_map(data_mode)
 
     def wfactor(self,n):
@@ -182,8 +184,7 @@ class SOLensInterface(object):
         if data_mode is None:
             print('WARNING: No data mode specified. Defaulting to simulation iset=0,i=0 at 150GHz.')
             data_mode = 'sim'
-        # if data_mode=='sim':
-        #     self.
+
 
 
     def alm2map(self,alm,ncomp=3):
@@ -216,7 +217,6 @@ class SOLensInterface(object):
 
     def get_noise_map(self,noise_seed,channel):
         if not(self.disable_noise):
-            #s_i,s_set,noise_seed = convert_seeds(seed)
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
             nseed = (noise_seed,)
             
@@ -299,7 +299,6 @@ class SOLensInterface(object):
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
         icov,s_set,i=seed
-        #hp.fitsfunc.write_alm(f"/global/cscratch1/sd/jia_qu/rdn0/almset{s_set}_{i}.fits",self.cache[seed][:3],overwrite=True)
     def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -341,7 +340,8 @@ class SOLensInterface(object):
 
     def qfunc(self,alpha,X,Y):
         polcomb = alpha
-        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),
+
+        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
@@ -384,12 +384,12 @@ class SOLensInterface(object):
             print(traceback.format_exc())
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-
+            theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6) #Improved gradTxT to be used in the response
             ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
             if quicklens:
                 Als = {}
                 for polcomb in ['TT','TE','EE','EB','TB']:
-                    ls,Als[polcomb] = quicklens_norm(polcomb,nells,nells_P,nells_P,theory,lmin,lmax,lmin,lmax)
+                    ls,Als[polcomb] = quicklens_norm(polcomb,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,lmin,lmax)
                 al_mv_pol = 1/(1/Als['EB']+1/Als['TB']); al_mv = 1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']) ; Al_te_hdv = Als['TT']*0 
             else:
                 ells = np.arange(lmax+100)
@@ -421,8 +421,8 @@ def initialize_mask(nside,smooth_deg):
 
         
 
-def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax,Lmax=None,
-                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None,tot_power=False):
+def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
+                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
     import quicklens as ql
     fmap = {'TT':ql.qest.lens.phi_TT,
             'TE':ql.qest.lens.phi_TE,
@@ -441,12 +441,16 @@ def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,tellmin,tellmax,pellmin,pellmax
 
     if Lmax is None: Lmax = max(tellmax,pellmax)+1
     ls = np.arange(0,Lmax+1)
-    qest = fmap[polcomb](theory.lCl(rcl[polcomb],ls))
+
+    if polcomb=='TT':
+        qest = fmap[polcomb](theory_cross.lCl(rcl[polcomb],ls))
+    else:
+        qest = fmap[polcomb](theory.lCl(rcl[polcomb],ls))
 
     X,Y = polcomb
-
-    clx = nls[X+X][:ls.size] if tot_power else theory.lCl(X+X,ls) + nls[X+X][:ls.size]
-    cly = nls[Y+Y][:ls.size] if tot_power else theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
+    
+    clx = theory.lCl(X+X,ls) + nls[X+X][:ls.size]
+    cly = theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
     
     flx        = np.zeros( Lmax+1 ); flx[2:] = 1./clx[2:]
     fly        = np.zeros( Lmax+1 ); fly[2:] = 1./cly[2:]
@@ -505,5 +509,6 @@ def checkproc_py():
         print ('add this line to your bashrc:')
         print ('export OMP_NUM_THREADS=n')
         print ('###################################')
+
 
 
