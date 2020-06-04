@@ -52,7 +52,7 @@ def initialize_args(args):
     sindex = args.sindex
     comm,rank,my_tasks = mpi.distribute(nsims)
 
-    isostr = "isotropic_" if args.isotropic else "classical"
+    isostr = "homogenous_" if args.isotropic else "inhomogenous_"
 
 
     config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -61,11 +61,11 @@ def initialize_args(args):
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
     # Initialize the lens simulation interface
-    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere,zero_sim=args.zero_sim)
+    solint = SOLensInterface(mask=mask,data_mode=None,homogenous=args.isotropic,fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere,zero_sim=args.zero_sim)
     if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
     
     # Choose the frequency channel
-    channel = mapsims.SOChannel("LA", 145)
+    channel = "LT2"
 
     # norm dict
     Als = {}
@@ -92,11 +92,11 @@ def convert_seeds(seed,nsims=100,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_cmb_alm(i,iset,path=config['signal_path']):
+def get_cmb_alm(i,iset,path=config['signal_path'],hdu=(1,2,3)):
     sstr = str(iset).zfill(2)
     istr = str(i).zfill(5)
     fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
-    return hp.read_alm(fname,hdu=(1,2,3))
+    return hp.read_alm(fname,hdu=hdu)
 
 def get_kappa_alm(i,path=config['signal_path']):
     istr = str(i).zfill(5)
@@ -131,7 +131,7 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
 
 class SOLensInterface(object):
-    def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
+    def __init__(self,mask,data_mode=None,homogenous=False,fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
 
         self.rolloff_ell = rolloff_ell
         self.mask = mask
@@ -158,11 +158,11 @@ class SOLensInterface(object):
         if (white_noise is None) and not(disable_noise):
             self.wnoise = None
             self.beam = None
-            self.nsim = noise.SONoiseSimulator(telescopes=['LA'],nside=self.nside,
+            self.nsim = noise.SONoiseSimulator(nside=self.nside,
                                                shape=self.shape if not(self.healpix) else None,
                                                wcs=self.wcs if not(self.healpix) else None, 
-                                               apply_beam_correction=False,scanning_strategy=scanning_strategy,
-                                               fsky={'LA':fsky} if fsky is not None else None,rolloff_ell=rolloff_ell)    
+                                               apply_beam_correction=False,homogenous=homogenous,
+                                               sky_fraction=fsky if homogenous else None,rolloff_ell=rolloff_ell)    
         else:
             self.wnoise = white_noise
             self.beam = beam_fwhm
@@ -218,10 +218,11 @@ class SOLensInterface(object):
         if not(self.disable_noise):
             #s_i,s_set,noise_seed = convert_seeds(seed)
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
-            nseed = noise_seed+(int(channel.band),)
+            nseed = (noise_seed,)
             
             if self.wnoise is None:
-                noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere,mask_value=np.nan)
+                noise_map = self.nsim.simulate(channel,seed=nseed,atmosphere=self.atmosphere,mask_value=np.nan)[0]
+                print(noise_map.shape)
                 noise_map[np.isnan(noise_map)] = 0
             else:
                 npower = np.zeros((3,3,ls.size))
@@ -356,6 +357,10 @@ class SOLensInterface(object):
                 nells_P = ls*0
         else:
             if self.atmosphere:
+                ls, nells, nells_P = self.nsim.get_noise_spectra(
+                    channel, ncurve_sky_fraction=1, return_corr=False
+                )
+
                 ls,nells = self.nsim.ell,self.nsim.noise_ell_T[channel.telescope][int(channel.band)]
                 ls,nells_P = self.nsim.ell,self.nsim.noise_ell_P[channel.telescope][int(channel.band)]
             else:
