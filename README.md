@@ -6,15 +6,13 @@ Pipeline libraries and scripts for L3.1
 
 ## Dependencies
 
-Note1: please make sure that you have the version of the python that you use loaded into the shell, since various packages noted here will need to be installed locally, and will need to be reinstalled if you were to change python installations. 
-
-Note2: if working on NERSC, we recommend that you run `module load python/3.7-anaconda-2019.07`; even better, add it to your bash profile by editing `~/.bash_profile.ext`. Also, run `export DISABLE_MPI=true` on the login node in anticipation of an issue with MPI on NERSC-Cori.
+NERSC tip: you may need the `python/3.7-anaconda-2019.07` module. You can add `module load python/3.7-anaconda-2019.07` to your `~/.bash_profile.ext`. Also, when running quick tests on the login node (e.g. to test imports after setting up), you should  run `export DISABLE_MPI=true` since MPI calls do not work on the cori login node.
 
 Here are all the pacakges you'll need before you can run this library and scripts therein:
 * [so-pysm-models](https://github.com/simonsobs/so_pysm_models/) (`python setup.py install --user`) required by mapsims
 * [pysm](https://github.com/healpy/pysm/) (`pip install pysm3 --user`) required by mapsims
-* [mapsims](https://github.com/simonsobs/mapsims/) (`python setup.py develop --user`)
-* [pixell](https://github.com/simonsobs/pixell/) (if running on NERSC, run `python setup.py build_ext -i --fcompiler=intelem --compiler=intelem`; else run `python setup.py install --user`); test by running `py.test -s`
+* [mapsims](https://github.com/simonsobs/mapsims/) (`git checkout car_fix ; python setup.py develop --user` -- we recommend a symbolic install link since you may have to periodically update this repo, change branches, etc. since it is actively under development)
+* [pixell](https://github.com/simonsobs/pixell/) (if running on NERSC, run `python setup.py build_ext -i --fcompiler=intelem --compiler=intelem` followed by adding the directory to your PYTHONPATH; else run `python setup.py install --user`); test by running `py.test -s`
 * [falafel](https://github.com/simonsobs/falafel/) (`pip install -e . --user`)
 * [symlens](https://github.com/simonsobs/symlens/) (`pip install -e . --user`)
 * [quicklens](https://github.com/msyriac/quicklens/) (Python 3 fork of Duncan Hanson's code used to get
@@ -24,14 +22,10 @@ Here are all the pacakges you'll need before you can run this library and script
 * [enlib](https://github.com/amaurea/enlib/) (just need 
   enlib/bench.py for benchmarking ; git clone the repo and add to PYTHONPATH)
 * [quaternionarray](https://pypi.org/project/quaternionarray/): (`pip install quaternionarray --user`) required by sotodlib
-* [sotodlib](https://github.com/simonsobs/sotodlib) (`python setup.py install --user`)
+* [sotodlib](https://github.com/simonsobs/sotodlib) (`git checkout aca85843b70b0c6ebac031aa48fff47f93ed6661 ; python setup.py install --user`)
 * [sotoddb](https://github.com/simonsobs/sotoddb) (`python setup.py install --user`)
 * [so_noise_models](https://github.com/simonsobs/so_noise_models) (`python setup.py install --user`)
 * Other miscellaneous packages: healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow (Python Image Library)
-
-Aside1: you can add to your PYTHONPATH by adding `export PYTHONPATH=<path-to-folder-containing-the-cloned-repo>:$PYTHONPATH` to your bashrc. for temporary measures, you can run the export command in the terminal.
-
-Aside2: all the local installation commands (i.e., `python setup` and `pip install -e`) must be run inside the cloned repo.
 
 
 ## Installing
