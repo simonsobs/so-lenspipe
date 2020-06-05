@@ -98,6 +98,7 @@ def get_cmb_alm(i,iset,path=config['signal_path']):
     fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
     return hp.read_alm(fname,hdu=(1,2,3))
 
+
 def get_kappa_alm(i,path=config['signal_path']):
     istr = str(i).zfill(5)
     fname = path + "fullskyPhi_alm_%s.fits" % istr
@@ -168,13 +169,16 @@ class SOLensInterface(object):
             self.beam = beam_fwhm
         thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-        theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6)
+        ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+        class T:
+            def __init__(self):
+                self.lCl = lambda p,x: maps.interp(ells,gt)(x)
+        self.theory_cross = T()
         self.cltt = lambda x: theory.lCl('TT',x) 
         self.clee = lambda x: theory.lCl('EE',x) 
         self.clbb = lambda x: theory.lCl('BB',x) 
         self.cache = {}
         self.theory = theory
-        self.theory_cross=theory_cross 
         self.set_data_map(data_mode)
 
     def wfactor(self,n):
@@ -298,6 +302,7 @@ class SOLensInterface(object):
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
         icov,s_set,i=seed
+        
     def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -379,7 +384,12 @@ class SOLensInterface(object):
             print(traceback.format_exc())
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-            theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6) #Improved gradTxT to be used in the response
+            ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+            class T:
+                def __init__(self):
+                    self.lCl = lambda p,x: maps.interp(ells,gt)(x)
+            theory_cross = T()
+            #Improved gradTxT to be used in the response
             ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
             if quicklens:
                 Als = {}
@@ -505,5 +515,39 @@ def checkproc_py():
         print ('export OMP_NUM_THREADS=n')
         print ('###################################')
 
+class weighted_bin1D:
+    '''
+    * Takes data defined on x0 and produces values binned on x.
+    * Assumes x0 is linearly spaced and continuous in a domain?
+    * Assumes x is continuous in a subdomain of x0.
+    * Should handle NaNs correctly.
+    '''
+    
 
+    def __init__(self, bin_edges):
+
+        self.update_bin_edges(bin_edges)
+
+    def update_bin_edges(self,bin_edges):
+        
+        self.bin_edges = bin_edges
+        self.numbins = len(bin_edges)-1
+        self.cents = (self.bin_edges[:-1]+self.bin_edges[1:])/2.
+
+        self.bin_edges_min = self.bin_edges.min()
+        self.bin_edges_max = self.bin_edges.max()
+
+    def bin(self,ix,iy,weights):
+        #binning which allows to optimally weight for signal and noise. weights the same size as y
+        x = ix.copy()
+        y = iy.copy()
+        # this just prevents an annoying warning (which is otherwise informative) everytime
+        # all the values outside the bin_edges are nans
+        y[x<self.bin_edges_min] = 0
+        y[x>self.bin_edges_max] = 0
+        bin_means=[]
+        for i in range(1,len(self.bin_edges)):
+            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]))
+        bin_means=np.array(bin_means)
+        return self.cents,bin_means
 
