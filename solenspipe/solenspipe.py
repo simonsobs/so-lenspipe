@@ -37,14 +37,12 @@ def initialize_args(args):
     lmax = args.lmax
     use_cached_norm = args.use_cached_norm
     quicklens = not(args.flat_sky_norm)
-
     disable_noise = args.disable_noise
     debug_cmb = args.debug
-
+    
     wnoise = args.wnoise
     beam = args.beam
     atmosphere = not(args.no_atmosphere)
-
     polcomb = args.polcomb
 
     # Number of sims
@@ -53,7 +51,6 @@ def initialize_args(args):
     comm,rank,my_tasks = mpi.distribute(nsims)
 
     isostr = "isotropic_" if args.isotropic else "classical"
-
 
     config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
     opath = config['data_path']
@@ -97,6 +94,7 @@ def get_cmb_alm(i,iset,path=config['signal_path']):
     istr = str(i).zfill(5)
     fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
     return hp.read_alm(fname,hdu=(1,2,3))
+
 
 def get_kappa_alm(i,path=config['signal_path']):
     istr = str(i).zfill(5)
@@ -168,13 +166,16 @@ class SOLensInterface(object):
             self.beam = beam_fwhm
         thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
         theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-        theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6)
+        ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+        class T:
+            def __init__(self):
+                self.lCl = lambda p,x: maps.interp(ells,gt)(x)
+        self.theory_cross = T()
         self.cltt = lambda x: theory.lCl('TT',x) 
         self.clee = lambda x: theory.lCl('EE',x) 
         self.clbb = lambda x: theory.lCl('BB',x) 
         self.cache = {}
         self.theory = theory
-        self.theory_cross=theory_cross 
         self.set_data_map(data_mode)
 
     def wfactor(self,n):
@@ -271,6 +272,10 @@ class SOLensInterface(object):
                 for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
 
             oalms = self.map2alm(imap)
+            clttdata=hp.alm2cl(oalms[0],oalms[0])
+            cleedata=hp.alm2cl(oalms[1],oalms[1])
+            clbbdata=hp.alm2cl(oalms[2],oalms[2])
+            cltedata=hp.alm2cl(oalms[0],oalms[1])
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
 
@@ -298,6 +303,32 @@ class SOLensInterface(object):
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
         icov,s_set,i=seed
+        
+    def get_sim_power(self,channel,seed,lmin,lmax):
+        """
+        Generates the sim cmb+noise cls.
+        """
+
+        if not(self.zero_map):
+            # Convert the solenspipe convention to the Alex convention
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+
+            imap = (cmb_map + noise_map)
+            imap = imap * self.mask
+
+            oalms = self.map2alm(imap)
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            clttsim=hp.alm2cl(oalms[0],oalms[0])/self.wfactor(2)
+            cleesim=hp.alm2cl(oalms[1],oalms[1])/self.wfactor(2)
+            clbbsim=hp.alm2cl(oalms[2],oalms[2])/self.wfactor(2)
+            cltesim=hp.alm2cl(oalms[0],oalms[1])/self.wfactor(2)
+        return clttsim,cleesim,clbbsim,cltesim
+            
     def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved simulation.
@@ -379,13 +410,17 @@ class SOLensInterface(object):
             print(traceback.format_exc())
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
             theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-            theory_cross=cosmology.load_theory_from_glens(thloc+"_scalcrossgrad",total=False,lpad=9000,TCMB=2.7255e6) #Improved gradTxT to be used in the response
+            ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+
+            class T:
+                def __init__(self):
+                    self.lCl = lambda p,x: maps.interp(ells,gt)(x)
+            theory_cross = T()
             ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
-            if quicklens:
+            if quicklens: #now cmblensplus
                 Als = {}
-                for polcomb in ['TT','TE','EE','EB','TB']:
-                    ls,Als[polcomb] = quicklens_norm(polcomb,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,lmin,lmax)
-                al_mv_pol = 1/(1/Als['EB']+1/Als['TB']); al_mv = 1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']) ; Al_te_hdv = Als['TT']*0 
+                ls,Ag = cmblensplus_norm(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+                Als['TT']=Ag[0];Als['TE']=Ag[1];Als['EE']=Ag[2];Als['TB']=Ag[3];Als['EB']=Ag[4];al_mv =1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']);al_mv_pol = 1/(1/Als['EB']+1/Als['TB']);Al_te_hdv = Als['TT']*0 
             else:
                 ells = np.arange(lmax+100)
                 uctt = theory.lCl('TT',ells)
@@ -414,6 +449,79 @@ def initialize_mask(nside,smooth_deg):
         return mask
 
 
+def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    import basic
+    import curvedsky as cs
+    print('compute cmblensplus norm')
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
+    fac=ls*(ls+1)
+    return ls,Ag*fac
+    #TT, EE, BB, TE
+
+def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsims):
+    #mask the data cls inside?
+    import basic
+    import curvedsky as cs
+    print('compute dumb N0')
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory)
+    Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
+    fac=ls*(ls+1)
+    als=np.array([np.zeros(len(Ag[5]))]*6)
+    ocl[np.where(ocl==0)] = 1e30
+    for i in range(nsims):
+        #prepare the sim total power spectrum
+        cldata=get_sim_power((0,0,i))
+        sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
+        #dataxdata
+        cl=ocl**2/(sim_ocl)
+        Ags0, Acs0, Wgs0, Wcs0 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
+        #compute mv version
+        Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
+        #(data-sim) x (data-sim)
+        cl=ocl**2/(ocl-sim_ocl)
+        Ags1, Acs1, Wgs1, Wcs1 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
+        Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
+        n0dumb=[]
+        for i in range(len(Ags1)):
+            Ags0[i][np.where(Ags0[i]==0)] = 1e30
+            Ags1[i][np.where(Ags1[i]==0)] = 1e30
+            Acs0[i][np.where(Acs0[i]==0)] = 1e30
+            Acs1[i][np.where(Acs1[i]==0)] = 1e30
+            n0g = Ag[i]**2*(1./Ags0[i]-1./Ags1[i])
+            n0dumb.append(n0g)
+        n0dumb=np.array(n0dumb)
+        als+=n0dumb
+    return ls,als*fac/nsims
+
+    
         
 
 def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
@@ -505,5 +613,38 @@ def checkproc_py():
         print ('export OMP_NUM_THREADS=n')
         print ('###################################')
 
+class weighted_bin1D:
+    '''
+    * Takes data defined on x0 and produces values binned on x.
+    * Assumes x0 is linearly spaced and continuous in a domain?
+    * Assumes x is continuous in a subdomain of x0.
+    * Should handle NaNs correctly.
+    '''
+    
 
+    def __init__(self, bin_edges):
 
+        self.update_bin_edges(bin_edges)
+
+    def update_bin_edges(self,bin_edges):
+        
+        self.bin_edges = bin_edges
+        self.numbins = len(bin_edges)-1
+        self.cents = (self.bin_edges[:-1]+self.bin_edges[1:])/2.
+
+        self.bin_edges_min = self.bin_edges.min()
+        self.bin_edges_max = self.bin_edges.max()
+
+    def bin(self,ix,iy,weights):
+        #binning which allows to optimally weight for signal and noise. weights the same size as y
+        x = ix.copy()
+        y = iy.copy()
+        # this just prevents an annoying warning (which is otherwise informative) everytime
+        # all the values outside the bin_edges are nans
+        y[x<self.bin_edges_min] = 0
+        y[x>self.bin_edges_max] = 0
+        bin_means=[]
+        for i in range(1,len(self.bin_edges)):
+            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]))
+        bin_means=np.array(bin_means)
+        return self.cents,bin_means
