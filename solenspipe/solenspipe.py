@@ -16,6 +16,7 @@ import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
 
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
@@ -27,7 +28,7 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
             shape,wcs = enmap.fullsky_geometry(res=res)
             mask = enmap.ones(shape,wcs)
         else:
-            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
+            afname = f'{mpath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
             mask = enmap.read_map(afname)[0]
     return mask
 
@@ -434,7 +435,54 @@ class SOLensInterface(object):
                 ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
             io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
             return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
+    
+    def analytic_n1(self,ch,lmin,lmax,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
         
+        from solenspipe import biastheory as nbias
+        lstr = "" if label is None else f"{label}_"
+        wstr = "" if self.wnoise is None else "wnoise_"
+        onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        n1fname=opath+"analytic_n1_%s%slmin_%d_lmax_%d.txt"% (wstr,lstr,lmin,lmax)
+        try:
+            return np.loadtxt(n1fname,unpack=True)
+        except:
+            print(traceback.format_exc())        
+            norms=np.loadtxt(onormfname)
+            thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
+            theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+            ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
+            NOISE_LEVEL=nells[:lmax]
+            polnoise=nells_P[:lmax]
+            LMAX_TT=Lmaxout
+            TMP_OUTPUT=config['data_path']
+            LCORR_TT=0
+            lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
+            cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
+            
+            #arrays with l starting at l=2"
+            #clphiphi array starting at l=2
+            clpp=lens[5,:][:8249]
+            #cls is an array containing [cltt,clee,clbb,clte] used for the filters
+            cltt=cls[1]       
+            clee=cls[2]
+            clbb=cls[3]
+            clte=cls[4]
+            bins=norms[2:,0]
+            ntt=norms[2:,1]
+            nee=norms[2:,2]
+            neb=norms[2:,3]
+            nte=norms[2:,4]
+            ntb=norms[2:,5]
+            nbb=np.ones(len(ntb))
+            norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bins**2],[nbb]])
+            n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,Lmaxout,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+            n1mv=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,Lmaxout,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+            n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
+            io.save_cols(n1fname,(n1bins,n1tt,n1ee,n1eb,n1te,n1tb,n1mv))
+
+            
+        return n1bins,n1tt,n1ee,n1eb,n1te,n1tb,n1mv   
+    
 
 def initialize_mask(nside,smooth_deg):
     omaskfname = "lensing_mask_nside_%d_apodized_%.1f.fits" % (nside,smooth_deg)
@@ -473,7 +521,6 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     #TT, EE, BB, TE
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsims):
-    #mask the data cls inside?
     import basic
     import curvedsky as cs
     print('compute dumb N0')
