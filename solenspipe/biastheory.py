@@ -230,6 +230,7 @@ def compute_n1mv(
         mvn1+=weights[i]*n1_inter[i]
         sumc+=weights[i]
     mvn1=mvn1/sumc  
+
     mvn1=mvn1[Lmin_out:lmaxout:Lstep]
     return mvn1 
     

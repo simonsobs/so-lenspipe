@@ -16,7 +16,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=500,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Declination band.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -49,9 +49,8 @@ mcn1[:nmax] = mcn1[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     mcn1[:nmax] = mcn1[:nmax]/w4
     
-
 mcn1[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{car}.txt',(ils,mcn1[:nmax]))
+io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{car}_{nsims}_nomask.txt',(ils,mcn1[:nmax]))
 
 
 if rank==0:
@@ -64,5 +63,4 @@ if rank==0:
     #pl._ax.set_ylim(1e-9,1e-6)
     pl.done(f'{solenspipe.opath}/recon_mcn1.png')                       
 
-                                                                                
 

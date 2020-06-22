@@ -35,6 +35,7 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix instead o
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+
 args = parser.parse_args()
 
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
@@ -42,6 +43,9 @@ solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,ch
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
 w4 = solint.wfactor(4)
+car = "healpix_" if args.healpix else "car_"
+noise="wnoise" if args.wnoise!=None else "sonoise"
+mask="nomask" if args.no_mask else "mask"
 
 if args.write_meanfield: assert not(args.read_meanfield)
 
@@ -53,6 +57,9 @@ if args.read_meanfield:
 else:
     mf_alm = 0
 
+
+
+s = stats.Stats(comm)
 
 for task in my_tasks:
 
@@ -107,9 +114,13 @@ for task in my_tasks:
         s.add_to_stack('rmf',recon_alms.real)
         s.add_to_stack('imf',recon_alms.imag)
 
+
+
 with io.nostdout():
     s.get_stats()
     s.get_stacks()
+
+
 
 if rank==0:
     with io.nostdout():
@@ -122,8 +133,11 @@ if rank==0:
         hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm.fits',mf_alm,overwrite=True)
         
     
+
     ls = np.arange(xcl.size)
     Nl = maps.interp(ils,Nl)(ls)
+
+
     pl = io.Plotter('CL',xyscale='loglog')
     pl.add(ls,acl,alpha=0.5,label='rr')
     if args.write_meanfield or args.read_meanfield:

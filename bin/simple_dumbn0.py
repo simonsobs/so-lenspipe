@@ -56,3 +56,5 @@ theory_cross = T()
 
 get_sim_power = lambda seed: solint.get_sim_power(channel,seed,lmin,lmax)
 ls,rd=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,nsims)
+
+np.savetxt(f'{solenspipe.opath}/dumbn0_{polcomb}_{isostr}_{car}_{nsims}.txt',rd)

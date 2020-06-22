@@ -1,5 +1,5 @@
 import basic
-from cmblensplus import curvedsky as cs
+import curvedsky as cs
 import healpy as hp
 from orphics import maps,io,cosmology 
 import numpy as np
@@ -21,11 +21,13 @@ nells = (wnoise*np.pi/180/60)**2./(Tcmb**2*np.ones(len(ell))*bfact)
 nellsp=2*nells
 # load unlensed and lensed Cls
 
-lcl  = basic.aps.read_cambcls('../data/cosmo2017_10K_acc3_lensedCls.dat',2,lmax,4,bb=True)/Tcmb**2
+lcl  = basic.aps.read_cambcls('../data/cmbPluscosmo2017_10K_acc3_lensedCls.dat',2,lmax,4,bb=True)/Tcmb**2
 QDO = [True,True,True,True,True,False]
 
 bins=np.arange(0,lmax+1)
 noise=np.array([nells,nellsp,nellsp,nellsp])
+#TT, EE, BB, TE
+
 ocl = lcl+noise
 
 

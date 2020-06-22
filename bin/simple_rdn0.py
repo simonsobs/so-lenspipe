@@ -15,7 +15,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Declination band.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -42,14 +42,16 @@ qfunc = solint.qfunc
 
 nmax = len(ils)
 
-rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-#rdn0 = bias.mcn1(0,'TT','TT',qfunc,get_kmap,comm,power,nsims,verbose=True)
+#a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+#np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdlist20.txt",a)
 
+
+rdn0 = bias.mean_rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
 rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_new.txt',(ils,rdn0[:nmax]))
+io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_no_mask.txt',(ils,rdn0[:nmax]))
 
 
 if rank==0:
@@ -62,7 +64,7 @@ if rank==0:
     pl.add(ils,theory.gCl('kk',ils))
     #pl._ax.set_ylim(1e-9,1e-6)
     pl.done(f'{solenspipe.opath}/recon_rdn0.png')
-                                                                                   
+
 
                                                                                 
 

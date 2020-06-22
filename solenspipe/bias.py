@@ -64,8 +64,8 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     qb = lambda x,y: qfunc(beta,x,y)
  
     rdn0list=[]
-    for i in range(0,1950,39):
-        print(i)
+    #for i in range(0,1950,39):
+    for i in range(0,78,39):
         with bench.show("rdn0"):
             #these are the data values
             X = get_kmap((0,0,i))
@@ -77,7 +77,8 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                 qab = qb(A,B) if qab is None else qab
             # Sims
             rdn0 = 0.       
-            for j in range(i+1,i+99):
+            #for j in range(i+1+comm.rank,i+101,comm.size):
+            for j in range(i+1+comm.rank,i+51,comm.size):
                 print(j)
                 Xs  = get_kmap((icov,0,j))
                 Ys  = get_kmap((icov,0,j))
@@ -96,8 +97,8 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                     else:
                         rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
                 
-            totrdn0 = utils.allreduce(rdn0,comm)/99
-            totrdn0=np.array(totrdn0)
+            totrdn0 = utils.allreduce(rdn0,comm)
+            totrdn0=np.array(totrdn0/50)
             rdn0list.append(totrdn0)
     return rdn0list
 
@@ -127,7 +128,8 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):        
+    for i in range(comm.rank+1, nsims+1, comm.size):
+        print(i)
         Xs  = get_kmap((icov,0,i))
         Ys  = get_kmap((icov,0,i))
         As  = get_kmap((icov,0,i))
@@ -209,6 +211,7 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     n1 = 0.
+    term_list=[]
     for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xsk   = get_kmap((icov,2,i))
@@ -226,6 +229,11 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
         term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
         n1 = n1 + term
+        #term=comm.gather(term,root=0)
+        #term_list.append(term[0])
+
+
+    #np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/mclist.txt",term_list)
     return  utils.allreduce(n1,comm) /nsims
 
 
