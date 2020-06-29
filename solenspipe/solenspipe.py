@@ -278,7 +278,6 @@ class SOLensInterface(object):
             cltedata=hp.alm2cl(oalms[0],oalms[1])
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
-
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
             nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
@@ -290,6 +289,7 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
             almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
+            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/bh/talms.fits',almt,overwrite=True)
         else:
             nalms = hp.Alm.getsize(self.mlmax)
             almt = np.zeros((nalms,),dtype=np.complex128)
@@ -366,14 +366,24 @@ class SOLensInterface(object):
         return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 
     def get_mv_kappa(self,polcomb,talm,ealm,balm):
+        
         return self.qfunc(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc(self,alpha,X,Y):
         polcomb = alpha
-
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+
+    def get_mv_mask(self,polcomb,talm,ealm,balm):
+        
+        return self.qfuncmask(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfuncmask(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
 
     def get_noise_power(self,channel=None,beam_deconv=False):
         if (self.wnoise is not None) or self.disable_noise:
@@ -538,7 +548,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsi
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory)
-    Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
+    #Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
     fac=ls*(ls+1)
     als=np.array([np.zeros(len(Ag[5]))]*6)
     ocl[np.where(ocl==0)] = 1e30
@@ -550,11 +560,11 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsi
         cl=ocl**2/(sim_ocl)
         Ags0, Acs0, Wgs0, Wcs0 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
         #compute mv version
-        Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
+        #Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
         #(data-sim) x (data-sim)
         cl=ocl**2/(ocl-sim_ocl)
         Ags1, Acs1, Wgs1, Wcs1 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
-        Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
+        #Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
         n0dumb=[]
         for i in range(len(Ags1)):
             Ags0[i][np.where(Ags0[i]==0)] = 1e30
@@ -567,7 +577,32 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsi
         als+=n0dumb
     return ls,als*fac/nsims
 
-    
+def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    import basic
+    import curvedsky as cs
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    A_mask = cs.norm_tau.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Alpp, __ = cs.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Rlpt = cs.norm_lens.ttt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
+    fac=ls*(ls+1)*0.5
+    detR=1-Alpp*A_mask*Rlpt**2
+    bhmask=Alpp*Rlpt/detR
+    bhp=1/detR
+    bhclkknorm=fac**2*Alpp/detR
+    return ls,bhp,bhmask,Alpp,A_mask,bhclkknorm   
         
 
 def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
@@ -680,7 +715,8 @@ class weighted_bin1D:
 
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
-
+        
+    
     def bin(self,ix,iy,weights):
         #binning which allows to optimally weight for signal and noise. weights the same size as y
         x = ix.copy()
@@ -694,3 +730,24 @@ class weighted_bin1D:
             bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]))
         bin_means=np.array(bin_means)
         return self.cents,bin_means
+        
+    def binning_matrix(self,ix,iy,weights):
+        #return the binning matrix used for the data products
+        x = ix.copy()
+        y = iy.copy()
+        y[x<self.bin_edges_min] = 0
+        y[x>self.bin_edges_max] = 0
+        #num columns
+        matrix=[]
+    
+        #num rows
+        nrows=len(self.bin_edges)
+        for i in range(1,nrows):
+            col=np.zeros(len(y))
+            col[self.bin_edges[i-1]:self.bin_edges[i]]=weights[self.bin_edges[i-1]:self.bin_edges[i]]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]])
+            matrix.append(col)
+        matrix=np.array(matrix)
+        return matrix 
+        
+        
+        
