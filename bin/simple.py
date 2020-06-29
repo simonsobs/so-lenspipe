@@ -35,6 +35,7 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix instead o
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+parser.add_argument("--bias_hardening", action='store_true',help='Currently useful for TT estimator.')
 
 args = parser.parse_args()
 
@@ -87,9 +88,32 @@ for task in my_tasks:
     with bench.show("sim"):
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
         # Get the reconstructed map for the TT estimator
-        recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
+        
+        if bias_hardening:
+            ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
+            ells=np.arange(0,solint.mlmax)
+            config = io.config_from_yaml("../input/config.yml")
+            thloc = "../data/" + config['theory_root']
+            theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+            
+            
+            ellsi,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+            class T:
+                def __init__(self):
+                    self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
+            theory_cross = T()
+
+            ls,blens,bmask,Alpp,Amask,bhclkknorm=solenspipe.bhnorms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+            mask_alms=qe.filter_alms(solint.get_mv_mask(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Amask*bmask))
+            phi_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,2*Alpp*blens))
+            recon_alms=phi_alms-mask_alms
+            recon_alms=hp.almxfl(recon_alms,ils*(ils+1)*0.5)
+        
+        else:
+            recon_alms = qe.filter_mv(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
     
-    recon_alms = recon_alms - mf_alm
+    if args.read_meanfield:
+        recon_alms = recon_alms - mf_alm
 
     if task==0 and debug_cmb:
         rmap = solint.alm2map(recon_alms,ncomp=1)[0] * maps.binary_mask(mask)
@@ -130,12 +154,15 @@ if rank==0:
 
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
-        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm.fits',mf_alm,overwrite=True)
+        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}.fits',mf_alm,overwrite=True)
         
     
 
     ls = np.arange(xcl.size)
-    Nl = maps.interp(ils,Nl)(ls)
+    if bias_hardening:
+        Nl=maps.interp(ils,bhclkknorm)(ls)
+    else:
+        Nl = maps.interp(ils,Nl)(ls)
 
 
     pl = io.Plotter('CL',xyscale='loglog')
