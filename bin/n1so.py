@@ -19,9 +19,9 @@ import argparse
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Declination band.")
-parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
+parser.add_argument("--lmin",     type=int,  default=500,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
 parser.add_argument("--isotropic", action='store_true',help='Isotropic sims.')
 parser.add_argument("--no-atmosphere", action='store_true',help='Disable atmospheric noise.')
@@ -36,33 +36,27 @@ parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 args = parser.parse_args()
 
-car = "healpix_" if args.healpix else "car_"
-mask="nomask_" if args.no_mask else "mask_"
-noise="sonoise" if args.wnoise==None else "wnoise"
-
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
-print(isostr)   
-w2 = solint.wfactor(2)
-w3 = solint.wfactor(3)
-w4 = solint.wfactor(4)
-s = stats.Stats(comm)
+
 
 config = io.config_from_yaml("../input/config.yml")
 
 #load noise nells
 
 #length of ell determines maximum l used for N1 calculation
-ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
-NOISE_LEVEL=nells[:3000]
-polnoise=nells_P[:3000]
+#load the noises
+nells=np.loadtxt("/global/homes/j/jia_qu/ACT_analysis/data/D56TTnoise0_3000.txt")
+nells_P=np.loadtxt("/global/homes/j/jia_qu/ACT_analysis/data/D56EEnoise0_3000.txt")
+nells=nells[:3000]
+nells_P=nells_P[:3000]
 
-lmin=100
-LMAXOUT=2992
-LMAX_TT=2992
+lmin=500 #minimum reconstruction multipole
+LMAXOUT=3000 #maximum output L
+Lmin_out=2 #minimum output multipole
+LMAX_TT=3000
 TMP_OUTPUT=config['data_path']
 LCORR_TT=0
-Lstep=20
-Lmin_out=2
+Lstep=20 #step size
 
 lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
 cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
@@ -78,22 +72,8 @@ clee=cls[2]
 clbb=cls[3]
 clte=cls[4]
 
-#Input normalisation as an array of arrays of lensing potential phi n0s.
-norms=np.loadtxt(config['data_path']+"norm_test_lmin_100_lmax_3000.txt")
-bins=norms[2:,0]
-ntt=norms[2:,1]
-nee=norms[2:,2]
-neb=norms[2:,3]
-nte=norms[2:,4]
-ntb=norms[2:,5]
-nbb=np.ones(len(ntb))
-norms=np.array([[ntt/bins**2],[nee/bins**2],[neb/bins**2],[nte/bins**2],[ntb/bins**2],[nbb]])
 
-"""
-
-"""
-#N1 bias calculation
-
+#bins to calculate the L' derivatives
 bins=np.array([0.000e+00, 2.000e+00, 1.200e+01, 2.200e+01, 3.200e+01, 4.200e+01,
        5.200e+01, 6.200e+01, 7.200e+01, 8.200e+01, 9.200e+01, 1.020e+02,
        1.320e+02, 1.620e+02, 1.920e+02, 2.220e+02, 2.520e+02, 2.820e+02,
@@ -101,18 +81,30 @@ bins=np.array([0.000e+00, 2.000e+00, 1.200e+01, 2.200e+01, 3.200e+01, 4.200e+01,
        4.920e+02, 5.220e+02, 5.520e+02, 6.520e+02, 7.520e+02, 8.520e+02,
        9.520e+02, 1.052e+03, 1.152e+03, 1.252e+03, 1.352e+03, 1.452e+03,
        1.752e+03, 2.052e+03, 2.352e+03, 2.652e+03, 2.952e+03])
-       
+
+
+#Input normalisation as an array of arrays of lensing potential phi n0s.
+
+
+thloc = "../data/" + config['theory_root']
+theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+ells = np.arange(lmax+100)
+uctt = theory.lCl('TT',ells)
+ucee = theory.lCl('EE',ells)
+ucte = theory.lCl('TE',ells)
+ucbb = theory.lCl('BB',ells)
+tctt = uctt + maps.interp(np.arange(len(nells)),nells)(ells)
+tcee = ucee + maps.interp(np.arange(len(nells)),nells_P)(ells)
+tcte = ucte 
+tcbb = ucbb + maps.interp(np.arange(len(nells)),nells_P)(ells)
+ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
+
+nbb=np.ones(len(Als['TT']))
+norms=np.array([[Als['TT']/ls**2],[Als['EE']/ls**2],[Als['EB']/ls**2],[Als['TE']/ls**2],[Als['TB']/ls**2],[nbb]])
+
 n1bins=np.arange(Lmin_out,LMAXOUT,Lstep)
-n1=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-n1mv_dclkk=nbias.n1mv_dclkk(clpp,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n1mv_dcltt=nbias.n1mv_dcltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)transpose()
-n1mv_dclee=nbias.n1mv_dclee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n1mv_dclbb=nbias.n1mv_dclbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n1mv_dclte=nbias.n1mv_dclte(clte,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n0mv_dcltt=nbias.n0mvderivative_cltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n0mv_dclee=nbias.n0mvderivative_clee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n0mv_dclbb=nbias.n0mvderivative_clbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
-n0mv_dclte=nbias.n0mvderivative_clte(clte,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+np.savetxt("/global/homes/j/jia_qu/ACT_analysis/data/testD56n1.txt",n1)
 
 def extend_matrix(sizeL,_matrix):
     #unpacked=true
@@ -136,28 +128,40 @@ def extend_matrix(sizeL,_matrix):
     b=np.array(b)
     a=b.transpose()    
     return a
-    
+
+n1mv_dclkk=nbias.n1mv_dclkk(clpp,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1mvdclkke=extend_matrix(3000,np.nan_to_num(n1mv_dclkk))
+np.savetxt(f"{solenspipe.opath}/actn1mvdclkk1.txt",n1mvdclkke)
+
+n1mv_dcltt=nbias.n1mv_dcltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1mvdcltte=extend_matrix(3000,np.nan_to_num(n1mv_dcltt))
+np.savetxt(f"{solenspipe.opath}/actn1mvdcltte1.txt",n1mvdcltte)
+
+n1mv_dclee=nbias.n1mv_dclee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1mvdcleee=extend_matrix(3000,np.nan_to_num(n1mv_dclee))
+np.savetxt(f"{solenspipe.opath}/actn1mvdcleee1.txt",n1mvdcleee)
 
 
-n0mvdcltte=extend_matrix(3000,n0mvdcltt)
-n0mvdcltee=extend_matrix(3000,n0mvdclte)
-n0mvdcleee=extend_matrix(3000,n0mvdclee)
-n0mvdclbbe=extend_matrix(3000,n0mvdclbb)
-n1mvdclkke=extend_matrix(3000,n1mvdclkk)
+n1mv_dclbb=nbias.n1mv_dclbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1mvdclbbe=extend_matrix(3000,np.nan_to_num(n1mv_dclbb))
+np.savetxt(f"{solenspipe.opath}/actn1mvdclbbe1.txt",n1mv_dclbb)
 
-n1mvdcltte=extend_matrix(3000,n1mvdcltt)
-n1mvdcleee=extend_matrix(3000,n1mvdclee)
-n1mvdclbbe=extend_matrix(3000,n1mvdclbb)
-n1mvdcltee=extend_matrix(3000,n1mvdclte)
+n1mv_dclte=nbias.n1mv_dclte(clte,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n1mvdcltee=extend_matrix(3000,np.nan_to_num(n1mv_dclte))
+np.savetxt(f"{solenspipe.opath}/actn1mvdcltee1.txt",n1mvdcltee)
 
-np.savetxt(f"{solenspipe.opath}/n1mvdclkk1.txt",n1mvdclkke)
-np.savetxt(f"{solenspipe.opath}/n0mvdcltt1.txt",n0mvdcltte)
-np.savetxt(f"{solenspipe.opath}/n0mvdclte1.txt",n0mvdcltee)
-np.savetxt(f"{solenspipe.opath}/n0mvdclee1.txt",n0mvdcleee)
-np.savetxt(f"{solenspipe.opath}/n0mvdclbb1.txt",n0mvdclbbe)
-np.savetxt(f"{solenspipe.opath}/n1mvdcltte1.txt",n1mvdcltte)
-np.savetxt(f"{solenspipe.opath}/n1mvdcleee1.txt",n1mvdcleee)
-np.savetxt(f"{solenspipe.opath}/n1mvdclbbe1.txt",n1mvdclbbe)
-np.savetxt(f"{solenspipe.opath}/n1mvdcltee1.txt",n1mvdcltee)
+n0mv_dcltt=nbias.n0mvderivative_cltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n0mvdcltte=extend_matrix(3000,np.nan_to_num(n0mvdcltt))
+np.savetxt(f"{solenspipe.opath}/actn0mvdcltt1.txt",n0mvdcltte)
 
+n0mv_dclee=nbias.n0mvderivative_clee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n0mvdcleee=extend_matrix(3000,np.nan_to_num(n0mvdclee))
+np.savetxt(f"{solenspipe.opath}/actn0mvdclee1.txt",n0mvdcleee)
 
+n0mv_dclbb=nbias.n0mvderivative_clbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n0mvdclbbe=extend_matrix(3000,np.nan_to_num(n0mvdclbb))
+np.savetxt(f"{solenspipe.opath}/actn0mvdclbb1.txt",n0mvdclbbe)
+
+n0mv_dclte=nbias.n0mvderivative_clte(clte,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
+n0mvdcltee=extend_matrix(3000,np.nan_to_num(n0mvdclte))
+np.savetxt(f"{solenspipe.opath}/actn0mvdclte1.txt",n0mvdcltee)
