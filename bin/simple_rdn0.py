@@ -42,10 +42,6 @@ qfunc = solint.qfunc
 
 nmax = len(ils)
 
-a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdlistTTnomask.txt",a)
-
-
 rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
 rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
