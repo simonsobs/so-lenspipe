@@ -47,11 +47,11 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
          qxy=None,qab=None):
     """
-    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    MC-RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
-
-    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    Generates 50x100 rdn0s for covariance simulation
+    e.g. structure(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
 
 
     gaussian_sims=True indicates we don't need to involve pairs
@@ -64,8 +64,8 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     qb = lambda x,y: qfunc(beta,x,y)
  
     rdn0list=[]
-    #for i in range(0,1950,39):
-    for i in range(0,78,39):
+    for i in range(0,1950,39):
+    #for i in range(0,975,39):
         with bench.show("rdn0"):
             #these are the data values
             X = get_kmap((0,0,i))
@@ -77,8 +77,8 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                 qab = qb(A,B) if qab is None else qab
             # Sims
             rdn0 = 0.       
-            #for j in range(i+1+comm.rank,i+101,comm.size):
-            for j in range(i+1+comm.rank,i+51,comm.size):
+            for j in range(i+1+comm.rank,i+101,comm.size):
+            #for j in range(i+1+comm.rank,i+201,comm.size):
                 print(j)
                 Xs  = get_kmap((icov,0,j))
                 Ys  = get_kmap((icov,0,j))
@@ -98,7 +98,7 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
                 
             totrdn0 = utils.allreduce(rdn0,comm)
-            totrdn0=np.array(totrdn0/50)
+            totrdn0=np.array(totrdn0/100)
             rdn0list.append(totrdn0)
     return rdn0list
 
@@ -162,6 +162,7 @@ def mean_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
 
     gaussian_sims=True indicates we don't need to involve pairs
     of sims because the sims are not lensed. Fluctuations reduced by dividing nsims into 2 halfs. Treat the first half as data the second half as sims.
+    Used for averaged reconstruction to estimate the montecarlo bias.
     """
     eX,eY = alpha
     eA,eB = beta
