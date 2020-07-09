@@ -294,7 +294,7 @@ def n1mv_dclkk(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEV
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
     np.savetxt('../data/n1mvdclkk.txt',der)
-    return derlist
+    return der
 
 def n1mv_dcltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     bins=bins-2
@@ -316,7 +316,7 @@ def n1mv_dcltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEV
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
     np.savetxt('../data/n1mvdcltt.txt',der)
-    return derlist
+    return der
 
 
 def n1mv_dclee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
@@ -339,7 +339,7 @@ def n1mv_dclee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEV
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
     np.savetxt('../data/n1mvdclee.txt',der)
-    return derlist
+    return der
 
 
 def n1mv_dclbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
@@ -362,7 +362,7 @@ def n1mv_dclbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEV
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
     np.savetxt('../data/n1mvdclbb.txt',der)
-    return derlist
+    return der
 
 def n1mv_dclte(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     bins=bins-2
@@ -384,7 +384,7 @@ def n1mv_dclte(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEV
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
     np.savetxt('../data/n1mvdclte.txt',der)
-    return derlist
+    return der
 
 
 
@@ -871,7 +871,7 @@ def n0mvderivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
     derlist.append(der)
     np.savetxt('../data/n0mvdcltt.txt',der)
-    return derlist
+    return der
 
 def n0mvderivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     """
@@ -910,8 +910,8 @@ def n0mvderivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,
             diff.append(der)
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
     derlist.append(der)
-    np.savetxt('../data/n0mv{}dclee.txt',der)
-    return derlist     
+    np.savetxt('../data/n0mvdclee.txt',der)
+    return der     
     
 def n0mvderivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     """
@@ -950,8 +950,8 @@ def n0mvderivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,
             diff.append(der)
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
     derlist.append(der)
-    np.savetxt('../data/n0mv{}dclbb.txt',der)
-    return derlist 
+    np.savetxt('../data/n0mvdclbb.txt',der)
+    return der 
     
 def n0mvderivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     """
@@ -990,8 +990,8 @@ def n0mvderivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,
             diff.append(der)
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
     derlist.append(der)
-    np.savetxt('../data/n0mv{}dclte.txt',der)
-    return derlist 
+    np.savetxt('../data/n0mvdclte.txt',der)
+    return der 
     
 def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     """
