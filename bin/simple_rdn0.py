@@ -42,16 +42,16 @@ qfunc = solint.qfunc
 
 nmax = len(ils)
 
-#a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-#np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdlist20.txt",a)
+a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdlistTTnomask.txt",a)
 
 
-rdn0 = bias.mean_rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
 rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_no_mask.txt',(ils,rdn0[:nmax]))
+io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}.txt',(ils,rdn0[:nmax]))
 
 
 if rank==0:
