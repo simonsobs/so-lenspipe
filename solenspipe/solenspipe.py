@@ -16,7 +16,7 @@ import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
-
+mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
         mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
@@ -27,7 +27,7 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
             shape,wcs = enmap.fullsky_geometry(res=res)
             mask = enmap.ones(shape,wcs)
         else:
-            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
+            afname = f'{mpath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
             mask = enmap.read_map(afname)[0]
     return mask
 
@@ -257,9 +257,10 @@ class SOLensInterface(object):
         """
 
         if not(self.zero_map):
+            print("prepare map")
             # Convert the solenspipe convention to the Alex convention
             s_i,s_set,noise_seed = convert_seeds(seed)
-
+            print(s_i,s_set,noise_seed)
 
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
@@ -272,11 +273,17 @@ class SOLensInterface(object):
                 for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
 
             oalms = self.map2alm(imap)
+
+
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             clttdata=hp.alm2cl(oalms[0],oalms[0])
             cleedata=hp.alm2cl(oalms[1],oalms[1])
             clbbdata=hp.alm2cl(oalms[2],oalms[2])
             cltedata=hp.alm2cl(oalms[0],oalms[1])
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/preparecltt.txt',clttdata/self.wfactor(2))
+            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/talms.fits',oalms[0],overwrite=True)
+            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/ealms.fits',oalms[1],overwrite=True)
+            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/balms.fits',oalms[2],overwrite=True)
             oalms[~np.isfinite(oalms)] = 0
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
@@ -289,7 +296,8 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
             almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
-            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/bh/talms.fits',almt,overwrite=True)
+
+
         else:
             nalms = hp.Alm.getsize(self.mlmax)
             almt = np.zeros((nalms,),dtype=np.complex128)
@@ -312,7 +320,8 @@ class SOLensInterface(object):
         if not(self.zero_map):
             # Convert the solenspipe convention to the Alex convention
             s_i,s_set,noise_seed = convert_seeds(seed)
-
+            print("sim power")
+            print(s_i,s_set,noise_seed)
 
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
@@ -327,6 +336,7 @@ class SOLensInterface(object):
             cleesim=hp.alm2cl(oalms[1],oalms[1])/self.wfactor(2)
             clbbsim=hp.alm2cl(oalms[2],oalms[2])/self.wfactor(2)
             cltesim=hp.alm2cl(oalms[0],oalms[1])/self.wfactor(2)
+            np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/clttsim.txt',clttsim)
         return clttsim,cleesim,clbbsim,cltesim
             
     def prepare_shear_map(self,channel,seed,lmin,lmax):
@@ -547,9 +557,14 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsi
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory)
-    #Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
+    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
+    Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
+
+    
+
+    
     fac=ls*(ls+1)
+    #np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/dumbN0/n0_mvcorrelated_nomask.txt",Ag[5]*fac)
     als=np.array([np.zeros(len(Ag[5]))]*6)
     ocl[np.where(ocl==0)] = 1e30
     for i in range(nsims):
@@ -560,22 +575,67 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsi
         cl=ocl**2/(sim_ocl)
         Ags0, Acs0, Wgs0, Wcs0 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
         #compute mv version
-        #Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
+        Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
         #(data-sim) x (data-sim)
         cl=ocl**2/(ocl-sim_ocl)
         Ags1, Acs1, Wgs1, Wcs1 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
-        #Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
+
+        Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
         n0dumb=[]
         for i in range(len(Ags1)):
             Ags0[i][np.where(Ags0[i]==0)] = 1e30
             Ags1[i][np.where(Ags1[i]==0)] = 1e30
-            Acs0[i][np.where(Acs0[i]==0)] = 1e30
-            Acs1[i][np.where(Acs1[i]==0)] = 1e30
             n0g = Ag[i]**2*(1./Ags0[i]-1./Ags1[i])
             n0dumb.append(n0g)
+
         n0dumb=np.array(n0dumb)
         als+=n0dumb
+    
+
+        
     return ls,als*fac/nsims
+
+def diagonal_TT(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
+    import basic
+    import curvedsky as cs
+    print('compute dumb N0')
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    ocl[np.where(ocl==0)] = 1e30
+
+    Ag,Ac=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+    fac=ls*(ls+1)
+    als=np.zeros(len(Ag))
+    #prepare the sim total power spectrum
+    cldata=get_sim_power((0,0,simn))
+    sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
+    #dataxdata
+    cl=ocl**2/(sim_ocl)
+    Ag0,Ac0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    #(data-sim) x (data-sim)
+    cl=ocl**2/(ocl-sim_ocl)
+    Ag1,Ac1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    Ag0[np.where(Ag0==0)] = 1e30
+    Ag1[np.where(Ag1==0)] = 1e30
+    n0g = Ag**2*(1./Ag0-1./Ag1)
+
+
+        
+    return ls,n0g*fac  
+ 
+        
 
 def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     import basic
@@ -604,6 +664,107 @@ def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     bhclkknorm=fac**2*Alpp/detR
     return ls,bhp,bhmask,Alpp,A_mask,bhclkknorm   
         
+def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    import basic
+    import curvedsky as cs
+    mlmax=lmax
+
+    polcomb='MV'
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nells.txt",noise[0])
+    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nee.txt",noise[1])
+    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nbb.txt",noise[2])
+    """
+    beam=1.5
+    wnoise=6.
+    ell=np.arange(lmax+1)
+    def gauss_beam(ell,fwhm):
+        tht_fwhm = np.deg2rad(fwhm / 60.)
+        return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+    bfact = maps.gauss_beam(beam,ell)**2.
+    nells = (wnoise*np.pi/180/60)**2./(Tcmb**2*np.ones(len(ell))*bfact)
+    nellsp=2*nells
+    noise=np.array([nells,nellsp,nellsp,nellsp])
+    """
+
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
+    sTalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/talms.fits')
+    sEalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/ealms.fits')
+    sBalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/balms.fits')
+    print(len(sTalm))
+    mlm=int(0.5*(-3+np.sqrt(9-8*(1-len(sTalm)))))
+    sTalm = cs.utils.lm_healpy2healpix(len(sTalm), sTalm, mlm) 
+    sEalm = cs.utils.lm_healpy2healpix(len(sEalm), sEalm, mlm) 
+    sBalm = cs.utils.lm_healpy2healpix(len(sBalm), sBalm, mlm) 
+    Talm=sTalm[:rlmax+1,:rlmax+1]/Tcmb
+    Ealm=sEalm[:rlmax+1,:rlmax+1]/Tcmb
+    Balm=sBalm[:rlmax+1,:rlmax+1]/Tcmb
+    Talm[~np.isfinite(Talm)] = 0
+    Ealm[~np.isfinite(Ealm)] = 0
+    Balm[~np.isfinite(Balm)] = 0
+
+    Fl = np.zeros((3,rlmax+1,rlmax+1))
+    for l in range(rlmin,rlmax+1):
+        Fl[:,l,0:l+1] = 1./ocl[:3,l,None]
+        
+    Talm *= Fl[0,:,:]
+    Ealm *= Fl[1,:,:]
+    Balm *= Fl[2,:,:]
+    # compute unnormalized estimator
+    glm, clm = {}, {}
+    glm['TT'], clm['TT'] = cs.rec_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],Talm,Talm)
+    glm['TE'], clm['TE'] = cs.rec_lens.qte(lmax,rlmin,rlmax,lcl[3,:],Talm,Ealm)
+    glm['EE'], clm['EE'] = cs.rec_lens.qee(lmax,rlmin,rlmax,lcl[1,:],Ealm,Ealm)
+    glm['TB'], clm['TB'] = cs.rec_lens.qtb(lmax,rlmin,rlmax,lcl[3,:],Talm,Balm)
+    glm['EB'], clm['EB'] = cs.rec_lens.qeb(lmax,rlmin,rlmax,lcl[1,:],Ealm,Balm)
+    
+    
+    # normalized estimators
+    ell=np.arange(lmax+1)
+    fac=ell*(ell+1)/2
+    for qi, q in enumerate(['TT','TE','EE','TB','EB']):
+        glm[q] *= Ag[qi,:,None] 
+    glm['MV']=0.
+    for qi, q in enumerate(['TT','TE','EE','TB','EB']):
+        glm['MV'] += Wg[qi,:,None]*glm[q]
+
+    glm['MV']=glm['MV'] * Ag[5,:,None]
+    istr = str(0).zfill(5)
+    phifname = "/project/projectdirs/act/data/actsims_data/signal_v0.4/fullskyPhi_alm_%s.fits" % istr
+    kalms=plensing.phi_to_kappa(hp.read_alm(phifname))
+    phimap=hp.alm2map(kalms.astype(complex),2048)
+    kalms=cs.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
+    kalms = solint.get_kappa_alm(0+0)
+    lm=int(0.5*(-3+np.sqrt(9-8*(1-len(kalms)))))
+    kalms = cs.utils.lm_healpy2healpix(len(kalms), kalms, lm) 
+    kalms=kalms[:lmax+1,:lmax+1]
+    macl=np.zeros(rlmax+1)
+    micl=np.zeros(rlmax+1)
+    mxcl=np.zeros(rlmax+1)
+    micl+=cs.utils.alm2cl(rlmax,kalms,kalms)/w2
+    acl=cs.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
+    macl+= fac**2*acl
+    xcl=cs.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
+    mxcl+=xcl*fac
+    normMV=Ag[5]*fac**2
+    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/tnorm1{polcomb}.txt",normMV)
+    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/ticlm1{polcomb}.txt",micl)
+    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/txclm1{polcomb}.txt",mxcl)
+    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/taclm1{polcomb}.txt",macl)
 
 def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
                    flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
