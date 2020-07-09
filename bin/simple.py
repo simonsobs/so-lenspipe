@@ -153,12 +153,7 @@ if rank==0:
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
-        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/aclnomask100.txt',acl)
-        """
-        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sacl.txt',acl)
-        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sxcl.txt',xcl)
-        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sicl.txt',icl)        
-        """
+
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
         hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}_nomask.fits',mf_alm,overwrite=True)
@@ -170,7 +165,6 @@ if rank==0:
         Nl=maps.interp(ils,bhclkknorm)(ls)
     else:
         Nl = maps.interp(ils,Nl)(ls)
-        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/snorm.txt',Nl)        
 
 
 
@@ -187,23 +181,7 @@ if rank==0:
     pl._ax.set_xlim(1,3100)
     pl.done(f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}recon.png')
     
-"""   
-ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
-ells=np.arange(0,solint.mlmax)
-config = io.config_from_yaml("../input/config.yml")
-thloc = "../data/" + config['theory_root']
-theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 
-
-ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
-class T:
-    def __init__(self):
-        self.lCl = lambda p,x: maps.interp(ells,gt)(x)
-theory_cross = T()
-import curvedsky as cs
-
-solenspipe.cmblensplusreconstruction(solint,w2,w3,w4,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
-"""
 
                                                                                    
 

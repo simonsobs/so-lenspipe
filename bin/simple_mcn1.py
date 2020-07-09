@@ -50,7 +50,7 @@ if not(args.no_mask):
     mcn1[:nmax] = mcn1[:nmax]/w4
     
 mcn1[nmax:] = 0
-io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{car}_{nsims}_nomask.txt',(ils,mcn1[:nmax]))
+io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{car}_{nsims}.txt',(ils,mcn1[:nmax]))
 
 
 if rank==0:
