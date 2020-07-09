@@ -18,7 +18,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple lensing reconstruction test.')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -40,7 +40,9 @@ parser.add_argument("--bias_hardening", action='store_true',help='Currently usef
 args = parser.parse_args()
 
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
-      
+
+w1 = solint.wfactor(1)      
+print(w1)
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
 w4 = solint.wfactor(4)
@@ -89,7 +91,7 @@ for task in my_tasks:
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
         # Get the reconstructed map for the TT estimator
         
-        if bias_hardening:
+        if args.bias_hardening:
             ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
             ells=np.arange(0,solint.mlmax)
             config = io.config_from_yaml("../input/config.yml")
@@ -110,7 +112,7 @@ for task in my_tasks:
             recon_alms=hp.almxfl(recon_alms,ils*(ils+1)*0.5)
         
         else:
-            recon_alms = qe.filter_mv(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
+            recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
     
     if args.read_meanfield:
         recon_alms = recon_alms - mf_alm
@@ -151,18 +153,25 @@ if rank==0:
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
-
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/aclnomask100.txt',acl)
+        """
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sacl.txt',acl)
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sxcl.txt',xcl)
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/sicl.txt',icl)        
+        """
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
-        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}.fits',mf_alm,overwrite=True)
+        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}_nomask.fits',mf_alm,overwrite=True)
         
     
 
     ls = np.arange(xcl.size)
-    if bias_hardening:
+    if args.bias_hardening:
         Nl=maps.interp(ils,bhclkknorm)(ls)
     else:
         Nl = maps.interp(ils,Nl)(ls)
+        np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/snorm.txt',Nl)        
+
 
 
     pl = io.Plotter('CL',xyscale='loglog')
@@ -177,6 +186,25 @@ if rank==0:
     pl._ax.set_ylim(1e-10,1e-2)
     pl._ax.set_xlim(1,3100)
     pl.done(f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}recon.png')
+    
+"""   
+ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
+ells=np.arange(0,solint.mlmax)
+config = io.config_from_yaml("../input/config.yml")
+thloc = "../data/" + config['theory_root']
+theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+
+
+ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+class T:
+    def __init__(self):
+        self.lCl = lambda p,x: maps.interp(ells,gt)(x)
+theory_cross = T()
+import curvedsky as cs
+
+solenspipe.cmblensplusreconstruction(solint,w2,w3,w4,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+"""
+
                                                                                    
 
                                                                                 
