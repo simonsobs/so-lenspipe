@@ -16,7 +16,6 @@ import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
-mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
         mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
@@ -27,7 +26,7 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
             shape,wcs = enmap.fullsky_geometry(res=res)
             mask = enmap.ones(shape,wcs)
         else:
-            afname = f'{mpath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
+            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
             mask = enmap.read_map(afname)[0]
     return mask
 
@@ -276,14 +275,6 @@ class SOLensInterface(object):
 
 
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-            clttdata=hp.alm2cl(oalms[0],oalms[0])
-            cleedata=hp.alm2cl(oalms[1],oalms[1])
-            clbbdata=hp.alm2cl(oalms[2],oalms[2])
-            cltedata=hp.alm2cl(oalms[0],oalms[1])
-            np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/preparecltt.txt',clttdata/self.wfactor(2))
-            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/talms.fits',oalms[0],overwrite=True)
-            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/ealms.fits',oalms[1],overwrite=True)
-            #hp.write_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/balms.fits',oalms[2],overwrite=True)
             oalms[~np.isfinite(oalms)] = 0
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
@@ -320,9 +311,6 @@ class SOLensInterface(object):
         if not(self.zero_map):
             # Convert the solenspipe convention to the Alex convention
             s_i,s_set,noise_seed = convert_seeds(seed)
-            print("sim power")
-            print(s_i,s_set,noise_seed)
-
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
 
@@ -336,7 +324,6 @@ class SOLensInterface(object):
             cleesim=hp.alm2cl(oalms[1],oalms[1])/self.wfactor(2)
             clbbsim=hp.alm2cl(oalms[2],oalms[2])/self.wfactor(2)
             cltesim=hp.alm2cl(oalms[0],oalms[1])/self.wfactor(2)
-            np.savetxt('/global/homes/j/jia_qu/so-lenspipe/data/clttsim.txt',clttsim)
         return clttsim,cleesim,clbbsim,cltesim
             
     def prepare_shear_map(self,channel,seed,lmin,lmax):
@@ -537,65 +524,9 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
     return ls,Ag*fac
-    #TT, EE, BB, TE
 
-def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,nsims):
-    import basic
-    import curvedsky as cs
-    print('compute dumb N0')
-    Tcmb = 2.726e6    # CMB temperature
-    Lmax = lmax       # maximum multipole of output normalization
-    rlmin = lmin
-    rlmax = lmax      # reconstruction multipole range
-    ls = np.arange(0,Lmax+1)
-    QDO = [True,True,True,True,True,False]
-    nltt=nltt[:ls.size]
-    nlee=nlee[:ls.size]
-    nlbb=nlbb[:ls.size]
-    nlte=np.zeros(len(nltt))
-    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
-    ocl= fcl+noise
-    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
-    Ag[5]=1/(1/Ag[0]+1/Ag[1]+1/Ag[2]+1/Ag[3]+1/Ag[4])
 
-    
-
-    
-    fac=ls*(ls+1)
-    #np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/dumbN0/n0_mvcorrelated_nomask.txt",Ag[5]*fac)
-    als=np.array([np.zeros(len(Ag[5]))]*6)
-    ocl[np.where(ocl==0)] = 1e30
-    for i in range(nsims):
-        #prepare the sim total power spectrum
-        cldata=get_sim_power((0,0,i))
-        sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
-        #dataxdata
-        cl=ocl**2/(sim_ocl)
-        Ags0, Acs0, Wgs0, Wcs0 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
-        #compute mv version
-        Ags0[5]=1/(1/Ags0[0]+1/Ags0[1]+1/Ags0[2]+1/Ags0[3]+1/Ags0[4])
-        #(data-sim) x (data-sim)
-        cl=ocl**2/(ocl-sim_ocl)
-        Ags1, Acs1, Wgs1, Wcs1 = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,cl)
-
-        Ags1[5]=1/(1/Ags1[0]+1/Ags1[1]+1/Ags1[2]+1/Ags1[3]+1/Ags1[4])
-        n0dumb=[]
-        for i in range(len(Ags1)):
-            Ags0[i][np.where(Ags0[i]==0)] = 1e30
-            Ags1[i][np.where(Ags1[i]==0)] = 1e30
-            n0g = Ag[i]**2*(1./Ags0[i]-1./Ags1[i])
-            n0dumb.append(n0g)
-
-        n0dumb=np.array(n0dumb)
-        als+=n0dumb
-    
-
-        
-    return ls,als*fac/nsims
-
-def diagonal_TT(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
+def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     import basic
     import curvedsky as cs
     print('compute dumb N0')
@@ -614,27 +545,54 @@ def diagonal_TT(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn)
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
+    AgTT,AcTT=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+    AgTE,AcTE=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+    AgEB,AcEB=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    Agmv=1/(1/AgTT+1/AgTE+1/AgTB+1/AgEE+1/AgEB)
 
-    Ag,Ac=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
     fac=ls*(ls+1)
-    als=np.zeros(len(Ag))
     #prepare the sim total power spectrum
     cldata=get_sim_power((0,0,simn))
     sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
     #dataxdata
     cl=ocl**2/(sim_ocl)
-    Ag0,Ac0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTT0,AcTT0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE0,AcTE0=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE0,AcEE0=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB0,AcEB0=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    Agmv0=1/(1/AgTT+1/AgTE+1/AgTB+1/AgEE+1/AgEB)
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    Ag1,Ac1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    Ag0[np.where(Ag0==0)] = 1e30
-    Ag1[np.where(Ag1==0)] = 1e30
-    n0g = Ag**2*(1./Ag0-1./Ag1)
+    AgTT1,AcTT1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE1,AcTE1=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    Agmv1=1/(1/AgTT1+1/AgTE1+1/AgTB1+1/AgEE1+1/AgEB1)
+    AgTT0[np.where(AgTT0==0)] = 1e30
+    AgTT1[np.where(AgTT1==0)] = 1e30
+    AgEE0[np.where(AgEE0==0)] = 1e30
+    AgEE1[np.where(AgEE1==0)] = 1e30
+    AgEB0[np.where(AgEB0==0)] = 1e30
+    AgEB1[np.where(AgEB1==0)] = 1e30
+    AgTE0[np.where(AgTE0==0)] = 1e30
+    AgTE1[np.where(AgTE1==0)] = 1e30
+    Agmv0[np.where(Agmv0==0)] = 1e30
+    Agmv1[np.where(Agmv1==0)] = 1e30
+    n0TTg = AgTT**2*(1./AgTT0-1./AgTT1)
+    n0TEg = AgTE**2*(1./AgTE0-1./AgTE1)
+    n0TBg = AgTB**2*(1./AgTB0-1./AgTB1)
+    n0EEg = AgEE**2*(1./AgEE0-1./AgEE1)
+    n0EBg = AgEB**2*(1./AgEB0-1./AgEB1)
+    n0mvg = Agmv**2*(1./Agmv0-1./Agmv1)
+    n0=np.array([n0TTg,n0TEg,n0EEg,n0TBg,n0EBg,n0mvg])*fac
+
+    return ls,n0TTg*fac,n0EEg*fac,n0EBg*fac,n0TEg*fac,n0TBg*fac,n0mvg*fac
 
 
-        
-    return ls,n0g*fac  
- 
         
 
 def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
@@ -682,30 +640,14 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     nlte=np.zeros(len(nltt))
 
     noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
-    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nells.txt",noise[0])
-    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nee.txt",noise[1])
-    np.savetxt("/global/cscratch1/sd/jia_qu/cmblensfastdata/nbb.txt",noise[2])
-    """
-    beam=1.5
-    wnoise=6.
-    ell=np.arange(lmax+1)
-    def gauss_beam(ell,fwhm):
-        tht_fwhm = np.deg2rad(fwhm / 60.)
-        return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
-    bfact = maps.gauss_beam(beam,ell)**2.
-    nells = (wnoise*np.pi/180/60)**2./(Tcmb**2*np.ones(len(ell))*bfact)
-    nellsp=2*nells
-    noise=np.array([nells,nellsp,nellsp,nellsp])
-    """
-
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
-    sTalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/talms.fits')
-    sEalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/ealms.fits')
-    sBalm=hp.fitsfunc.read_alm('/global/homes/j/jia_qu/so-lenspipe/data/pipetest/balms.fits')
-    print(len(sTalm))
+    #load the map alms
+    sTalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/talms.fits')
+    sEalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/ealms.fits')
+    sBalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/balms.fits')
     mlm=int(0.5*(-3+np.sqrt(9-8*(1-len(sTalm)))))
     sTalm = cs.utils.lm_healpy2healpix(len(sTalm), sTalm, mlm) 
     sEalm = cs.utils.lm_healpy2healpix(len(sEalm), sEalm, mlm) 
@@ -761,10 +703,7 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     xcl=cs.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
-    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/tnorm1{polcomb}.txt",normMV)
-    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/ticlm1{polcomb}.txt",micl)
-    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/txclm1{polcomb}.txt",mxcl)
-    np.savetxt(f"/global/cscratch1/sd/jia_qu/cmblensfastdata/taclm1{polcomb}.txt",macl)
+
 
 def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
                    flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
@@ -835,25 +774,6 @@ def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pe
     else:
         ret = nlqq.real
         return ls,(ls*(ls+1.)) * ret
-
-	
-def checkproc_py():
-    '''
-    Routine to check the number of processors involved
-    in the computation (Fortran routines use openmp).
-    '''
-    nproc = checkproc_f.get_threads()
-    if nproc > 1:
-        print ('You are using ', nproc, ' processors')
-    else:
-        print ('###################################')
-        print ('You are using ', nproc, ' processor')
-        print ('If you want to speed up the computation,')
-        print ('set up correctly your number of task.')
-        print ('e.g in bash, if you want to use n procs,')
-        print ('add this line to your bashrc:')
-        print ('export OMP_NUM_THREADS=n')
-        print ('###################################')
 
 class weighted_bin1D:
     '''
