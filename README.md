@@ -15,6 +15,7 @@ Here are all the pacakges you'll need before you can run this library and script
 * [pixell](https://github.com/simonsobs/pixell/) (if running on NERSC, run `python setup.py build_ext -i --fcompiler=intelem --compiler=intelem` followed by adding the directory to your PYTHONPATH; else run `python setup.py install --user`); test by running `py.test -s`
 * [falafel](https://github.com/simonsobs/falafel/) (`pip install -e . --user`)
 * [symlens](https://github.com/simonsobs/symlens/) (`pip install -e . --user`)
+* [cmblensplus](https://github.com/toshiyan/cmblensplus.git) Curvedsky pipeline developed by Toshiya Namikawa. Used for normalization of lensing estimators, dumb N0 and bias hardening normalization. ; git clone the repo, add to PYTHONPATH and compile cftsio, Healpix and lenspix locally in /cmblensplus/F90/pub
 * [quicklens](https://github.com/msyriac/quicklens/) (Python 3 fork of Duncan Hanson's code used to get
   normalization of lensing estimators. if running on NERSC, run `python setup.py build_ext -i --fcompiler=intelem --compiler=intelem`; else run `python setup.py build_ext -i` , and then add to PYTHONPATH)
 * [camb](https://camb.readthedocs.io/en/latest/) (`pip install camb --user`)
