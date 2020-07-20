@@ -18,7 +18,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple lensing reconstruction test.')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -35,14 +35,14 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix instead o
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
-parser.add_argument("--bias_hardening", action='store_true',help='Currently useful for TT estimator.')
+parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
+parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
 
 args = parser.parse_args()
 
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
 
 w1 = solint.wfactor(1)      
-print(w1)
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
 w4 = solint.wfactor(4)
@@ -91,7 +91,7 @@ for task in my_tasks:
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
         # Get the reconstructed map for the TT estimator
         
-        if args.bias_hardening:
+        if args.ps_bias_hardening:
             ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
             ells=np.arange(0,solint.mlmax)
             config = io.config_from_yaml("../input/config.yml")
@@ -105,7 +105,27 @@ for task in my_tasks:
                     self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
             theory_cross = T()
 
-            ls,blens,bmask,Alpp,Amask,bhclkknorm=solenspipe.bhnorms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+            ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+            s_alms=qe.filter_alms(solint.get_pointsources(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,A_ps*bhps))
+            phi_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,2*Alpp*blens))
+            recon_alms=phi_alms-s_alms
+            recon_alms=hp.almxfl(recon_alms,ils*(ils+1)*0.5)
+            
+        elif args.mask_bias_hardening:
+            ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
+            ells=np.arange(0,solint.mlmax)
+            config = io.config_from_yaml("../input/config.yml")
+            thloc = "../data/" + config['theory_root']
+            theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+            
+            
+            ellsi,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+            class T:
+                def __init__(self):
+                    self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
+            theory_cross = T()
+
+            ls,blens,bmask,Alpp,Amask,bhclkknorm=solenspipe.bias_hard_mask_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
             mask_alms=qe.filter_alms(solint.get_mv_mask(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Amask*bmask))
             phi_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,2*Alpp*blens))
             recon_alms=phi_alms-mask_alms
@@ -153,6 +173,7 @@ if rank==0:
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
+        np.savetxt(f'{solenspipe.opath}/acl.txt',acl)
 
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
@@ -161,11 +182,12 @@ if rank==0:
     
 
     ls = np.arange(xcl.size)
-    if args.bias_hardening:
+    if args.ps_bias_hardening:
         Nl=maps.interp(ils,bhclkknorm)(ls)
+        
     else:
         Nl = maps.interp(ils,Nl)(ls)
-
+        np.savetxt(f'{solenspipe.opath}/N0.txt',Nl)
 
 
     pl = io.Plotter('CL',xyscale='loglog')
