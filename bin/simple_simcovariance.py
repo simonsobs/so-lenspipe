@@ -63,9 +63,16 @@ acl_list=[]
 rdlist=[]
 for i in range(0,1950,39):
     #generate list of dumbn0
-    ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB'],db['mv']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,i)
-    rdlist.append(db[polcomb])
+    print(i)
+    if polcomb='mv':
+        ils,db=solenspipe.diagonal_RDN0mv(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,i)
+        rdlist.append(db)
+    else:
+            db = {}
+            ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,i)
+        
     #generate list of raw auto using the same seeds
+
     t_alm,e_alm,b_alm = solint.get_kmap(channel,(0,0,i),lmin,lmax,filtered=True)
     recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
     #load meanfield alms generated from simple.py
@@ -73,6 +80,7 @@ for i in range(0,1950,39):
     acl = hp.alm2cl(recon_alms-mfalm,recon_alms-mfalm)
     acl=acl/w4
     acl_list.append(acl)
+
 
 
 #obtain bandpowerer covariance
