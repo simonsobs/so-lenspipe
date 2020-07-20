@@ -16,6 +16,7 @@ import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
         mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
@@ -26,7 +27,7 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
             shape,wcs = enmap.fullsky_geometry(res=res)
             mask = enmap.ones(shape,wcs)
         else:
-            afname = f'{opath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
+            afname = f'{mpath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
             mask = enmap.read_map(afname)[0]
     return mask
 
@@ -259,7 +260,6 @@ class SOLensInterface(object):
             print("prepare map")
             # Convert the solenspipe convention to the Alex convention
             s_i,s_set,noise_seed = convert_seeds(seed)
-            print(s_i,s_set,noise_seed)
 
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
@@ -379,6 +379,15 @@ class SOLensInterface(object):
     def qfuncmask(self,alpha,X,Y):
         polcomb = alpha
         return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
+    
+    def get_pointsources(self,polcomb,talm,ealm,balm):
+        return self.qfunc_ps(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfunc_ps(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
 
@@ -504,7 +513,6 @@ def initialize_mask(nside,smooth_deg):
 
 
 def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
-    import basic
     import curvedsky as cs
     print('compute cmblensplus norm')
     Tcmb = 2.726e6    # CMB temperature
@@ -524,7 +532,6 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
     return ls,Ag*fac
-
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     import basic
@@ -550,7 +557,6 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     AgTB,AcTB=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
     AgEE,AcEE=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
     AgEB,AcEB=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
-    Agmv=1/(1/AgTT+1/AgTE+1/AgTB+1/AgEE+1/AgEB)
 
     fac=ls*(ls+1)
     #prepare the sim total power spectrum
@@ -563,7 +569,6 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     AgTB0,AcTB0=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
     AgEE0,AcEE0=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
     AgEB0,AcEB0=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
-    Agmv0=1/(1/AgTT+1/AgTE+1/AgTB+1/AgEE+1/AgEB)
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
     AgTT1,AcTT1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
@@ -571,7 +576,6 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     AgTB1,AcTB1=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
     AgEE1,AcEE1=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
     AgEB1,AcEB1=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
-    Agmv1=1/(1/AgTT1+1/AgTE1+1/AgTB1+1/AgEE1+1/AgEB1)
     AgTT0[np.where(AgTT0==0)] = 1e30
     AgTT1[np.where(AgTT1==0)] = 1e30
     AgEE0[np.where(AgEE0==0)] = 1e30
@@ -588,15 +592,112 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     n0EEg = AgEE**2*(1./AgEE0-1./AgEE1)
     n0EBg = AgEB**2*(1./AgEB0-1./AgEB1)
     n0mvg = Agmv**2*(1./Agmv0-1./Agmv1)
-    n0=np.array([n0TTg,n0TEg,n0EEg,n0TBg,n0EBg,n0mvg])*fac
+    n0=np.array([n0TTg,n0TEg,n0EEg,n0TBg,n0EBg])*fac
 
-    return ls,n0TTg*fac,n0EEg*fac,n0EBg*fac,n0TEg*fac,n0TBg*fac,n0mvg*fac
+    return ls,n0TTg*fac,n0EEg*fac,n0EBg*fac,n0TEg*fac,n0TBg*fac
+
+    
+def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
+    import curvedsky as cs
+    print('compute dumb N0')
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    AgTT,AcTT=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
+    AgTE,AcTE=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
+    AgTB,AcTB=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
+    AgEE,AcEE=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
+    AgEB,AcEB=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
+
+    #prepare the sim total power spectrum
+    cldata=get_sim_power((0,0,simn))
+    sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
+    #dataxdata
+    sim_ocl[np.where(sim_ocl==0)] = 1e30
+    cl=ocl**2/(sim_ocl)
+    AgTT0,AcTT0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE0,AcTE0=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
+    AgTB0,AcTB0=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
+    AgEE0,AcEE0=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
+    AgEB0,AcEB0=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
+    ATTTE0,__=cs.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
+    ATTEE0,__=cs.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATEEE0,__=cs.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATBEB0,__=cs.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
+
+
+    #(data-sim) x (data-sim)
+    cl=ocl**2/(ocl-sim_ocl)
+    AgTT1,AcTT1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE1,AcTE1=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
+    AgTB1,AcTB1=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
+    AgEE1,AcEE1=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
+    AgEB1,AcEB1=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
+    ATTTE1,__=cs.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATTEE1,__=cs.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATEEE1,__=cs.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATBEB1,__=cs.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+
+
+    AgTT0[np.where(AgTT0==0)] = 1e30
+    AgTT1[np.where(AgTT1==0)] = 1e30
+    AgEE0[np.where(AgEE0==0)] = 1e30
+    AgEE1[np.where(AgEE1==0)] = 1e30
+    AgEB0[np.where(AgEB0==0)] = 1e30
+    AgEB1[np.where(AgEB1==0)] = 1e30
+    AgTE0[np.where(AgTE0==0)] = 1e30
+    AgTE1[np.where(AgTE1==0)] = 1e30
+    ATTTE0[np.where(ATTTE0==0)] = 1e30
+    ATTTE1[np.where(ATTTE1==0)] = 1e30
+    ATTEE0[np.where(ATTEE0==0)] = 1e30
+    ATTEE1[np.where(ATTEE1==0)] = 1e30
+    ATEEE0[np.where(ATEEE0==0)] = 1e30
+    ATEEE1[np.where(ATEEE1==0)] = 1e30
+    ATBEB0[np.where(ATBEB0==0)] = 1e30
+    ATBEB1[np.where(ATBEB0==0)] = 1e30
+
+    n0TTg = AgTT**2*(1./AgTT0-1./AgTT1)
+    n0TEg = AgTE**2*(1./AgTE0-1./AgTE1)
+    n0TBg = AgTB**2*(1./AgTB0-1./AgTB1)  
+    n0EEg = AgEE**2*(1./AgEE0-1./AgEE1)
+    n0EBg = AgEB**2*(1./AgEB0-1./AgEB1)
+    n0TTTE=AgTT*AgTE*(ATTTE0+ATTTE1)
+    n0TTEE=AgTT*AgEE*(ATTEE0+ATTEE1)
+    n0TEEE=AgTE*AgEE*(ATEEE0+ATEEE1)
+    n0TBEB=AgTB*AgEB*(ATBEB0+ATBEB1)
+
+    dumbn0=[n0TTg,n0TEg,n0TBg,n0EBg,n0EEg,n0TTTE,n0TTEE,n0TEEE,n0TBEB]
+    weights_NUM=[1/AgTT**2,1/AgTE**2,1/AgTB**2,1/AgEB**2,1/AgEE**2,2/(AgTT*AgTE),2/(AgTT*AgEE)
+    ,2/(AgTE*AgEE),2/(AgTB*AgEB)]
+    weights_den=[1/AgTT**2,1/AgTE**2,1/AgTB**2,1/AgEB**2,1/AgEE**2,2/(AgTT*AgTE),2/(AgTT*AgTB),2/(AgTT*AgEB),2/(AgTT*AgEE),
+    2/(AgTE*AgTB),2/(AgTE*AgEB),2/(AgTE*AgEE),2/(AgTB*AgEB),2/(AgTB*AgEE),2/(AgEB*AgEE)]
+ 
+    mvdumbN0=np.zeros(len(n0TTg))
+    sumc=np.zeros(len(n0TTg))  
+    for i in range(len(weights_den)):
+        sumc+=weights_den[i]
+    for i in range(len(weights_NUM)):
+        mvdumbN0+=np.nan_to_num(weights_NUM[i])*np.nan_to_num(dumbn0[i])
+    mvdumbN0=mvdumbN0/sumc
+    fac=ls*(ls+1)*0.25
+    
+    return ls,mvdumbN0/fac
 
 
         
 
-def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
-    import basic
+def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     import curvedsky as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -620,10 +721,35 @@ def bhnorms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     bhmask=Alpp*Rlpt/detR
     bhp=1/detR
     bhclkknorm=fac**2*Alpp/detR
-    return ls,bhp,bhmask,Alpp,A_mask,bhclkknorm   
+    return ls,bhp,bhmask,Alpp,A_mask,bhclkknorm
+
+def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    import curvedsky as cs
+    Tcmb = 2.726e6    # CMB temperature
+    Lmax = lmax       # maximum multipole of output normalization
+    rlmin = lmin
+    rlmax = lmax      # reconstruction multipole range
+    ls = np.arange(0,Lmax+1)
+    QDO = [True,True,True,True,True,False]
+    nltt=nltt[:ls.size]
+    nlee=nlee[:ls.size]
+    nlbb=nlbb[:ls.size]
+    nlte=np.zeros(len(nltt))
+    noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
+    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
+    ocl= fcl+noise
+    A_ps = cs.norm_src.qtt(lmax,rlmin,rlmax,ocl[0,:])
+    Alpp, __ = cs.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Rlps = cs.norm_lens.stt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
+    fac=ls*(ls+1)*0.5
+    detR=1-Alpp*A_ps*Rlps**2
+    bhps=Alpp*Rlps/detR
+    bhp=1/detR
+    bhclkknorm=fac**2*Alpp/detR
+    return ls,bhp,bhps,Alpp,A_ps,bhclkknorm   
         
 def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
-    import basic
     import curvedsky as cs
     mlmax=lmax
 
