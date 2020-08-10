@@ -83,7 +83,7 @@ for task in my_tasks:
         pl._ax.set_xlim(1,6000)
         pl._ax.set_ylim(1e-6,1e3)
         pl.done(f'{solenspipe.opath}/tcl.png')
-        imap = enmap.downgrade(solint.alm2map(np.asarray([t_alm,e_alm,b_alm]),ncomp=3) * maps.binary_mask(mask),2)
+        imap = enmap.downgrade(solint.alm2map(np.asarray([t_alm,e_alm,b_alm]),ncomp=3) * solenspipe.get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4),2)
         for i in range(3): io.hplot(imap[i],f'{solenspipe.opath}/imap_{i}',mask=0)
 
 
@@ -138,7 +138,8 @@ for task in my_tasks:
         recon_alms = recon_alms - mf_alm
 
     if task==0 and debug_cmb:
-        rmap = solint.alm2map(recon_alms,ncomp=1)[0] * maps.binary_mask(mask)
+        maskb=solenspipe.get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
+        rmap = solint.alm2map(recon_alms,ncomp=1)[0] * maskb
         io.hplot(rmap,f'{solenspipe.opath}/rmap',mask=0,color='gray')
         falms = recon_alms.copy()
         ls = np.arange(solint.mlmax+1)
@@ -146,7 +147,7 @@ for task in my_tasks:
         fls[ls<2] = 0
         fls[ls>100] = 0
         falms = hp.almxfl(falms,fls)
-        rmap = solint.alm2map(falms,ncomp=1)[0] * maps.binary_mask(mask)
+        rmap = solint.alm2map(falms,ncomp=1)[0] * maskb
         io.hplot(rmap,f'{solenspipe.opath}/frmap',mask=0,color='gray')
 
     kalms = solint.get_kappa_alm(task+sindex)
@@ -191,14 +192,14 @@ if rank==0:
 
 
     pl = io.Plotter('CL',xyscale='loglog')
-    pl.add(ls,acl,alpha=0.5,label='rr')
+    pl.add(ls,acl,alpha=0.5,label='raw auto')
     if args.write_meanfield or args.read_meanfield:
         mf_cl = hp.alm2cl(mf_alm,mf_alm) / w4
         pl.add(ls,mf_cl,alpha=0.5,label='mcmf cl')
         pl.add(ls,acl-mf_cl,label='rr - mf')
-    pl.add(ls,xcl,label='ri')
+    pl.add(ls,xcl,label='raw auto x input')
     pl.add(ls,icl,color='k')
-    pl.add(ls,icl+Nl,ls='--',label='ii + Nl')
+    pl.add(ls,icl+Nl,ls='--',label='input + N0 bias')
     pl._ax.set_ylim(1e-10,1e-2)
     pl._ax.set_xlim(1,3100)
     pl.done(f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}recon.png')
