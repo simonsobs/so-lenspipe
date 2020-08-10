@@ -67,10 +67,13 @@ def initialize_args(args):
     # norm dict
     Als = {}
     ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,label=args.label)
+    #ls1,N1['TT'],N1['EE'],N1['EB'],N1['TE'],N1['TB'],N1['mv']=solint.analytic_n1(lmin,lmax,Lmin_out=2,Lmaxout=lmax,Lstep=20,label=args.label)
+    
     Als['mv'] = al_mv
     Als['mvpol'] = al_mv_pol
     al_mv = Als[polcomb]
     Nl = al_mv * ils*(ils+1.) / 4.
+    #N1=N1[polcomb]*(ls1*(ls1+1.))**2/4.
     return solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
 def convert_seeds(seed,nsims=100,ndiv=4):
@@ -341,7 +344,88 @@ class SOLensInterface(object):
         imap = (cmb_map + noise_map)
         imap = imap * self.mask
 
-        imap = (cmb_map + noise_map)*self.mask
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        oalms[~np.isfinite(oalms)] = 0
+
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
+        almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
+        return almt
+
+    def prepare_shearT_map(self,channel,seed,lmin,lmax):
+
+        if not(self.zero_map):
+            print("prepare map")
+            # Convert the solenspipe convention to the Alex convention
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+
+            imap = (cmb_map + noise_map)
+            imap = imap * self.mask
+
+            if self._debug:
+                for i in range(3): self.plot(imap[i],f'imap_{i}')
+                for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
+
+            oalms = self.map2alm(imap)
+
+
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+            nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+            nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+            filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
+
+            almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
+            return almt
+            
+    def prepare_shearT_map1(self,channel,seed,lmin,lmax):
+
+        if not(self.zero_map):
+            print("prepare map")
+            # Convert the solenspipe convention to the Alex convention
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+
+            imap = (cmb_map + noise_map)
+            imap = imap * self.mask
+
+            oalms = self.map2alm(imap)
+
+
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            filt_t = lambda x: 1.
+
+            almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
+            return almt
+        
+    def prepare_shear_map1(self,channel,seed,lmin,lmax):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        # Convert the solenspipe convention to the Alex convention
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+
+        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+        noise_map = self.get_noise_map(noise_seed,channel)
+
+        imap = (cmb_map + noise_map)
+        imap = imap * self.mask
+
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
@@ -353,8 +437,11 @@ class SOLensInterface(object):
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
-        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
+        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
         almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
+        ells=np.arange(0,self.mlmax)
+        filt_l= lambda ells: 0.5*np.sqrt((ells-1.)*ells*(ells+1.)*(ells+2.))
+        almt = qe.filter_alms(oalms[0],filt_l,lmin=lmin,lmax=lmax)
         return almt
 
     def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
@@ -534,7 +621,6 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     return ls,Ag*fac
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
-    import basic
     import curvedsky as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
@@ -584,14 +670,12 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     AgEB1[np.where(AgEB1==0)] = 1e30
     AgTE0[np.where(AgTE0==0)] = 1e30
     AgTE1[np.where(AgTE1==0)] = 1e30
-    Agmv0[np.where(Agmv0==0)] = 1e30
-    Agmv1[np.where(Agmv1==0)] = 1e30
+
     n0TTg = AgTT**2*(1./AgTT0-1./AgTT1)
     n0TEg = AgTE**2*(1./AgTE0-1./AgTE1)
     n0TBg = AgTB**2*(1./AgTB0-1./AgTB1)
     n0EEg = AgEE**2*(1./AgEE0-1./AgEE1)
     n0EBg = AgEB**2*(1./AgEB0-1./AgEB1)
-    n0mvg = Agmv**2*(1./Agmv0-1./Agmv1)
     n0=np.array([n0TTg,n0TEg,n0EEg,n0TBg,n0EBg])*fac
 
     return ls,n0TTg*fac,n0EEg*fac,n0EBg*fac,n0TEg*fac,n0TBg*fac
