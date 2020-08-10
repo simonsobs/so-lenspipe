@@ -56,6 +56,6 @@ theory_cross = T()
 
 get_sim_power = lambda seed: solint.get_sim_power(channel,seed,lmin,lmax)
 db = {}
-ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB'],db['mv']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,1)
-
-np.savetxt(f'{solenspipe.opath}/dumbn0_{polcomb}_{isostr}_{car}_{nsims}.txt',db[polcomb])
+ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,1)
+ils,dumbmv=solenspipe.diagonal_RDN0mv(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,1)
+np.savetxt(f'{solenspipe.opath}/dumbn0_{polcomb}_{isostr}_{car}_{nsims}1.txt',dumbmv)
