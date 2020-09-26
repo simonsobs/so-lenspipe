@@ -14,7 +14,7 @@ from solenspipe import bias
 
 import argparse
 # Parse command line
-parser = argparse.ArgumentParser(description='Do a thing.')
+parser = argparse.ArgumentParser(description='Compute a list of nsimsx50 RDN0s for covariance estimation')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
 parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
@@ -32,6 +32,8 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix.')
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+parser.add_argument("--curl", action='store_true',help='curl reconstruction')
+
 args = parser.parse_args()
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
       
@@ -45,3 +47,4 @@ nmax = len(ils)
 
 a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
 np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdn0list_{polcomb}_{isostr}.txt",a)
+
