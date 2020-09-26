@@ -2,7 +2,8 @@ from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
-from pixell import enmap,lensing as plensing,curvedsky
+from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
+
 import numpy as np
 import os,sys
 import healpy as hp
@@ -16,7 +17,9 @@ import traceback
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+#mask path
 mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
+
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
         mask = np.ones((hp.nside2npix(2048),)) if no_mask else initialize_mask(2048,hp_deg)
@@ -27,6 +30,7 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
             shape,wcs = enmap.fullsky_geometry(res=res)
             mask = enmap.ones(shape,wcs)
         else:
+            
             afname = f'{mpath}/car_mask_lmax_{lmax}_apodized_{car_deg:.1f}_deg.fits'
             mask = enmap.read_map(afname)[0]
     return mask
@@ -47,6 +51,7 @@ def initialize_args(args):
 
     # Number of sims
     nsims = args.nsims
+    curl=args.curl
     sindex = args.sindex
     comm,rank,my_tasks = mpi.distribute(nsims)
 
@@ -66,14 +71,11 @@ def initialize_args(args):
 
     # norm dict
     Als = {}
-    ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,label=args.label)
-    #ls1,N1['TT'],N1['EE'],N1['EB'],N1['TE'],N1['TB'],N1['mv']=solint.analytic_n1(lmin,lmax,Lmin_out=2,Lmaxout=lmax,Lstep=20,label=args.label)
-    
+    ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,curl=curl,label=args.label)    
     Als['mv'] = al_mv
     Als['mvpol'] = al_mv_pol
     al_mv = Als[polcomb]
     Nl = al_mv * ils*(ils+1.) / 4.
-    #N1=N1[polcomb]*(ls1*(ls1+1.))**2/4.
     return solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
 def convert_seeds(seed,nsims=100,ndiv=4):
@@ -266,6 +268,9 @@ class SOLensInterface(object):
 
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
+            noise_map=enmap.samewcs(noise_map,cmb_map)
+            noise_oalms = self.map2alm(noise_map)
+
 
             imap = (cmb_map + noise_map)
             imap = imap * self.mask
@@ -278,6 +283,7 @@ class SOLensInterface(object):
 
 
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            #hp.fitsfunc.write_alm("/global/cscratch1/sd/jia_qu/maps/testTT.fits",oalms[0])
             oalms[~np.isfinite(oalms)] = 0
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
@@ -286,7 +292,7 @@ class SOLensInterface(object):
             filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
             filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
 
-
+   
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
             almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
@@ -354,7 +360,7 @@ class SOLensInterface(object):
 
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
-        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
         almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
         return almt
 
@@ -397,14 +403,16 @@ class SOLensInterface(object):
 
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
-
+            noise_oalms = self.map2alm(noise_map[0])
+            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
             imap = (cmb_map + noise_map)
             imap = imap * self.mask
 
             oalms = self.map2alm(imap)
 
-
+            beam=maps.gauss_beam(self.beam,ls)
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+
             oalms[~np.isfinite(oalms)] = 0
             filt_t = lambda x: 1.
 
@@ -416,7 +424,7 @@ class SOLensInterface(object):
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-        # Convert the solenspipe convention to the Alex convention
+        print("loading shear map")
         s_i,s_set,noise_seed = convert_seeds(seed)
 
 
@@ -431,17 +439,17 @@ class SOLensInterface(object):
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         
         oalms = self.map2alm(imap)
+        print("noise disabled?")
+        print(self.disable_noise)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
 
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
-        filt_t = lambda x: (1./(x*self.cltt(x)*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+
         almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
-        ells=np.arange(0,self.mlmax)
-        filt_l= lambda ells: 0.5*np.sqrt((ells-1.)*ells*(ells+1.)*(ells+2.))
-        almt = qe.filter_alms(oalms[0],filt_l,lmin=lmin,lmax=lmax)
         return almt
 
     def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
@@ -459,11 +467,22 @@ class SOLensInterface(object):
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
+    def get_mv_curl(self,polcomb,talm,ealm,balm):
+    
+        return self.qfunc_curl(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfunc_curl(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][1]
+
     def get_mv_mask(self,polcomb,talm,ealm,balm):
         
         return self.qfuncmask(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfuncmask(self,alpha,X,Y):
+        """mask reconstruction"""
         polcomb = alpha
         return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -473,6 +492,7 @@ class SOLensInterface(object):
         return self.qfunc_ps(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc_ps(self,alpha,X,Y):
+        """Point source reconstruction from Falafel"""
         polcomb = alpha
         return qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -480,6 +500,7 @@ class SOLensInterface(object):
 
     def get_noise_power(self,channel=None,beam_deconv=False):
         if (self.wnoise is not None) or self.disable_noise:
+            print("using white noise")
             ls = np.arange(self.mlmax+1)
             if not(self.disable_noise):
                 bfact = maps.gauss_beam(self.beam,ls)**2. if beam_deconv else np.ones(ls.size)
@@ -502,13 +523,19 @@ class SOLensInterface(object):
         return ls,nells,nells_P
     
 
-    def initialize_norm(self,ch,lmin,lmax,recalculate=False,quicklens=False,label=None):
+    def initialize_norm(self,ch,lmin,lmax,recalculate=False,quicklens=False,curl=False,label=None):
         lstr = "" if label is None else f"{label}_"
         wstr = "" if self.wnoise is None else "wnoise_"
         onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        onormcurlfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
         try:
             assert not(recalculate), "Recalculation of norm requested."
-            return np.loadtxt(onormfname,unpack=True)
+            if curl:
+                print("using curl norm")
+                print(onormcurlfname)
+                return np.loadtxt(onormcurlfname,unpack=True)
+            else:
+                return np.loadtxt(onormfname,unpack=True)
         except:
             print(traceback.format_exc())
             thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
@@ -520,10 +547,14 @@ class SOLensInterface(object):
                     self.lCl = lambda p,x: maps.interp(ells,gt)(x)
             theory_cross = T()
             ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
+            cltt=theory.lCl('TT',ls)+nells
+
             if quicklens: #now cmblensplus
                 Als = {}
-                ls,Ag = cmblensplus_norm(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+                Acs={}
+                ls,Ag,Ac = cmblensplus_norm(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
                 Als['TT']=Ag[0];Als['TE']=Ag[1];Als['EE']=Ag[2];Als['TB']=Ag[3];Als['EB']=Ag[4];al_mv =1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']);al_mv_pol = 1/(1/Als['EB']+1/Als['TB']);Al_te_hdv = Als['TT']*0 
+                Acs['TT']=Ac[0];Acs['TE']=Ac[1];Acs['EE']=Ac[2];Acs['TB']=Ac[3];Acs['EB']=Ac[4];ac_mv =1/(1/Acs['EB']+1/Acs['TB']+1/Acs['EE']+1/Acs['TE']+1/Acs['TT']);ac_mv_pol = 1/(1/Acs['EB']+1/Acs['TB']);Ac_te_hdv = Acs['TT']*0 
             else:
                 ells = np.arange(lmax+100)
                 uctt = theory.lCl('TT',ells)
@@ -536,7 +567,12 @@ class SOLensInterface(object):
                 tcbb = ucbb + maps.interp(ls,nells_P)(ells)
                 ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
             io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
-            return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
+            io.save_cols(onormcurlfname,(ls,Acs['TT'],Acs['EE'],Acs['EB'],Acs['TE'],Acs['TB'],ac_mv_pol,ac_mv,Ac_te_hdv))
+            if curl:
+                print("curl norm")
+                return ls,Acs['TT'],Acs['EE'],Acs['EB'],Acs['TE'],Acs['TB'],ac_mv_pol,ac_mv,Ac_te_hdv
+            else: 
+                return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
     
     def analytic_n1(self,ch,lmin,lmax,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
         
@@ -618,9 +654,10 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     ocl= fcl+noise
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
-    return ls,Ag*fac
+    return ls,Ag*fac,Ac*fac
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
+    """Curvedsky dumb N0 for TT,EE,EB,TE,TB"""
     import curvedsky as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
@@ -682,6 +719,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
 
     
 def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
+    """Curvedsky dumb N0 for MV"""
     import curvedsky as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
@@ -782,6 +820,7 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
         
 
 def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    """return normalization for mask reconstruction"""
     import curvedsky as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -808,6 +847,7 @@ def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     return ls,bhp,bhmask,Alpp,A_mask,bhclkknorm
 
 def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    """Normalizations for point source reconstruction"""
     import curvedsky as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -831,13 +871,16 @@ def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     bhps=Alpp*Rlps/detR
     bhp=1/detR
     bhclkknorm=fac**2*Alpp/detR
+
     return ls,bhp,bhps,Alpp,A_ps,bhclkknorm   
         
+
 def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
+    """example of reconstruction using Toshiya's cmblensplus pipeline"""
     import curvedsky as cs
     mlmax=lmax
 
-    polcomb='MV'
+    polcomb='TT'
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -854,7 +897,7 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
-    #load the map alms
+    #load the beam deconvolved alms
     sTalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/talms.fits')
     sEalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/ealms.fits')
     sBalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/balms.fits')
@@ -914,76 +957,6 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
 
-
-def quicklens_norm(polcomb,nltt,nlee,nlbb,theory,theory_cross,tellmin,tellmax,pellmin,pellmax,Lmax=None,
-                   flatsky=False,flatsky_nx=2048,flatsky_dx_arcmin=2.0,flatsky_bin_edges=None):
-    import quicklens as ql
-    fmap = {'TT':ql.qest.lens.phi_TT,
-            'TE':ql.qest.lens.phi_TE,
-            'EE':ql.qest.lens.phi_EE,
-            'EB':ql.qest.lens.phi_EB,
-            'TB':ql.qest.lens.phi_TB}
-    rcl = {'TT':'TT',
-            'TE':'TE',
-            'EE':'EE',
-            'EB':'EE',
-            'TB':'TE'}
-    nls = {'TT': nltt,'EE': nlee,'BB': nlbb}
-    assert nltt.size > (tellmax+1)
-    assert nlee.size > (pellmax+1)
-    assert nlbb.size > (pellmax+1)
-
-    if Lmax is None: Lmax = max(tellmax,pellmax)+1
-    ls = np.arange(0,Lmax+1)
-
-    if polcomb=='TT':
-        qest = fmap[polcomb](theory_cross.lCl(rcl[polcomb],ls))
-    else:
-        qest = fmap[polcomb](theory.lCl(rcl[polcomb],ls))
-
-    X,Y = polcomb
-    
-    clx = theory.lCl(X+X,ls) + nls[X+X][:ls.size]
-    cly = theory.lCl(Y+Y,ls) + nls[Y+Y][:ls.size]
-    
-    flx        = np.zeros( Lmax+1 ); flx[2:] = 1./clx[2:]
-    fly        = np.zeros( Lmax+1 ); fly[2:] = 1./cly[2:]
-
-    if X=='T':
-        flx[ls<tellmin] = 0
-        flx[ls>tellmax] = 0
-    else:
-        flx[ls<pellmin] = 0
-        flx[ls>pellmax] = 0
-
-    if Y=='T':
-        fly[ls<tellmin] = 0
-        fly[ls>tellmax] = 0
-    else:
-        fly[ls<pellmin] = 0
-        fly[ls>pellmax] = 0
-
-
-    if flatsky:
-        nx         = flatsky_nx  # number of pixels for flat-sky calc.
-        dx         = flatsky_dx_arcmin/60./180.*np.pi # pixel width in radians.
-        pix        = ql.maps.pix(nx,dx)
-        clxy = theory.lCl(X+Y,ls)
-        resp = qest.fill_resp(qest, ql.maps.cfft(nx, dx), flx, fly)
-    else:
-        resp = qest.fill_resp(qest, np.zeros(Lmax+1, dtype=np.complex), flx, fly)
-    nlqq = 1 / resp
-
-    if X!=Y: nlqq = nlqq / 2.
-
-    if flatsky:
-        t          = lambda l: (l*(l+1.))
-        bcl = nlqq.get_ml(flatsky_bin_edges, t=t)
-        ls = bcl.ls
-        return ls,bcl.specs['cl']
-    else:
-        ret = nlqq.real
-        return ls,(ls*(ls+1.)) * ret
 
 class weighted_bin1D:
     '''
