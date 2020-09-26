@@ -2,6 +2,7 @@ import numpy as np
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
 from enlib import bench
+from orphics import stats,io,mpi
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
@@ -119,6 +120,59 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     # Data
+    X = get_kmap((0,0,1))
+    Y = X
+    A = X
+    B = X
+    if include_meanfield: 
+        qxy = qa(X,Y) if qxy is None else qxy
+        qab = qb(A,B) if qab is None else qab
+    # Sims
+    rdn0 = 0.
+    with bench.show("sim"):
+        for i in range(comm.rank+1, nsims+1, comm.size):
+            print(i)
+            Xs  = get_kmap((icov,0,i+1))
+            Ys  = Xs
+            As  = Xs
+            Bs  = Xs
+            if include_meanfield:
+                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+                print(rdn0)
+            if include_main:
+                print("main rdn0")
+                print(power(qa(X,Ys),qb(A,Bs)))
+                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+                if not(gaussian_sims):
+                    print("non gaussian")
+                    Ysp = get_kmap((icov,1,i+1))
+                    Asp = Ysp
+                    Bsp = Ysp
+                    rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                else:
+                    rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+    totrdn0 = utils.allreduce(rdn0,comm) 
+    return totrdn0/nsims
+
+def rdn0_with_error(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+         include_meanfield=False,gaussian_sims=False,include_main=True,
+         qxy=None,qab=None):
+    """
+    Same as rdn0 above but also returns the standard deviation of the resulting rdn0 as the second element.
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
+    get_kmap("T",(0,0,1)
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    gaussian_sims=True indicates we don't need to involve pairs
+    of sims because the sims are not lensed.
+    """
+    s = stats.Stats(comm)
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    # Data
     X = get_kmap((0,0,0))
     Y = X
     A = X
@@ -128,31 +182,52 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):
-        print(i)
-        Xs  = get_kmap((icov,0,i))
-        Ys  = get_kmap((icov,0,i))
-        As  = get_kmap((icov,0,i))
-        Bs  = get_kmap((icov,0,i))
-        if include_meanfield:
-            rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
-        if include_main:
-            rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-                    + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
-            if not(gaussian_sims):
-                Ysp = get_kmap((icov,1,i))
-                Asp = Ysp
-                Bsp = Ysp
-                rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
-            else:
-                rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+    rdn0_list=[]
+
+    with bench.show("sim"):
+        for i in range(comm.rank+1, nsims+1, comm.size):
+            print(i)
+            Xs  = get_kmap((icov,0,i))
+            Ys  = Xs
+            As  = Xs
+            Bs  = Xs
+            a=0
+            if include_meanfield:
+                a+=((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+                rdn0 += a
+                print(rdn0)
+            if include_main:
+                print("main rdn0")
+                a+=power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+                rdn0 += a
+                if not(gaussian_sims):
+                    print("non gaussian")
+                    Ysp = get_kmap((icov,1,i))
+                    Asp = Ysp
+                    Bsp = Ysp
+                    a+=(- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                    rdn0 += a
+                else:
+                    a+=(-power(qa(Xs,Ys),qb(As,Bs)))
+                    rdn0 +=  a
+            s.add_to_stats('rdn0',a)
+    with io.nostdout():
+        s.get_stats()
+        s.vectors['rdn0']
+        print(s.vectors['rdn0'])
+        std=np.std(s.vectors['rdn0'], axis=0)
+
     totrdn0 = utils.allreduce(rdn0,comm) 
-    return totrdn0/nsims  
+    return totrdn0/nsims,std   
+
+
     
 def mean_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
          qxy=None,qab=None):
     """
+    rdn0 used to estimate the mc bias when performing reconstruction on a large number of sims.
     Anisotropic MC-RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
@@ -217,24 +292,20 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xsk   = get_kmap((icov,2,i))
         Yskp  = get_kmap((icov,3,i))
-        Ask   = get_kmap((icov,2,i))
-        Bskp  = get_kmap((icov,3,i))
-        Askp  = get_kmap((icov,3,i))
-        Bsk   = get_kmap((icov,2,i))
+        Ask   = Xsk
+        Bskp  = Yskp
+        Askp  = Yskp
+        Bsk   = Xsk
         Xs    = get_kmap((icov,0,i))
         Ysp   = get_kmap((icov,1,i))
-        As    = get_kmap((icov,0,i))
-        Bsp   = get_kmap((icov,1,i))
-        Asp   = get_kmap((icov,1,i))
-        Bs    = get_kmap((icov,0,i))
+        As    = Xs
+        Bsp   = Ysp
+        Asp   = Ysp
+        Bs    = Xs
         term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
             - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
         n1 = n1 + term
-        #term=comm.gather(term,root=0)
-        #term_list.append(term[0])
 
-
-    #np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/mclist.txt",term_list)
     return  utils.allreduce(n1,comm) /nsims
 
 
