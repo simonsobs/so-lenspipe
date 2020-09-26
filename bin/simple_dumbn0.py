@@ -12,7 +12,7 @@ from solenspipe import bias
 
 import argparse
 # Parse command line
-parser = argparse.ArgumentParser(description='Do a thing.')
+parser = argparse.ArgumentParser(description='Pipeline to generate dumb N0')
 parser.add_argument("label", type=str,help='Label.')
 parser.add_argument("polcomb", type=str,help='polcomb.')
 parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
@@ -30,6 +30,8 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix.')
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+parser.add_argument("--curl", action='store_true',help='curl reconstruction')
+
 args = parser.parse_args()
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
       
@@ -57,5 +59,7 @@ theory_cross = T()
 get_sim_power = lambda seed: solint.get_sim_power(channel,seed,lmin,lmax)
 db = {}
 ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,1)
+
+#MV simple rdn0
 ils,dumbmv=solenspipe.diagonal_RDN0mv(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,1)
 np.savetxt(f'{solenspipe.opath}/dumbn0_{polcomb}_{isostr}_{car}_{nsims}1.txt',dumbmv)
