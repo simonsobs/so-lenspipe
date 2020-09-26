@@ -37,6 +37,7 @@ parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
+parser.add_argument("--curl", action='store_true',help='curl reconstruction')
 
 args = parser.parse_args()
 
@@ -89,6 +90,7 @@ for task in my_tasks:
 
     with bench.show("sim"):
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
+        Tcmb = 2.726e6
         # Get the reconstructed map for the TT estimator
         
         if args.ps_bias_hardening:
@@ -106,10 +108,10 @@ for task in my_tasks:
             theory_cross = T()
 
             ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
-            s_alms=qe.filter_alms(solint.get_pointsources(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,A_ps*bhps))
+            s_alms=qe.filter_alms(solint.get_pointsources(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,A_ps*bhps*Tcmb**2))
             phi_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,2*Alpp*blens))
-            recon_alms=phi_alms-s_alms
-            recon_alms=hp.almxfl(recon_alms,ils*(ils+1)*0.5)
+            balms=phi_alms-s_alms
+            recon_alms=hp.almxfl(balms,ils*(ils+1)*0.5)
             
         elif args.mask_bias_hardening:
             ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
@@ -175,16 +177,24 @@ if rank==0:
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
         np.savetxt(f'{solenspipe.opath}/acl.txt',acl)
+        np.savetxt(f'{solenspipe.opath}/xcl.txt',xcl)
+        np.savetxt(f'{solenspipe.opath}/icl.txt',icl)
 
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
-        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}_nomask.fits',mf_alm,overwrite=True)
+        hp.write_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_{nsims}.fits',mf_alm,overwrite=True)
         
     
 
     ls = np.arange(xcl.size)
     if args.ps_bias_hardening:
+        Nlbh=maps.interp(ils,bhclkknorm)(ls)
+        np.savetxt(f'{solenspipe.opath}/bhnorm.txt',Nlbh)
+    
+    elif args.mask_bias_hardening:
         Nl=maps.interp(ils,bhclkknorm)(ls)
+        np.savetxt(f'{solenspipe.opath}/masknorm.txt',Nl)
+        
         
     else:
         Nl = maps.interp(ils,Nl)(ls)
