@@ -35,6 +35,7 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix instead o
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+parser.add_argument("--flat-sky-rdn0", action='store_true',help='Do flat-sky rdn0.')
 args = parser.parse_args()
 
 solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
