@@ -44,14 +44,14 @@ elif set==2 or set==3:
 =================
 """
 
-def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,nmc=50,n=100,
          include_meanfield=False,gaussian_sims=False,include_main=True,
          qxy=None,qab=None):
     """
     MC-RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
-    Generates 50x100 rdn0s for covariance simulation
+    Generates nmcxn rdn0s for covariance simulation
     e.g. structure(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
 
 
@@ -63,10 +63,10 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     eA,eB = beta
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
- 
+    
     rdn0list=[]
-    for i in range(0,1950,39):
-    #for i in range(0,975,39):
+    step=np.int(np.ceil(1950/nmc))
+    for i in range(0,1950,step):
         with bench.show("rdn0"):
             #these are the data values
             X = get_kmap((0,0,i))
@@ -78,7 +78,7 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                 qab = qb(A,B) if qab is None else qab
             # Sims
             rdn0 = 0.       
-            for j in range(i+1+comm.rank,i+101,comm.size):
+            for j in range(i+1+comm.rank,i+n,comm.size):
             #for j in range(i+1+comm.rank,i+201,comm.size):
                 print(j)
                 Xs  = get_kmap((icov,0,j))
@@ -99,7 +99,7 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
                 
             totrdn0 = utils.allreduce(rdn0,comm)
-            totrdn0=np.array(totrdn0/100)
+            totrdn0=np.array(totrdn0/n)
             rdn0list.append(totrdn0)
     return rdn0list
 
@@ -120,7 +120,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     # Data
-    X = get_kmap((0,0,1))
+    X = get_kmap((0,0,0))
     Y = X
     A = X
     B = X
@@ -132,7 +132,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     with bench.show("sim"):
         for i in range(comm.rank+1, nsims+1, comm.size):
             print(i)
-            Xs  = get_kmap((icov,0,i+1))
+            Xs  = get_kmap((icov,0,i))
             Ys  = Xs
             As  = Xs
             Bs  = Xs
@@ -146,7 +146,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
                 if not(gaussian_sims):
                     print("non gaussian")
-                    Ysp = get_kmap((icov,1,i+1))
+                    Ysp = get_kmap((icov,1,i))
                     Asp = Ysp
                     Bsp = Ysp
                     rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
