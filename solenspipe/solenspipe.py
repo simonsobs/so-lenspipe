@@ -265,13 +265,15 @@ class SOLensInterface(object):
             print("prepare map")
             # Convert the solenspipe convention to the Alex convention
             s_i,s_set,noise_seed = convert_seeds(seed)
-
+            # Get a beamed CMB signal. Any foreground simulations should be beamed and added to this.
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            # Get a noise map from the SO sim generator
             noise_map = self.get_noise_map(noise_seed,channel)
             noise_map=enmap.samewcs(noise_map,cmb_map)
             noise_oalms = self.map2alm(noise_map)
 
 
+            # Sum and mask
             imap = (cmb_map + noise_map)
             imap = imap * self.mask
 
@@ -279,20 +281,26 @@ class SOLensInterface(object):
                 for i in range(3): self.plot(imap[i],f'imap_{i}')
                 for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
 
+            # Map -> alms, and deconvolve the beam
             oalms = self.map2alm(imap)
 
 
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             #hp.fitsfunc.write_alm("/global/cscratch1/sd/jia_qu/maps/testTT.fits",oalms[0])
             oalms[~np.isfinite(oalms)] = 0
+
+            # Isotropic filtering
+            # load the noise powers
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
             nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+            # Make 1/(C+N) filter functions
             filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
             filt_e = lambda x: 1./(self.clee(x) + nells_P(x))
             filt_b = lambda x: 1./(self.clbb(x) + nells_P(x))
 
    
+            # And apply the filters to the alms
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             alme = qe.filter_alms(oalms[1].copy(),filt_e,lmin=lmin,lmax=lmax)
             almb = qe.filter_alms(oalms[2].copy(),filt_b,lmin=lmin,lmax=lmax)
@@ -307,7 +315,7 @@ class SOLensInterface(object):
             for i in range(3):
                 oalms.append( np.zeros((nalms,),dtype=np.complex128) )
             
-
+        # Cache the alms
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
         icov,s_set,i=seed
@@ -363,6 +371,7 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             return almt
         
+
     def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
         Generates a beam-deconvolved Tmap used for the shear estimator
@@ -395,15 +404,18 @@ class SOLensInterface(object):
         return almt
 
     def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
+        # Wrapper around self.prepare_map that uses caching
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
         xs = {'T':0,'E':1,'B':2}
         return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 
     def get_mv_kappa(self,polcomb,talm,ealm,balm):
         
+        # Wrapper for qfunc
         return self.qfunc(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc(self,alpha,X,Y):
+        # Wrapper for the core falafel full-sky lensing reconstruction function
         polcomb = alpha
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
