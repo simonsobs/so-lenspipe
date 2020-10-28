@@ -45,6 +45,6 @@ qfunc = solint.qfunc
 
 nmax = len(ils)
 
-a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+a=bias.structure(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims,nmc=50,n=100)
 np.savetxt("/global/homes/j/jia_qu/so-lenspipe/data/rdn0list_{polcomb}_{isostr}.txt",a)
 
