@@ -120,7 +120,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     qa = lambda x,y: qfunc(alpha,x,y)
     qb = lambda x,y: qfunc(beta,x,y)
     # Data
-    X = get_kmap((0,0,1))
+    X = get_kmap((0,0,0))
     Y = X
     A = X
     B = X
@@ -132,7 +132,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     with bench.show("sim"):
         for i in range(comm.rank+1, nsims+1, comm.size):
             print(i)
-            Xs  = get_kmap((icov,0,i+1))
+            Xs  = get_kmap((icov,0,i))
             Ys  = Xs
             As  = Xs
             Bs  = Xs
@@ -146,7 +146,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
                 if not(gaussian_sims):
                     print("non gaussian")
-                    Ysp = get_kmap((icov,1,i+1))
+                    Ysp = get_kmap((icov,1,i))
                     Asp = Ysp
                     Bsp = Ysp
                     rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
