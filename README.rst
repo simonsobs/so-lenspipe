@@ -22,43 +22,45 @@ node (e.g. to test imports after setting up), you should run
 login node.
 
 Here are all the pacakges you'll need before you can run this library
-and scripts therein: \*
-`so-pysm-models <https://github.com/simonsobs/so_pysm_models/>`__
-(``python setup.py install --user``) required by mapsims \*
-`pysm <https://github.com/healpy/pysm/>`__
-(``pip install pysm3 --user``) required by mapsims \*
-`mapsims <https://github.com/simonsobs/mapsims/>`__
+and scripts therein:
+* `so-pysm-models <https://github.com/simonsobs/so_pysm_models/>`__
+(``python setup.py install --user``) required by mapsims
+* `pysm <https://github.com/healpy/pysm/>`__
+(``pip install pysm3 --user``) required by mapsims
+* `mapsims <https://github.com/simonsobs/mapsims/>`__
 (``git checkout car_fix ; python setup.py develop --user`` -- we
 recommend a symbolic install link since you may have to periodically
 update this repo, change branches, etc. since it is actively under
-development) \* `pixell <https://github.com/simonsobs/pixell/>`__ (if
+development)
+* `pixell <https://github.com/simonsobs/pixell/>`__ (if
 running on NERSC, run
 ``python setup.py build_ext -i --fcompiler=intelem --compiler=intelem``
 followed by adding the directory to your PYTHONPATH; else run
-``python setup.py install --user``); test by running ``py.test -s`` \*
-`falafel <https://github.com/simonsobs/falafel/>`__
-(``pip install -e . --user``) \*
-`symlens <https://github.com/simonsobs/symlens/>`__
-(``pip install -e . --user``) \*
-`quicklens <https://github.com/msyriac/quicklens/>`__ (Python 3 fork of
+``python setup.py install --user``); test by running ``py.test -s``
+* `falafel <https://github.com/simonsobs/falafel/>`__
+(``pip install -e . --user``) 
+* `symlens <https://github.com/simonsobs/symlens/>`__
+(``pip install -e . --user``) 
+* `quicklens <https://github.com/msyriac/quicklens/>`__ (Python 3 fork of
 Duncan Hanson's code used to get normalization of lensing estimators. if
 running on NERSC, run
 ``python setup.py build_ext -i --fcompiler=intelem --compiler=intelem``;
 else run ``python setup.py build_ext -i`` , and then add to PYTHONPATH)
-\* `camb <https://camb.readthedocs.io/en/latest/>`__
-(``pip install camb --user``) \*
-`orphics <https://github.com/msyriac/orphics/>`__
-(``pip install -e . --user``) \*
-`enlib <https://github.com/amaurea/enlib/>`__ (just need enlib/bench.py
-for benchmarking ; git clone the repo and add to PYTHONPATH) \*
-`quaternionarray <https://pypi.org/project/quaternionarray/>`__:
-(``pip install quaternionarray --user``) required by sotodlib \*
+* `camb <https://camb.readthedocs.io/en/latest/>`__
+(``pip install camb --user``) 
+* `orphics <https://github.com/msyriac/orphics/>`__
+(``pip install -e . --user``) 
+* `enlib <https://github.com/amaurea/enlib/>`__ (just need enlib/bench.py
+for benchmarking ; git clone the repo and add to PYTHONPATH) 
+* `quaternionarray <https://pypi.org/project/quaternionarray/>`__:
+(``pip install quaternionarray --user``) required by sotodlib 
 `sotodlib <https://github.com/simonsobs/sotodlib>`__
 (``git checkout aca85843b70b0c6ebac031aa48fff47f93ed6661 ; python setup.py install --user``)
-\* `sotoddb <https://github.com/simonsobs/sotoddb>`__
-(``python setup.py install --user``) \*
-`so\_noise\_models <https://github.com/simonsobs/so_noise_models>`__
-(``python setup.py install --user``) \* Other miscellaneous packages:
+* `sotoddb <https://github.com/simonsobs/sotoddb>`__
+(``python setup.py install --user``) 
+* `so\_noise\_models <https://github.com/simonsobs/so_noise_models>`__
+(``python setup.py install --user``)
+* Other miscellaneous packages:
 healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow
 (Python Image Library)
 
