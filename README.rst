@@ -1,7 +1,11 @@
+==========
 solenspipe
 ==========
 
-|Documentation Status|
+.. image:: https://readthedocs.org/projects/so-lenspipe/badge/?version=latest
+           :target: https://so-lenspipe.readthedocs.io/en/latest/?badge=latest
+		   :alt: Documentation Status
+
 
 Pipeline libraries and scripts for L3.1
 
@@ -135,5 +139,3 @@ If you have write access to this repository, please:
 If you do not have write access, create a fork of this repository and
 proceed as described above.
 
-.. |Documentation Status| image:: https://readthedocs.org/projects/so-lenspipe/badge/?version=latest
-   :target: https://so-lenspipe.readthedocs.io/en/latest/?badge=latest
