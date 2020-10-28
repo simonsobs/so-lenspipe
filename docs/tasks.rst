@@ -37,6 +37,10 @@ Co-addition
 Filtering
 ---------
 
+Quadratic Estimator
+-------------------
+
+
 Normalization
 -------------
 

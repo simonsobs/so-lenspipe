@@ -1,5 +1,7 @@
 # solenspipe
 
+[![Documentation Status](https://readthedocs.org/projects/so-lenspipe/badge/?version=latest)](https://so-lenspipe.readthedocs.io/en/latest/?badge=latest)
+
 Pipeline libraries and scripts for L3.1
 
 * Free software: BSD license
