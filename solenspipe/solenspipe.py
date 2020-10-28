@@ -335,66 +335,10 @@ class SOLensInterface(object):
             cltesim=hp.alm2cl(oalms[0],oalms[1])/self.wfactor(2)
         return clttsim,cleesim,clbbsim,cltesim
             
-    def prepare_shear_map(self,channel,seed,lmin,lmax):
-        """
-        Generates a beam-deconvolved simulation.
-        Filters it and caches it.
-        """
-        # Convert the solenspipe convention to the Alex convention
-        s_i,s_set,noise_seed = convert_seeds(seed)
 
-
-        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-        noise_map = self.get_noise_map(noise_seed,channel)
-
-        imap = (cmb_map + noise_map)
-        imap = imap * self.mask
-
-        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
-        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
-        
-        oalms = self.map2alm(imap)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-        oalms[~np.isfinite(oalms)] = 0
-
-        #need to multiply by derivative cl
-        der=lambda x: np.gradient(x)
-        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))))*der(self.cltt(x))
-        almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
-        return almt
-
-    def prepare_shearT_map(self,channel,seed,lmin,lmax):
-
-        if not(self.zero_map):
-            print("prepare map")
-            # Convert the solenspipe convention to the Alex convention
-            s_i,s_set,noise_seed = convert_seeds(seed)
-
-            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-            noise_map = self.get_noise_map(noise_seed,channel)
-
-            imap = (cmb_map + noise_map)
-            imap = imap * self.mask
-
-            if self._debug:
-                for i in range(3): self.plot(imap[i],f'imap_{i}')
-                for i in range(3): self.plot(noise_map[i],f'nmap_{i}',range=300)
-
-            oalms = self.map2alm(imap)
-
-
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-            oalms[~np.isfinite(oalms)] = 0
-            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-            nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
-            nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
-            filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
-
-            almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
-            return almt
             
-    def prepare_shearT_map1(self,channel,seed,lmin,lmax):
+    def prepare_shearT_map(self,channel,seed,lmin,lmax):
+        """For the shear estimator, obtain beam deconvolved T_F map filtered by inverse variance filter squared"""
 
         if not(self.zero_map):
             print("prepare map")
@@ -419,10 +363,9 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms[0].copy(),filt_t,lmin=lmin,lmax=lmax)
             return almt
         
-    def prepare_shear_map1(self,channel,seed,lmin,lmax):
+    def prepare_shear_map(self,channel,seed,lmin,lmax):
         """
-        Generates a beam-deconvolved simulation.
-        Filters it and caches it.
+        Generates a beam-deconvolved Tmap used for the shear estimator
         """
         print("loading shear map")
         s_i,s_set,noise_seed = convert_seeds(seed)
@@ -439,7 +382,6 @@ class SOLensInterface(object):
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         
         oalms = self.map2alm(imap)
-        print("noise disabled?")
         print(self.disable_noise)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
@@ -500,7 +442,6 @@ class SOLensInterface(object):
 
     def get_noise_power(self,channel=None,beam_deconv=False):
         if (self.wnoise is not None) or self.disable_noise:
-            print("using white noise")
             ls = np.arange(self.mlmax+1)
             if not(self.disable_noise):
                 bfact = maps.gauss_beam(self.beam,ls)**2. if beam_deconv else np.ones(ls.size)
