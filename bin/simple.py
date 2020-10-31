@@ -70,8 +70,7 @@ for task in my_tasks:
     # Choose a seed. This has to be varied when simulating.
     seed = (0,0,task+sindex)
 
-    # Get the simulated, prepared T, E, B maps
-
+    # If debugging, get unfiltered maps and plot Cls
     if task==0 and debug_cmb:
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=False)
         tcl = hp.alm2cl(t_alm)
@@ -89,6 +88,7 @@ for task in my_tasks:
 
 
     with bench.show("sim"):
+        # Get simulated, prepared filtered T, E, B maps, i.e. (1/(C+N) * teb_alm)
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
         Tcmb = 2.726e6
         # Get the reconstructed map for the TT estimator
@@ -139,6 +139,7 @@ for task in my_tasks:
     if args.read_meanfield:
         recon_alms = recon_alms - mf_alm
 
+
     if task==0 and debug_cmb:
         maskb=solenspipe.get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
         rmap = solint.alm2map(recon_alms,ncomp=1)[0] * maskb
@@ -152,13 +153,19 @@ for task in my_tasks:
         rmap = solint.alm2map(falms,ncomp=1)[0] * maskb
         io.hplot(rmap,f'{solenspipe.opath}/frmap',mask=0,color='gray')
 
+    # Get the input kappa map alms
     kalms = solint.get_kappa_alm(task+sindex)
-    acl = hp.alm2cl(recon_alms,recon_alms)
-    xcl = hp.alm2cl(recon_alms,kalms)
-    icl = hp.alm2cl(kalms,kalms)
+
+    acl = hp.alm2cl(recon_alms,recon_alms) # reconstruction raw autopower
+    xcl = hp.alm2cl(recon_alms,kalms)  # cross-power of input and reconstruction
+    icl = hp.alm2cl(kalms,kalms)  # autopower of input
+
+    # Apply mask corrections and add to stats collecter
     s.add_to_stats('acl',acl/w4)
     s.add_to_stats('xcl',xcl/w3)
     s.add_to_stats('icl',icl/w2)
+
+    # Stack meanfield alms
     if args.write_meanfield:
         s.add_to_stack('rmf',recon_alms.real)
         s.add_to_stack('imf',recon_alms.imag)
@@ -172,6 +179,8 @@ with io.nostdout():
 
 
 if rank==0:
+
+    # Collect statistics and plot
     with io.nostdout():
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
