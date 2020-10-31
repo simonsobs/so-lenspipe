@@ -43,12 +43,10 @@ config = io.config_from_yaml("../input/config.yml")
 
 #load noise nells
 
-#length of ell determines maximum l used for N1 calculation
-#load the noises
-nells=np.loadtxt("/global/homes/j/jia_qu/ACT_analysis/data/D56TTnoise0_3000.txt")
-nells_P=np.loadtxt("/global/homes/j/jia_qu/ACT_analysis/data/D56EEnoise0_3000.txt")
-nells=nells[:3000]
-nells_P=nells_P[:3000]
+#length of 1d noise Nls determines maximum lmax used for N1
+ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
+nells=nells[:lmax]
+nells_P=nells_P[:lmax]
 
 lmin=500 #minimum reconstruction multipole
 LMAXOUT=3000 #maximum output L
@@ -85,7 +83,6 @@ bins=np.array([0.000e+00, 2.000e+00, 1.200e+01, 2.200e+01, 3.200e+01, 4.200e+01,
 
 #Input normalisation as an array of arrays of lensing potential phi n0s.
 
-
 thloc = "../data/" + config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 ells = np.arange(lmax+100)
@@ -103,8 +100,8 @@ nbb=np.ones(len(Als['TT']))
 norms=np.array([[Als['TT']/ls**2],[Als['EE']/ls**2],[Als['EB']/ls**2],[Als['TE']/ls**2],[Als['TB']/ls**2],[nbb]])
 
 n1bins=np.arange(Lmin_out,LMAXOUT,Lstep)
-n1=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-np.savetxt("/global/homes/j/jia_qu/ACT_analysis/data/testD56n1.txt",n1)
+n1=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+np.savetxt("/global/homes/j/jia_qu/ACT_analysis/data/testd56n1.txt",n1)
 
 def extend_matrix(sizeL,_matrix):
     #unpacked=true
@@ -131,32 +128,32 @@ def extend_matrix(sizeL,_matrix):
 
 n1mv_dclkk=nbias.n1mv_dclkk(clpp,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n1mvdclkke=extend_matrix(3000,np.nan_to_num(n1mv_dclkk))
-np.savetxt(f"{solenspipe.opath}/actn1mvdclkk1.txt",n1mvdclkke)
+np.savetxt(f"{solenspipe.opath}/n1mvdclkk1.txt",n1mvdclkke)
 
 n1mv_dcltt=nbias.n1mv_dcltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n1mvdcltte=extend_matrix(3000,np.nan_to_num(n1mv_dcltt))
-np.savetxt(f"{solenspipe.opath}/actn1mvdcltte1.txt",n1mvdcltte)
+np.savetxt(f"{solenspipe.opath}/n1mvdcltte1.txt",n1mvdcltte)
 
 n1mv_dclee=nbias.n1mv_dclee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n1mvdcleee=extend_matrix(3000,np.nan_to_num(n1mv_dclee))
-np.savetxt(f"{solenspipe.opath}/actn1mvdcleee1.txt",n1mvdcleee)
+np.savetxt(f"{solenspipe.opath}/n1mvdcleee1.txt",n1mvdcleee)
 
 
 n1mv_dclbb=nbias.n1mv_dclbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n1mvdclbbe=extend_matrix(3000,np.nan_to_num(n1mv_dclbb))
-np.savetxt(f"{solenspipe.opath}/actn1mvdclbbe1.txt",n1mv_dclbb)
+np.savetxt(f"{solenspipe.opath}/n1mvdclbbe1.txt",n1mv_dclbb)
 
 n1mv_dclte=nbias.n1mv_dclte(clte,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n1mvdcltee=extend_matrix(3000,np.nan_to_num(n1mv_dclte))
-np.savetxt(f"{solenspipe.opath}/actn1mvdcltee1.txt",n1mvdcltee)
+np.savetxt(f"{solenspipe.opath}/n1mvdcltee1.txt",n1mvdcltee)
 
 n0mv_dcltt=nbias.n0mvderivative_cltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n0mvdcltte=extend_matrix(3000,np.nan_to_num(n0mvdcltt))
-np.savetxt(f"{solenspipe.opath}/actn0mvdcltt1.txt",n0mvdcltte)
+np.savetxt(f"{solenspipe.opath}/n0mvdcltt1.txt",n0mvdcltte)
 
 n0mv_dclee=nbias.n0mvderivative_clee(clee,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n0mvdcleee=extend_matrix(3000,np.nan_to_num(n0mvdclee))
-np.savetxt(f"{solenspipe.opath}/actn0mvdclee1.txt",n0mvdcleee)
+np.savetxt(f"{solenspipe.opath}/n0mvdclee1.txt",n0mvdcleee)
 
 n0mv_dclbb=nbias.n0mvderivative_clbb(clbb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nells_P,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out).transpose()
 n0mvdclbbe=extend_matrix(3000,np.nan_to_num(n0mvdclbb))
