@@ -155,6 +155,58 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     totrdn0 = utils.allreduce(rdn0,comm) 
     return totrdn0/nsims
 
+
+
+def rdn0_psh(ils,blens,bhps,Alpp,A_ps,icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+         include_meanfield=False,gaussian_sims=False,include_main=True,
+         qxy=None,qab=None):
+    """
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
+    get_kmap("T",(0,0,1)
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    gaussian_sims=True indicates we don't need to involve pairs
+    of sims because the sims are not lensed.
+    """
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y,ils,blens,bhps,Alpp,A_ps: qfunc(alpha,x,y,ils,blens,bhps,Alpp,A_ps)
+    qb = lambda x,y,ils,blens,bhps,Alpp,A_ps: qfunc(beta,x,y,ils,blens,bhps,Alpp,A_ps)
+    # Data
+    X = get_kmap((0,0,0))
+    Y = X
+    A = X
+    B = X
+
+    # Sims
+    rdn0 = 0.
+    with bench.show("sim"):
+        for i in range(comm.rank+1, nsims+1, comm.size):
+            print(i)
+            Xs  = get_kmap((icov,0,i))
+            Ys  = Xs
+            As  = Xs
+            Bs  = Xs
+
+            if include_main:
+                print("main rdn0")
+                rdn0 += power(qa(X,Ys,ils,blens,bhps,Alpp,A_ps),qb(A,Bs,ils,blens,bhps,Alpp,A_ps)) + power(qa(Xs,Y,ils,blens,bhps,Alpp,A_ps),qb(A,Bs,ils,blens,bhps,Alpp,A_ps)) \
+                        + power(qa(Xs,Y,ils,blens,bhps,Alpp,A_ps),qb(As,B,ils,blens,bhps,Alpp,A_ps)) + power(qa(X,Ys,ils,blens,bhps,Alpp,A_ps),qb(As,B,ils,blens,bhps,Alpp,A_ps))
+                if not(gaussian_sims):
+                    print("non gaussian")
+                    Ysp = get_kmap((icov,1,i))
+                    Asp = Ysp
+                    Bsp = Ysp
+                    rdn0 += (- power(qa(Xs,Ysp,ils,blens,bhps,Alpp,A_ps),qb(As,Bsp,ils,blens,bhps,Alpp,A_ps)) - power(qa(Xs,Ysp,ils,blens,bhps,Alpp,A_ps),qb(Asp,Bs,ils,blens,bhps,Alpp,A_ps)))
+
+                else:
+                    rdn0 +=  (-power(qa(Xs,Ys,ils,blens,bhps,Alpp,A_ps),qb(As,Bs,ils,blens,bhps,Alpp,A_ps)))
+    totrdn0 = utils.allreduce(rdn0,comm) 
+    return totrdn0/nsims
+
+
+    
+
 def rdn0_with_error(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
          qxy=None,qab=None):
