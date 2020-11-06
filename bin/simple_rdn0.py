@@ -15,7 +15,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple rdn0 calculation')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=100,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -45,21 +45,42 @@ get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
+elif args.ps_bias_hardening:
+    qfunc=solint.qfunc_bh
 else:
+    print("qfunc")
     qfunc = solint.qfunc
 nmax = len(ils)
 
-rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
+if args.ps_bias_hardening:
+    ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
+    ells=np.arange(0,solint.mlmax)
+    config = io.config_from_yaml("../input/config.yml")
+    thloc = "../data/" + config['theory_root']
+    theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
+    
+    
+    ellsi,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+    class T:
+        def __init__(self):
+            self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
+ 
+    ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+    rdn0= bias.rdn0_psh(ils,blens,bhps,Alpp,A_ps,icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+    rdn0[nmax:] = 0
+else:
+    print("normal rdn0")
+    rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+    rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
-power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
-	io.save_cols(f'/global/homes/j/jia_qu/so-lenspipe/data/rdn0_curl_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
-
+    io.save_cols(f'{solenspipe.opath}/rdn0_curl_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
+elif args.ps_bias_hardening:
+    io.save_cols(f'{solenspipe.opath}/rdn0_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
 else:
-	io.save_cols(f'/global/homes/j/jia_qu/so-lenspipe/data/rdn0_curl_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
+    io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
 if rank==0:
     theory = cosmology.default_theory()
     
@@ -69,8 +90,7 @@ if rank==0:
     pl.add(ils,Nl)
     pl.add(ils,theory.gCl('kk',ils))
     #pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(f'/global/homes/j/jia_qu/so-lenspipe/data/recon_rdn0.png')
-
+    pl.done(f'{solenspipe.opath}recon_rdn0.png')
 
                                                                                 
 
