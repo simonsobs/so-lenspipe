@@ -929,6 +929,30 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
 
+def bandedcls(cl,_bin_edges):
+    ls=np.arange(cl.size)
+    binner = stats.bin1D(_bin_edges)
+    cents,bls = binner.bin(ls,cl)
+    return cents,bls
+
+
+
+def error_f(f_sky,n0,n1,clkk,bin_edges):
+    """
+    input: f_sky
+    n0: unbinned numpy array
+    n1:unbinned numpy array
+    clkk: unbinned numpy array
+    binned theory error
+    
+    """
+    error=n0+clkk+n1
+    cents,errorb=bandedcls(error,bin_edges)
+    cov=np.ones(len(errorb))
+    for i in range(len(errorb)):
+        cov[i]=(1/(cents[i]*np.diff(bin_edges)[i]*f_sky))*(errorb[i])**2
+    return np.sqrt(cov)
+
 
 class weighted_bin1D:
     '''
