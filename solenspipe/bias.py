@@ -106,7 +106,7 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,nmc=50,n=100,
 
 def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
-         qxy=None,qab=None):
+         qxy=None,qab=None,type=None,ils=None, blens=None, bhps=None, Alpp=None, A_ps=None):
     """
     Anisotropic MC-RDN0 for alpha=XY cross beta=AB
     qfunc(XY,x,y) returns QE XY reconstruction 
@@ -117,8 +117,14 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     """
     eX,eY = alpha
     eA,eB = beta
-    qa = lambda x,y: qfunc(alpha,x,y)
-    qb = lambda x,y: qfunc(beta,x,y)
+
+    if type=='bh':
+        qa = lambda x,y: qfunc(alpha,x,y,ils, blens, bhps, Alpp, A_ps)
+        qb = lambda x,y: qfunc(beta,x,y,ils, blens, bhps, Alpp, A_ps)
+    else:
+        qa = lambda x,y: qfunc(alpha,x,y,ils, blens, bhps, Alpp, A_ps)
+        qb = lambda x,y: qfunc(beta,x,y,ils, blens, bhps, Alpp, A_ps)
+
     # Data
     X = get_kmap((0,0,0))
     Y = X

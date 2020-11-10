@@ -46,13 +46,6 @@ power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
 elif args.ps_bias_hardening:
-    qfunc=solint.qfunc_bh
-else:
-    print("qfunc")
-    qfunc = solint.qfunc
-nmax = len(ils)
-
-if args.ps_bias_hardening:
     ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
     ells=np.arange(0,solint.mlmax)
     config = io.config_from_yaml("../input/config.yml")
@@ -66,8 +59,16 @@ if args.ps_bias_hardening:
             self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
  
     ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
-    rdn0= bias.rdn0_psh(ils,blens,bhps,Alpp,A_ps,icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
+    qfunc=solint.qfunc_bh
+else:
+    print("qfunc")
+    qfunc = solint.qfunc
+nmax = len(ils)
+
+if args.ps_bias_hardening:
+    rdn0= bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims,type='bh',ils=ils, blens=blens, bhps=bhps, Alpp=Alpp, A_ps=A_ps)
     rdn0[nmax:] = 0
+    
 else:
     print("normal rdn0")
     rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
