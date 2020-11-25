@@ -14,7 +14,7 @@ import numpy as np
 build_ext = build_ext.build_ext
 build_src = build_src.build_src
 
-with open('README.rst') as readme_file:
+with open('README.md') as readme_file:
     readme = readme_file.read()
 
 with open('HISTORY.rst') as history_file:
