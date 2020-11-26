@@ -38,10 +38,12 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
 
 def initialize_args(args):
     # Lensing reconstruction ell range
+    # We don't need to redefine all these variables!
+    # just use the args.lmin etc. below instead of lmin
     lmin = args.lmin
     lmax = args.lmax
     use_cached_norm = args.use_cached_norm
-    quicklens = not(args.flat_sky_norm)
+    use_cmblensplus = not(args.flat_sky_norm)
     disable_noise = args.disable_noise
     debug_cmb = args.debug
     
@@ -64,20 +66,24 @@ def initialize_args(args):
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
     # Initialize the lens simulation interface
-    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere,zero_sim=args.zero_sim)
+    solint = SOLensInterface(
+        mask=mask, data_mode=None,
+        scanning_strategy="isotropic" if args.isotropic else "classical",
+        fsky=0.4 if args.isotropic else None,
+        white_noise=wnoise, beam_fwhm=beam,
+        disable_noise=disable_noise,
+        atmosphere=atmosphere,zero_sim=args.zero_sim)
     if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
     
     # Choose the frequency channel
     channel = mapsims.SOChannel("LA", 145)
 
     # norm dict
-    Als = {}
-    ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,curl=curl,label=args.label)    
-    Als['mv'] = al_mv
-    Als['mvpol'] = al_mv_pol
-    al_mv = Als[polcomb]
-    Nl = al_mv * ils*(ils+1.) / 4.
-    return solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
+    Als,Als_curl = solint.initialize_norm(channel,lmin,lmax,
+                                 recalculate=not(use_cached_norm),
+                                 use_cmblensplus=use_cmblensplus,label=args.label)
+    Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
+    return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
 def convert_seeds(seed,nsims=100,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
@@ -497,7 +503,7 @@ class SOLensInterface(object):
     
 
     def initialize_norm(self, channel, lmin, lmax, recalculate=False,
-                        cmblensplus=True, label=None):
+                        use_cmblensplus=True, label=None):
         """
         Calculate the normalization factors A(L) to normalize
         the kappa a_lms (see e.g. https://arxiv.org/abs/astro-ph/0111606).
@@ -561,8 +567,6 @@ class SOLensInterface(object):
         def read_als(filename):
             AL_data = np.genfromtxt(filename, names=True)
             #Make sure we have the correct columns
-            print(AL_data.dtype.names)
-            print(AL_data_names)
             assert list(AL_data.dtype.names) == AL_data_names
             return AL_data
 
@@ -603,7 +607,7 @@ class SOLensInterface(object):
             cltt=theory.lCl('TT',ls)+nells
             Als = np.zeros(lmax+1, dtype=AL_data_dtype)
             Als_curl = np.zeros_like(Als)
-            if cmblensplus:
+            if use_cmblensplus:
                 ls, Ag, Ac = cmblensplus_norm(
                     nells, nells_P, nells_P, theory,
                     theory_cross, lmin,lmax)
@@ -627,13 +631,13 @@ class SOLensInterface(object):
                 tcee = ucee + maps.interp(ls,nells_P)(ells)
                 tcte = ucte 
                 tcbb = ucbb + maps.interp(ls,nells_P)(ells)
-                ls,Al,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(
+                ls,als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(
                     uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,
                     lmax=lmax,plot=False)
                 Als = np.zeros(len(ls), dtype=AL_data_dtype)
                 Als['L'] = ls
                 for key in ['TT','EE','EB','TE','TB']:
-                    Als[key] = Al[key][:lmax+1]
+                    Als[key] = als[key][:lmax+1]
                 Als['mv_pol'] = al_mv_pol[:lmax+1]
                 Als['mv'] = al_mv[:lmax+1]
                 Als['TE_hdv'] = Al_te_hdv[:lmax+1]
