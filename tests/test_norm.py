@@ -18,22 +18,22 @@ def test_norm_caching():
     channel = mapsims.SOChannel("LA", 145)
     lmin,lmax=200,1000
 
-    for cmblensplus in [True,False]:
+    for use_cmblensplus in [True,False]:
         #Run once with recalculate=True
         ALs,ALs_curl = solint.initialize_norm(
             channel,lmin,lmax,
-            recalculate=True,cmblensplus=True)
+            recalculate=True,use_cmblensplus=use_cmblensplus)
         #Run again with recaclulate=False
         ALs_cached,ALs_curl_cached = solint.initialize_norm(
             channel,lmin,lmax,
-            recalculate=False,cmblensplus=True)
+            recalculate=False,use_cmblensplus=use_cmblensplus)
         for col in ALs.dtype.names:
             np.testing.assert_array_equal(ALs[col], ALs_cached[col])
             if ALs_curl is not None:
                 np.testing.assert_array_equal(ALs_curl[col],
                                               ALs_curl_cached[col]
                                               )
-
+    print("test passed!")
 
             
 if __name__=="__main__":
