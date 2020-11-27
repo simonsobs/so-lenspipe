@@ -14,6 +14,7 @@ from falafel import qe
 import os
 import glob
 import traceback
+from collections import OrderedDict
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
@@ -37,10 +38,12 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
 
 def initialize_args(args):
     # Lensing reconstruction ell range
+    # We don't need to redefine all these variables!
+    # just use the args.lmin etc. below instead of lmin
     lmin = args.lmin
     lmax = args.lmax
     use_cached_norm = args.use_cached_norm
-    quicklens = not(args.flat_sky_norm)
+    use_cmblensplus = not(args.flat_sky_norm)
     disable_noise = args.disable_noise
     debug_cmb = args.debug
     
@@ -63,20 +66,24 @@ def initialize_args(args):
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
     # Initialize the lens simulation interface
-    solint = SOLensInterface(mask=mask,data_mode=None,scanning_strategy="isotropic" if args.isotropic else "classical",fsky=0.4 if args.isotropic else None,white_noise=wnoise,beam_fwhm=beam,disable_noise=disable_noise,atmosphere=atmosphere,zero_sim=args.zero_sim)
+    solint = SOLensInterface(
+        mask=mask, data_mode=None,
+        scanning_strategy="isotropic" if args.isotropic else "classical",
+        fsky=0.4 if args.isotropic else None,
+        white_noise=wnoise, beam_fwhm=beam,
+        disable_noise=disable_noise,
+        atmosphere=atmosphere,zero_sim=args.zero_sim)
     if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
     
     # Choose the frequency channel
     channel = mapsims.SOChannel("LA", 145)
 
     # norm dict
-    Als = {}
-    ils,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv = solint.initialize_norm(channel,lmin,lmax,recalculate=not(use_cached_norm),quicklens=quicklens,curl=curl,label=args.label)    
-    Als['mv'] = al_mv
-    Als['mvpol'] = al_mv_pol
-    al_mv = Als[polcomb]
-    Nl = al_mv * ils*(ils+1.) / 4.
-    return solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
+    Als,Als_curl = solint.initialize_norm(channel,lmin,lmax,
+                                 recalculate=not(use_cached_norm),
+                                 use_cmblensplus=use_cmblensplus,label=args.label)
+    Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
+    return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
 def convert_seeds(seed,nsims=100,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
@@ -495,38 +502,125 @@ class SOLensInterface(object):
         return ls,nells,nells_P
     
 
-    def initialize_norm(self,ch,lmin,lmax,recalculate=False,quicklens=False,curl=False,label=None):
+    def initialize_norm(self, channel, lmin, lmax, recalculate=False,
+                        use_cmblensplus=True, label=None):
+        """
+        Calculate the normalization factors A(L) to normalize
+        the kappa a_lms (see e.g. https://arxiv.org/abs/astro-ph/0111606).
+        Return a recarray of A(L) values, as well as writing these
+        to file for subsequent use.
+        
+        Parameters
+        ----------
+        channel: mapsims.Channel instance
+            the channel to calculate the A(L)s for
+        lmin: int
+            minimum l in reconstruced kappa
+        lmax: int
+            maxmimum l in rconstructed kappa
+        recalculate: bool
+            if True, perform the calculation, otherwise
+        use read from file.
+        cmblensplus: bool (default=True)
+            if True, use cmblensplus to do the calculation,
+        otherwise use qe.symlens_norm
+        label: str
+            An identifer string used in the output text file,
+        (or in the input filename if recalculate is False)
+
+        Returns
+        -------
+        Als: numpy recarray
+            recarray of norm info, (including the L
+        values). Columns are accessible by name e.g.
+        Als["L"] or Als["TT"]
+        Als_curl: numpy recarray or None
+            same as Als but for the curl. In the case
+        that no cached file is found, or we do the 
+        calculation with qe.symlens_norm, we return
+        None instead.
+        """
+
+        #Build the filenames.
         lstr = "" if label is None else f"{label}_"
         wstr = "" if self.wnoise is None else "wnoise_"
-        onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
-        onormcurlfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
-        try:
-            assert not(recalculate), "Recalculation of norm requested."
-            if curl:
-                print("using curl norm")
-                print(onormcurlfname)
-                return np.loadtxt(onormcurlfname,unpack=True)
-            else:
-                return np.loadtxt(onormfname,unpack=True)
-        except:
-            print(traceback.format_exc())
-            thloc = os.path.dirname(os.path.abspath(__file__)) + "/../data/" + config['theory_root']
-            theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
-            ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
+        als_fname = opath+"als_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        als_curl_fname = opath+"als_curl_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
 
+        #stuff for reading/writing the cached files. Assuming for now
+        #they should be human readable, if not - we could simplify
+        #these reading and writing steps quite a lot by using
+        #.yaml or .npy files.
+        AL_data_dtype = [("L",int), ("TT",float), ("TE",float), ("EE",float),
+                         ("TB",float), ("EB",float), ("mv",float),
+                         ("mv_pol",float), ("TE_hdv",float)]
+        AL_data_names = [d[0] for d in AL_data_dtype]
+        #format for savetxt - all floats execept L column
+        savetxt_fmt = ["%.18e" if d[1]==float else "%d" for d in AL_data_dtype]
+        def write_als(Als, filename):
+            output_data = np.zeros(len(Als['L']), dtype=AL_data_dtype)
+            for d in AL_data_dtype:
+                output_data[d[0]] = Als[d[0]]
+            np.savetxt(filename, output_data, fmt=savetxt_fmt,
+                       header='#'+" ".join(AL_data_names)
+                       )
+        def read_als(filename):
+            AL_data = np.genfromtxt(filename, names=True)
+            #Make sure we have the correct columns
+            assert list(AL_data.dtype.names) == AL_data_names
+            return AL_data
+
+        #If not calculating, just read in from files
+        #and return the arrays. For now, we do not throw
+        #an error if the curl file is not found.
+        if not recalculate:
+            print("reading A(L)s from %s, %s"%(als_fname, als_curl_fname))
+            try:
+                als_data = read_als(als_fname)
+            except IOError as e:
+                print("A(L)s file %s not found"%als_fname)
+                raise(e)
+            try:
+                als_curl_data = read_als(als_curl_fname)
+            except IOError as e:
+                print("A(L)s file for curl %s not found"%als_curl_fname)
+                print("Continuing for now in case you didn't need curl anyway")
+                als_curl_data = None
+                pass
+            return als_data, als_curl_data        
+
+        else:
+            #In this case we do the calculation
+            #First read in the theory
+            thloc = (os.path.dirname(os.path.abspath(__file__))
+                     + "/../data/" + config['theory_root'])
+            theory = cosmology.loadTheorySpectraFromCAMB(
+                thloc,get_dimensionless=False)
+            ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",
+                                 unpack=True,usecols=[0,1])
             class T:
                 def __init__(self):
                     self.lCl = lambda p,x: maps.interp(ells,gt)(x)
             theory_cross = T()
-            ls,nells,nells_P = self.get_noise_power(ch,beam_deconv=True)
+            ls,nells,nells_P = self.get_noise_power(channel,
+                                                    beam_deconv=True)
             cltt=theory.lCl('TT',ls)+nells
-
-            if quicklens: #now cmblensplus
-                Als = {}
-                Acs={}
-                ls,Ag,Ac = cmblensplus_norm(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
-                Als['TT']=Ag[0];Als['TE']=Ag[1];Als['EE']=Ag[2];Als['TB']=Ag[3];Als['EB']=Ag[4];al_mv =1/(1/Als['EB']+1/Als['TB']+1/Als['EE']+1/Als['TE']+1/Als['TT']);al_mv_pol = 1/(1/Als['EB']+1/Als['TB']);Al_te_hdv = Als['TT']*0 
-                Acs['TT']=Ac[0];Acs['TE']=Ac[1];Acs['EE']=Ac[2];Acs['TB']=Ac[3];Acs['EB']=Ac[4];ac_mv =1/(1/Acs['EB']+1/Acs['TB']+1/Acs['EE']+1/Acs['TE']+1/Acs['TT']);ac_mv_pol = 1/(1/Acs['EB']+1/Acs['TB']);Ac_te_hdv = Acs['TT']*0 
+            Als = np.zeros(lmax+1, dtype=AL_data_dtype)
+            Als_curl = np.zeros_like(Als)
+            if use_cmblensplus:
+                ls, Ag, Ac = cmblensplus_norm(
+                    nells, nells_P, nells_P, theory,
+                    theory_cross, lmin,lmax)
+                def fill_array(L, Ain, Aout):
+                    Aout['L'] = L
+                    Aout['TT'], Aout['TE'], Aout['EE'], Aout['TB'], Aout['EB'] = (
+                        Ag[0], Ag[1], Ag[2], Ag[3], Ag[4])
+                    Als['mv'] = 1/(1/Als['EB']+1/Als['TB']+
+                              1/Als['EE']+1/Als['TE']+1/Als['TT'])
+                    Als['mv_pol'] = 1/(1/Als['EB']+1/Als['TB'])
+                    Als['TE_hdv'] = 0.
+                fill_array(ls, Ag, Als)
+                fill_array(ls, Ac, Als_curl)
             else:
                 ells = np.arange(lmax+100)
                 uctt = theory.lCl('TT',ells)
@@ -537,15 +631,27 @@ class SOLensInterface(object):
                 tcee = ucee + maps.interp(ls,nells_P)(ells)
                 tcte = ucte 
                 tcbb = ucbb + maps.interp(ls,nells_P)(ells)
-                ls,Als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,lmax=lmax,plot=False)
-            io.save_cols(onormfname,(ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv))
-            io.save_cols(onormcurlfname,(ls,Acs['TT'],Acs['EE'],Acs['EB'],Acs['TE'],Acs['TB'],ac_mv_pol,ac_mv,Ac_te_hdv))
-            if curl:
-                print("curl norm")
-                return ls,Acs['TT'],Acs['EE'],Acs['EB'],Acs['TE'],Acs['TB'],ac_mv_pol,ac_mv,Ac_te_hdv
-            else: 
-                return ls,Als['TT'],Als['EE'],Als['EB'],Als['TE'],Als['TB'],al_mv_pol,al_mv,Al_te_hdv
-    
+                ls,als,al_mv_pol,al_mv,Al_te_hdv = qe.symlens_norm(
+                    uctt,tctt,ucee,tcee,ucte,tcte,ucbb,tcbb,lmin=lmin,
+                    lmax=lmax,plot=False)
+                Als = np.zeros(len(ls), dtype=AL_data_dtype)
+                Als['L'] = ls
+                for key in ['TT','EE','EB','TE','TB']:
+                    Als[key] = als[key][:lmax+1]
+                Als['mv_pol'] = al_mv_pol[:lmax+1]
+                Als['mv'] = al_mv[:lmax+1]
+                Als['TE_hdv'] = Al_te_hdv[:lmax+1]
+                #qe.symlens_norm doesn't do the curl so set this to None
+                Als_curl = None
+
+            #Now write the files which can be used in subsequent
+            #calls with recalculate=False
+            write_als(Als, als_fname)
+            if Als_curl is not None:
+                write_als(Als_curl, als_curl_fname)
+
+            return Als, Als_curl
+        
     def analytic_n1(self,ch,lmin,lmax,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
         
         from solenspipe import biastheory as nbias

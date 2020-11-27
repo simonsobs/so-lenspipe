@@ -41,7 +41,8 @@ parser.add_argument("--curl", action='store_true',help='curl reconstruction')
 
 args = parser.parse_args()
 
-solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
+solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
+ils=Als['L']
 
 w1 = solint.wfactor(1)      
 w2 = solint.wfactor(2)
