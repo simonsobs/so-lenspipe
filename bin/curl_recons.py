@@ -12,7 +12,7 @@ import healpy as hp
 
 
 """
-We will do a simple lensing reconstruction test.
+Similar to simple.py except for curl reconstruction and meanfield calculation.
 """
 
 import argparse
