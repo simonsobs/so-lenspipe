@@ -4,7 +4,7 @@ import healpy as hp
 from orphics import maps,io,cosmology 
 import numpy as np
 # define parameters
-
+"""Example about how to prepare the inputs and run Cmblensplus curved sky normalization"""
 
 Tcmb = 2.726e6    # CMB temperature
 lmax = 2048       # maximum multipole of output normalization
