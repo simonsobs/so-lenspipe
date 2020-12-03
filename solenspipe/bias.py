@@ -78,8 +78,12 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
+    if comm is not None:
+        rank,size = comm.rank, comm.size
+    else:
+        rank,size = 0, 1
     with bench.show("sim"):
-        for i in range(comm.rank+1, nsims+1, comm.size):
+        for i in range(rank+1, nsims+1, size):
             print(i)
             Xs  = get_kmap((icov,0,i))
             Ys  = Xs
@@ -101,7 +105,10 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                     rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
                 else:
                     rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
-    totrdn0 = utils.allreduce(rdn0,comm) 
+    try:
+        totrdn0 = utils.allreduce(rdn0,comm)
+    except AttributeError:
+        totrdn0 = rdn0
     return totrdn0/nsims
 
 
