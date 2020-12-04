@@ -14,7 +14,6 @@ from falafel import qe
 import os
 import glob
 import traceback
-from collections import OrderedDict
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
