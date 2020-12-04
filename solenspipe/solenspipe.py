@@ -428,7 +428,14 @@ class SOLensInterface(object):
 
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
         polcomb=alpha
+        
+        # Frank: Some of the bias hardening normalziation code requires
+        # using functions from cmblensplus from Toshiya. The Tcmb factor
+        # here is to address the fact in Toshiya's code the temperature is
+        # dimensionless whereas in solenspipe it is in microKelvins. So we
+        # hard code the conversion here since it shouldn't change.
         Tcmb = 2.726e6
+        
         source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
