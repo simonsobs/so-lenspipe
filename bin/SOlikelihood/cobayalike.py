@@ -60,7 +60,9 @@ tclkk_b=np.loadtxt(opath+"binnedauto.txt")
 
 
 #load the binned covariance matrix
-cov=np.loadtxt(opath+"binnedcov.txt")
+#cov=np.loadtxt(opath+"binnedcov.txt")
+cov=np.loadtxt("/global/homes/j/jia_qu/so-lenspipe/data/binnedcovtest.txt")
+
 d=np.diag(cov)
 
 #load the correction terms generate from the script n1so.py

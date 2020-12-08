@@ -427,14 +427,32 @@ class SOLensInterface(object):
         polcomb = alpha
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
-                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+                         xfTalm=X[0]
+                         ,xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
+        print("use qfuncbh")
         polcomb=alpha
         Tcmb = 2.726e6
         source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
+        phi=qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+        s_alms=qe.filter_alms(source,maps.interp(ils,A_ps*bhps*Tcmb**2))
+        phi_alms = qe.filter_alms(phi,maps.interp(ils,2*Alpp*blens))
+        balms=phi_alms-s_alms
+        recon_alms=hp.almxfl(balms,ils*(ils+1)*0.5)
+        return recon_alms
+
+    def qfunc_bhtest(self,alpha,X,Y,Xs,Ys,ils,blens,bhps,Alpp,A_ps):
+        print("use qfuncbh")
+        polcomb=alpha
+        Tcmb = 2.726e6
+        source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Ys[0],Ys[1],Ys[2],estimators=[polcomb],
+                         xfTalm=Xs[0],xfEalm=Xs[1],xfBalm=Xs[2])
         phi=qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]

@@ -518,6 +518,8 @@ contains
 
     end subroutine getResponseFull
     
+  
+    
     subroutine getResponsefid(n_est,lmaxmax,L_dot_L1,L_dot_L2, L1vec,L1,L1int, L2vec,L2, L2int,CTf, CEf, CXf, CBf,f12,f21)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Response function (using fiducial model)
@@ -594,6 +596,8 @@ contains
 
     end subroutine getWins
     !
+    !   
+
     function responseFor(n_est,i,j, f12,f21)
         integer, parameter :: DP = 8
         integer, parameter :: I4B = 4
@@ -1293,6 +1297,7 @@ contains
         CEf(L) = Filename(3,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
         CBf(L) = Filename(4,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
         CXf(L) = Filename(5,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
+        !these are the Cl+noise used in filters
         CT(L)=Tfile(L-1) * twopi/(L*(L+1))
         CE(L)=Efile(L-1) * twopi/(L*(L+1))
         CB(L)=Bfile(L-1) * twopi/(L*(L+1))
@@ -1302,6 +1307,7 @@ contains
         !we will vary these ones for test purposes only vary CT used in f
 
     end subroutine ReadPowernum
+    
 
     subroutine compute_n1(phifile,normarray,lensedcmbfile,Tfile,Efile,Bfile,Xfile,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,n1theta,n1ee,n1eb,n1te,n1tb,Lstep,L_min)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1464,7 +1470,297 @@ contains
                         & n0ttte,n0eete,n0ebtb,L_min, Lstep)
 
     end subroutine compute_n0mix
+    
+    subroutine ReadPowershear(Filename,Tfile,Efile,Bfile,Xfile,Tderfile,Lmax, lmaxmax,CT,CE,CB,CX,CTf,CEf,CBf,CXf,CTder)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Read input file and return lensed CMB spectra (and weights)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        real, intent(in) :: Filename(5,lmaxmax)
+        real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax)
+        integer, intent(in) :: Lmax, lmaxmax
+        real(dp),intent(out) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax),CTder
+        real(dp),intent(out) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp) :: CPhi(lmaxmax)
+        integer L, status
+        logical :: newform = .false.
+        CTf=0
+        CEf=0
+        CBf=0
+        CXf=0
+        CTder=0
+        CT=0
+        CE=0
+        CB=0
+        CX=0
+        do L=2, lmax  !we keep the fiducial ones unchanged
+        CTf(L) = Filename(2,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
+        CEf(L) = Filename(3,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
+        CBf(L) = Filename(4,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
+        CXf(L) = Filename(5,L-1) * twopi/(Filename(1,L-1)*(Filename(1,L-1)+1))
+        !these are the Cl+noise used in filters
+        CT(L)=Tfile(L-1) * twopi/(L*(L+1))
+        CE(L)=Efile(L-1) * twopi/(L*(L+1))
+        CB(L)=Bfile(L-1) * twopi/(L*(L+1))
+        CX(L)=Xfile(L-1) * twopi/(L*(L+1))
+        CTder(L)=Tderfile(L-1) * twopi/(L*(L+1))
+        
+        end do
+        !we will vary these ones for test purposes only vary CT used in f
 
+    end subroutine ReadPowershear
+    
+    
+    subroutine getWins_shear(n_est,lmaxmax,L_dot_L1,L_dot_L2, L1vec,L1,L1int, L2vec,L2, L2int, &
+                    & CX,CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs,CTder, Win12, Win21)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Compute filters f/cl^2.
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        integer, intent(in) :: n_est,L1int, L2int,lmaxmax
+        real(dp), intent(in) :: L1vec(2),L2vec(2), L1,L2, L_dot_L1,L_dot_L2
+        real(dp), intent(in) :: CX(lmaxmax)
+        real(dp), intent(in) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax),CTder(lmaxmax)
+        real(dp)  cosfac,cos2LL1
+        real(dp), intent(out) :: Win12(n_est)
+        real(dp), intent(out), optional :: Win21(n_est)
+        real(dp) f12(n_est), f21(n_est)
+        integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
+
+        call getResponsefid(n_est,lmaxmax,L_dot_L1,L_dot_L2, L1vec,L1,L1int, L2vec,L2, L2int, CTf, CEf, CXf, CBf,f12, f21)
+        cosfac= L_dot_L1/real(L1*sqrt(L1**2+L2**2+2*dot_product(L1vec,L2vec)),dp)
+        cos2LL1 =2*cosfac**2-1
+
+        Win12(i_TT) = (L1*cos2LL1*CTder)/(2*CTobs(L1int)*CTobs(L2int))**2
+
+        Win12(i_EE) = f12(i_EE)/(2*CEobs(L1int)*CEobs(L2int))
+
+        Win12(i_EB) = f12(i_EB)/(CEobs(L1int)*CBobs(L2int))
+
+        Win12(i_TE) = (f12(i_TE)* CEobs(L1int)*CTobs(L2int) - f21(i_TE)*CX(L1int)*CX(L2int))&
+            /(CTobs(L1int)*CEobs(L2int)*CTobs(L2int)*CEobs(L1int) - (CX(L1int)*CX(L2int))**2)
+
+        Win12(i_TB) = f12(i_TB)/(CTobs(L1int)*CBobs(L2int))
+
+        if (n_est>=i_BB) then
+            Win12(i_BB) = f12(i_BB)/(2*CBobs(L1int)*CBobs(L2int))
+        end if
+
+        if (present(Win21)) then
+            Win21=Win12
+
+            Win21(i_TE) = (f21(i_TE)* CTobs(L1int)*CEobs(L2int) - f12(i_TE)*CX(L1int)*CX(L2int))&
+                /(CTobs(L1int)*CEobs(L2int)*CTobs(L2int)*CEobs(L1int) - (CX(L1int)*CX(L2int))**2)
+
+            Win21(i_EB) = f21(i_EB)/(CEobs(L2int)*CBobs(L1int))
+            Win21(i_TB) = f21(i_TB)/(CTobs(L2int)*CBobs(L1int))
+        end if
+
+    end subroutine getWins_shear
+    
+    
+ 
+    subroutine compute_n0shear(phifile,lensedcmbfile,Tfile,Efile,Bfile,Xfile,Tderfile,nll,nlp,lmin_filter,lmaxout,lmax,lmax_TT,lcorr_TT,dir,lmaxmax,&
+    &  n0ttshear,L_min, Lstep)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Interface to python to compute N0shear bias
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        implicit none
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+        ! Order 1 2 3 = T E B
+        ! Estimator order TT, EE, EB, TE, TB, BB
+        integer(I4B), parameter :: n_est = 6
+        integer, intent(in) ::  lmaxmax 
+        integer, intent(in)      :: lmin_filter, lmaxout, lmax, lmax_TT, lcorr_TT,L_min, Lstep
+        character(LEN=50), intent(in) :: dir
+        real, intent(in) :: lensedcmbfile(5,*)
+        real(dp), intent(in) :: phifile(lmaxmax)
+        real, intent(in) :: Tfile(lmaxmax),Efile(lmaxmax),Bfile(lmaxmax),Xfile(lmaxmax),Tderfile(lmaxlmax)
+        character(LEN=:), allocatable :: root
+        logical :: doCurl = .True.
+        character(LEN=50) vartag
+        real(dp) :: CPhi(lmaxmax)
+        real(dp) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax)
+        real(dp) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax), CTder(lmaxlmax)
+        real(dp) :: NT(lmaxmax), NP(lmaxmax)
+        real(dp) :: CTobs(lmaxmax)
+        integer(I4B) :: LMin
+        real(dp),dimension(lmax), intent(in) :: nll,nlp
+        real(dp),dimension(lmax):: NoiseVar, NoiseVarP
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0ttshear 
+ 
+
+        NoiseVar =  nll  !muKArcmin becomes the input array
+        NoiseVarP=nlp
+        LMin = lmin_filter
+
+        call system('mkdir -p '//dir)
+
+        call ReadPhiPhi(phifile,lmax,lmaxmax,CPhi)
+        call ReadPowershear(lensedcmbfile,Tfile,Efile,Bfile,Xfile,lmax,lmaxmax,CT,CE,CB,CX,CTf,CEf,CBf,CXf,CTder)
+        call NoiseInit(NoiseVar, NoiseVarP,lmax,lmax_TT,lcorr_TT,lmaxmax,NT,NP)
+        CTobs = CTf + NT
+        CEobs = CEf + NP
+        CBobs = CBf + NP
+
+        root = 'analytical'
+        vartag = '_'//root
+
+        call getshearNorm( .false. , .false. ,.False.,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                            & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, CTder,dir, vartag,n0ttshear,&
+                        & ,L_min, Lstep)
+
+    end subroutine compute_n0shear
+    
+    
+     subroutine getshearNorm(WantIntONly,sampling,doCurl,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
+                        & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, CTder,dir,vartag,n0ttshear,L_min, Lstep)
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ! Main routine to compute N0 bias.
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        integer, parameter :: DP = 8
+        integer, parameter :: I4B = 4
+        real(dp), parameter :: pi =  3.1415927, twopi=2*pi
+
+        integer,  intent(in) :: lmin_filter,lmax,lmaxout,lmaxmax,n_est,L_min, Lstep
+        real(dp), intent(in) :: CPhi(lmaxmax)
+        real(dp), intent(in) :: CX(lmaxmax), CE(lmaxmax),CB(lmaxmax), CT(lmaxmax),CTder(lmaxmax)
+        real(dp), intent(in) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
+        real(dp), intent(in) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
+        character(LEN=50), intent(in) :: dir
+        character(LEN=50), intent(in) :: vartag
+        logical, intent(in) :: WantIntONly, sampling, doCurl
+
+        integer(I4B), parameter :: i_TT=1,i_EE=2,i_EB=3,i_TE=4,i_TB=5, i_BB=6
+        integer L, Lix, l1, nphi, phiIx, L2int
+        real(dp) dphi
+        real(dp) L1Vec(2), L2vec(2), LVec(2)
+        real(dp) phi, cos2L1L2, sin2
+        real(dP) norm, L2
+        real(dp) cosfac,f12(n_est),f21(n_est),Win21(n_est),Win12(n_est), fac
+        integer, parameter :: dL1=1
+        integer file_id, i,j, icurl, nPhiSample,Phi_Sample(lmaxmax)
+        logical isCurl
+        real(dp) N0(n_est,n_est), N0_L(n_est,n_est),dPhi_Sample(lmaxmax)
+        
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n0ttshear
+        CHARACTER(LEN=13) :: creturn
+
+        call SetPhiSampling(lmin_filter,lmaxout,lmaxmax,sampling,nPhiSample,Phi_Sample,dPhi_Sample)
+        ! print *,nPhiSample
+
+        !Order TT, EE, EB, TE, TB, BB
+        do icurl = 0,1
+            isCurl = icurl==1
+            if (IsCurl) then
+                if (.not. doCurl) cycle
+                print *,''
+                print *,'N0 computation (curl)'
+            else
+                print *,'N0 computation (phi)'
+                open(file=trim(dir)//'/'//'N0'//trim(vartag)//'.dat', newunit = file_id, form='formatted', status='replace')
+            end if
+
+            Lix=0
+            do L=L_min, lmaxout, Lstep
+                Lix=Lix+1
+                write(*,*) Lix
+                creturn = achar(13)
+                WRITE( * , 101 , ADVANCE='NO' ) creturn , int(real(Lix,kind=dp)/nPhiSample*100.,kind=I4B)
+                101     FORMAT( a , 'Progression : ',i7,' % ')
+                Lvec(1) = L
+                LVec(2)= 0
+                N0_L=0
+
+!$OMP           PARALLEL DO&
+!$OMP&          default(shared) private(L1,nphi,dphi,N0, &
+!$OMP&          PhiIx,phi,L1vec,L2vec,L2,L2int,cos2L1L2, &
+!$OMP&          sin2,cosfac,f12,f21,Win12,Win21,i,j) &
+!$OMP&          reduction(+:N0_L)
+
+                do L1=lmin_filter, lmax, dL1
+
+                nphi=(2*L1+1)
+                dphi=(2*Pi/nphi)
+                N0=0
+
+                do PhiIx=0,(nphi-1)/2
+                    phi= dphi*PhiIx
+                    L1vec(1)=L1*cos(phi)
+                    L1vec(2)=L1*sin(phi)
+                    L2vec = Lvec-L1vec
+                    L2=(sqrt(L2vec(1)**2+L2vec(2)**2))
+                    if (L2<lmin_filter .or. L2>lmax) cycle
+                    L2int=nint(L2)
+
+      
+                    call getResponseFull(n_est,lmaxmax,L1vec(1)*L,L2vec(1)*L, L1vec,real(L1,dp),&
+                    & L1, L2vec,L2, L2int,f12,f21, CT, CE, CX, CB)
+                    call getWins_shear(n_est,lmaxmax,L1vec(1)*L,L2vec(1)*L, L1vec,real(L1,dp),&
+                    & L1, L2vec,L2, L2int, CX, CTf, CEf, CXf, CBf,CTobs, CEobs, CBobs,CTder,Win12, Win21)
+                   
+
+                    do i=1,n_est
+                        N0(i,i) = N0(i,i) + f12(i)*Win12(i)
+                    end do
+
+
+                    !Important to use symmetric form here if only doing half PhiIx integral
+                    N0(i_TT,i_TE) = N0(i_TT,i_TE) + Win12(i_TT)*(Win12(i_TE)*&
+                    &CTobs(L1)*CXf(L2int) + Win21(i_TE)*CXf(L1)*CTobs(L2int))
+
+                    N0(i_TT,i_EE) = N0(i_TT,i_EE) + 2*Win12(i_TT)*Win12(i_EE)*CXf(L1)*CXf(L2int)
+
+                    N0(i_EE,i_TE) = N0(i_EE,i_TE) + Win12(i_EE)*(Win12(i_TE)*&
+                    &CXf(L1)*CEobs(L2int) + Win21(i_TE)*CEobs(L1)*CXf(L2int))
+
+                    N0(i_EB,i_TB) = N0(i_EB,i_TB) + (Win12(i_EB)*(Win12(i_TB)*CXf(L1)*CBobs(L2int)) + &
+                        & Win21(i_EB)*(Win21(i_TB)*CXf(L2int)*CBobs(L1)))/2
+
+                    if (PhiIx==0) N0 = N0/2
+                end do
+                fac = dphi* L1*dL1 *2
+                N0_L = N0_L + N0 * fac
+
+            end do
+            !$OMP END PARALLEL DO
+            N0_L = N0_L/(twopi**2)
+
+            N0=0
+            do i=1,n_est
+                do j=i,n_est
+                    if (WantIntONly) then
+                        N0(i,j) = N0_L(i,j)
+                    else
+                        N0(i,j) = N0_L(i,j)/N0_L(i,i)/N0_L(j,j)
+                    end if
+                    N0(j,i) = N0(i,j)
+                end do
+            end do
+            n0ttshear(Lix)=N0(1,1)
+
+
+        
+
+            norm = real(L*(L+1),dp)**2/twopi
+            write (file_id,'(1I5, 1E16.6)',Advance='NO') L, CPhi(L)*norm
+
+            call WriteMatrixLine(file_id,N0,n_est)
+
+        end do
+        close(file_id)
+        end do
+        print *,''
+
+    end subroutine getshearNorm
+    
    subroutine GetN1mix(normarray,sampling,lmin_filter,lmax,lmaxout,lmaxmax,n_est, CPhi,&
                         & CT, CE, CX, CB, CTf, CEf, CXf, CBf, CTobs, CEobs, CBobs, dir,vartag,n1ttee,&
                         &n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb,Lstep,L_min)
@@ -1732,9 +2028,7 @@ contains
 
 
 
-
-
-
+ 
 
 
 

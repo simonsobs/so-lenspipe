@@ -38,10 +38,12 @@ solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,ch
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
 w4 = solint.wfactor(4)
+print(w2)
+print(w4)
 car = "healpix_" if args.healpix else "car_"
 noise="wnoise" if args.wnoise!=None else "sonoise"
 mask="nomask" if args.no_mask else "mask"
-w4 = solint.wfactor(4)
+
 get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
 power = lambda x,y: hp.alm2cl(x,y)
 qfunc = solint.qfunc
@@ -63,25 +65,28 @@ theory_cross = T()
 get_sim_power = lambda seed: solint.get_sim_power(channel,seed,lmin,lmax)
 acl_list=[]
 rdlist=[]
-for i in range(0,1950,39):
+for i in range(0,1950,20):
     #generate list of dumbn0
     print(i)
-    if polcomb='mv':
+    
+    if polcomb=='mv':
         ils,db=solenspipe.diagonal_RDN0mv(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,i)
         rdlist.append(db)
+
     else:
             db = {}
             ils,db['TT'],db['EE'],db['EB'],db['TE'],db['TB']=solenspipe.diagonal_RDN0(get_sim_power,nells,nells_P,nells_P,theory,theory_cross,lmin,lmax,i)
-        
     #generate list of raw auto using the same seeds
 
     t_alm,e_alm,b_alm = solint.get_kmap(channel,(0,0,i),lmin,lmax,filtered=True)
     recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
     #load meanfield alms generated from simple.py
-    mfalm=hp.read_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm.fits')
+    mfalm=hp.read_alm(f'{solenspipe.opath}mf_{args.label}_{args.polcomb}_{isostr}_alm.fits')
     acl = hp.alm2cl(recon_alms-mfalm,recon_alms-mfalm)
     acl=acl/w4
     acl_list.append(acl)
+np.savetxt(f'{solenspipe.opath}/rdlisttest.txt',rdlist)
+np.savetxt(f'{solenspipe.opath}/autotest.txt',acl_list)
 
 
 

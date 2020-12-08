@@ -726,8 +726,8 @@ def compute_n0mix_py(
     lmax_TT=None,
     lcorr_TT=None,
     tmp_output=None,
-    Lmin_out=None,
-    Lstep=None):
+    Lstep=None,
+    Lmin_out=None):
         
     """Fortran Routine to calculate N0's off diagonal terms
      Parameters

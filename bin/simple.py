@@ -48,6 +48,7 @@ w1 = solint.wfactor(1)
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
 w4 = solint.wfactor(4)
+print(w2)
 car = "healpix_" if args.healpix else "car_"
 noise="wnoise" if args.wnoise!=None else "sonoise"
 mask="nomask" if args.no_mask else "mask"
@@ -56,9 +57,8 @@ if args.write_meanfield: assert not(args.read_meanfield)
 
 
 s = stats.Stats(comm)
-
 if args.read_meanfield:
-    mf_alm = hp.read_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm.fits')
+    mf_alm = hp.read_alm(f'{solenspipe.opath}/mf_{args.label}_{args.polcomb}_{isostr}_alm_100.fits')
 else:
     mf_alm = 0
 
@@ -109,10 +109,21 @@ for task in my_tasks:
             theory_cross = T()
 
             ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+            np.savetxt(f'{solenspipe.opath}/normell_{args.label}.txt',ls)
+            np.savetxt(f'{solenspipe.opath}/N0bhclkknorm_{args.label}.txt',bhclkknorm)
+            np.savetxt(f'{solenspipe.opath}/invdet_{args.label}.txt',blens)
+            np.savetxt(f'{solenspipe.opath}/bhps_{args.label}.txt',bhps)
+            np.savetxt(f'{solenspipe.opath}/A_ps_{args.label}.txt',A_ps)
+            np.savetxt(f'{solenspipe.opath}/Alpp_{args.label}.txt',Alpp)
+            """
             s_alms=qe.filter_alms(solint.get_pointsources(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,A_ps*bhps*Tcmb**2))
             phi_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,2*Alpp*blens))
             balms=phi_alms-s_alms
             recon_alms=hp.almxfl(balms,ils*(ils+1)*0.5)
+            """
+            alpha="TT"
+            qa = lambda x,y,ils,blens,bhps,Alpp,A_ps: solint.qfunc_bh(alpha,x,y,ils,blens,bhps,Alpp,A_ps)
+            recon_alms=qa([t_alm,e_alm,b_alm],[t_alm,e_alm,b_alm],ils,blens,bhps,Alpp,A_ps)
             
         elif args.mask_bias_hardening:
             ls,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
@@ -186,7 +197,7 @@ if rank==0:
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
-        np.savetxt(f'{solenspipe.opath}/acl.txt',acl)
+        np.savetxt(f'{solenspipe.opath}/aclbhtest1.txt',acl)
         np.savetxt(f'{solenspipe.opath}/xcl.txt',xcl)
         np.savetxt(f'{solenspipe.opath}/icl.txt',icl)
 

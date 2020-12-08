@@ -15,7 +15,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple rdn0 calculation')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=200,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -41,6 +41,7 @@ solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,ch
 car = "healpix_" if args.healpix else "car_"
 
 w4 = solint.wfactor(4)
+print(w4)
 get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
@@ -58,7 +59,11 @@ elif args.ps_bias_hardening:
         def __init__(self):
             self.lCl = lambda p,x: maps.interp(ellsi,gt)(x)
  
-    ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+    #ls,blens,bhps,Alpp,A_ps,bhclkknorm=solenspipe.bias_hard_ps_norms(nells,nells_P,nells_P,theory,theory_cross,lmin,lmax)
+    A_ps=np.loadtxt(f'{solenspipe.opath}/A_ps_{args.label}.txt')
+    bhps=np.loadtxt(f'{solenspipe.opath}/bhps_{args.label}.txt')
+    Alpp=np.loadtxt(f'{solenspipe.opath}/Alpp_{args.label}.txt')
+    blens=np.loadtxt(f'{solenspipe.opath}/invdet_{args.label}.txt')
     qfunc=solint.qfunc_bh
 else:
     print("qfunc")
