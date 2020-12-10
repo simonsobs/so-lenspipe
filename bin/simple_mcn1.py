@@ -39,7 +39,7 @@ parser.add_argument("--curl", action='store_true',help='curl reconstruction')
 args = parser.parse_args()
 
 
-solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
+solint,Als,Alcurl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
 car = "healpix_" if args.healpix else "car_"
     
 
@@ -69,10 +69,10 @@ elif args.ps_bias_hardening:
     qfunc=solint.qfunc_bh
 else:
     qfunc = solint.qfunc
-nmax = len(ils)
+nmax = len(Als['L'])
 
 if args.ps_bias_hardening:
-    mcn1= bias.mcn1(0,polcomb,polcomb,qfunc,get_kmap,comm,power,nsims,verbose=True,type='bh',ils=ils, blens=blens, bhps=bhps, Alpp=Alpp, A_ps=A_ps)
+    mcn1= bias.mcn1(0,polcomb,polcomb,qfunc,get_kmap,comm,power,nsims,verbose=True,type='bh',ils=Als['L'], blens=blens, bhps=bhps, Alpp=Alpp, A_ps=A_ps)
     mcn1[nmax:] = 0
 else:
     mcn1 = bias.mcn1(0,polcomb,polcomb,qfunc,get_kmap,comm,power,nsims,verbose=True)
@@ -82,13 +82,13 @@ if not(args.no_mask):
     
 mcn1[nmax:] = 0
 if args.curl:
-	io.save_cols(f'{solenspipe.opath}/n1mc_curl_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
+	io.save_cols(f'{solenspipe.opath}/n1mc_curl_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(Als['L'],mcn1[:nmax]))
 
 elif args.ps_bias_hardening:
-    io.save_cols(f'{solenspipe.opath}/n1mc_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
+    io.save_cols(f'{solenspipe.opath}/n1mc_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(Als['L'],mcn1[:nmax]))
 
 else:
-	io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
+	io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(Als['L'],mcn1[:nmax]))
 
 if rank==0:
     theory = cosmology.default_theory()
@@ -99,5 +99,4 @@ if rank==0:
     pl.add(ls,theory.gCl('kk',ls))
     #pl._ax.set_ylim(1e-9,1e-6)
     pl.done(f'{solenspipe.opath}/recon_mcn1.png')                       
-
 
