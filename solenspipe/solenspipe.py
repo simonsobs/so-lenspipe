@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
-
+import pytempura as cs
 import numpy as np
 import os,sys
 import healpy as hp
@@ -51,7 +51,6 @@ def initialize_args(args):
 
     # Number of sims
     nsims = args.nsims
-    curl=args.curl
     sindex = args.sindex
     comm,rank,my_tasks = mpi.distribute(nsims)
 
@@ -429,7 +428,7 @@ class SOLensInterface(object):
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
         polcomb=alpha
         
-        # Frank: Some of the bias hardening normalziation code requires
+        # Frank: Some of the bias hardening normalization code requires
         # using functions from cmblensplus from Toshiya. The Tcmb factor
         # here is to address the fact in Toshiya's code the temperature is
         # dimensionless whereas in solenspipe it is in microKelvins. So we
@@ -526,7 +525,7 @@ class SOLensInterface(object):
             if True, perform the calculation, otherwise
         use read from file.
         cmblensplus: bool (default=True)
-            if True, use cmblensplus to do the calculation,
+            if True, use Cmblensplus/Tempura to do the calculation,
         otherwise use qe.symlens_norm
         label: str
             An identifer string used in the output text file,
@@ -718,8 +717,7 @@ def initialize_mask(nside,smooth_deg):
 
 
 def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
-    import curvedsky as cs
-    print('compute cmblensplus norm')
+    print('compute norm from Tempura')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -740,7 +738,7 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for TT,EE,EB,TE,TB"""
-    import curvedsky as cs
+    import tempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -802,7 +800,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     
 def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for MV"""
-    import curvedsky as cs
+    import tempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -903,7 +901,7 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
 
 def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """return normalization for mask reconstruction"""
-    import curvedsky as cs
+    import tempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -930,7 +928,7 @@ def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """Normalizations for point source reconstruction"""
-    import curvedsky as cs
+    import tempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -959,7 +957,7 @@ def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """example of reconstruction using Toshiya's cmblensplus pipeline"""
-    import curvedsky as cs
+    import tempura as cs
     mlmax=lmax
 
     polcomb='TT'
