@@ -732,7 +732,7 @@ def initialize_mask(nside,smooth_deg):
 
 
 def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
-    import curvedsky as cs
+    import pytempura as cs
     print('compute cmblensplus norm')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -754,7 +754,7 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for TT,EE,EB,TE,TB"""
-    import curvedsky as cs
+    import pytempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -816,7 +816,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     
 def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for MV"""
-    import curvedsky as cs
+    import pytempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -917,7 +917,7 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
 
 def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """return normalization for mask reconstruction"""
-    import curvedsky as cs
+    import pytempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -944,7 +944,7 @@ def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """Normalizations for point source reconstruction"""
-    import curvedsky as cs
+    import pytempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -973,7 +973,7 @@ def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """example of reconstruction using Toshiya's cmblensplus pipeline"""
-    import curvedsky as cs
+    import pytempura as cs
     mlmax=lmax
 
     polcomb='TT'

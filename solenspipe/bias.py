@@ -1,3 +1,4 @@
+
 import numpy as np
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
@@ -43,10 +44,8 @@ elif set==2 or set==3:
 
 =================
 """
-
-
 def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
-         include_meanfield=False,gaussian_sims=False,include_main=True,
+         include_meanfield=False,gaussian_sims=False,include_main=True,rdn0_error=False,
          qxy=None,qab=None,type=None,ils=None, blens=None, bhps=None, Alpp=None, A_ps=None):
     """
     Anisotropic MC-RDN0 for alpha=XY cross beta=AB
@@ -57,6 +56,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     of sims because the sims are not lensed.
     This is the usual 1xnsims RDN0. If type is unspecified, this will return the usual QE RDN0. 
     type='bh' returns the point source hardened RDN0.
+    if rdn0_error=True, calculate the scatter between realizations of RDN0. return the rdn0 standard deviation as the second component.
     """
     eX,eY = alpha
     eA,eB = beta
@@ -74,44 +74,63 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     A = X
     B = X
     if include_meanfield: 
-        qxy = qa(X,Y) if qxy is None else qxy
+        qxy = qa(X,Y) if qxy is None else qxycd
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
     if comm is not None:
         rank,size = comm.rank, comm.size
+        s = stats.Stats(comm)
     else:
         rank,size = 0, 1
     with bench.show("sim"):
         for i in range(rank+1, nsims+1, size):
             print(i)
-            Xs  = get_kmap((icov,0,i))
+            error=0. #only used to calculate the rdn0 error
+            Xs  = get_kmap((icov,0,i+1))
             Ys  = Xs
             As  = Xs
             Bs  = Xs
             if include_meanfield:
-                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
-                print(rdn0)
+                mf= ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+                rdn0+=mf
+                error+=mf
             if include_main:
                 print("main rdn0")
-                print(power(qa(X,Ys),qb(A,Bs)))
-                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                main= power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+                rdn0+=main
+                error+=main
+            
+                
                 if not(gaussian_sims):
                     print("non gaussian")
-                    Ysp = get_kmap((icov,1,i))
+                    Ysp = get_kmap((icov,1,i+1))
                     Asp = Ysp
                     Bsp = Ysp
-                    rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                    sim_rdn0= (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                    rdn0+=sim_rdn0
+                    error+=sim_rdn0
+       
                 else:
-                    rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+                    gauss_sim=  (-power(qa(Xs,Ys),qb(As,Bs)))
+                    rdn0+=gauss_sim
+                    error+=gauss_sim
+            if comm is not None:
+                s.add_to_stats('rdn0',error)
     try:
         totrdn0 = utils.allreduce(rdn0,comm)
+        if rdn0_error:
+            s.get_stats()
+            s.vectors['rdn0']
+            std=np.std(s.vectors['rdn0'], axis=0)
     except AttributeError:
         totrdn0 = rdn0
+
+    if rdn0_error: 
+        return totrdn0/nsims,std
+    
     return totrdn0/nsims
-
-
 
 def mean_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
