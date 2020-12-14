@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
-import pytempura as cs
+import pytempura as tempura
 import numpy as np
 import os,sys
 import healpy as hp
@@ -732,13 +732,12 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
+    Ag, Ac, Wg, Wc = tempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
     return ls,Ag*fac,Ac*fac
 
 def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for TT,EE,EB,TE,TB"""
-    import tempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -755,11 +754,11 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTT,AcTT=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTE,AcTE=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTB,AcTB=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEE,AcEE=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEB,AcEB=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
 
     fac=ls*(ls+1)
     #prepare the sim total power spectrum
@@ -767,18 +766,18 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
     #dataxdata
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE0,AcTE0=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB0,AcTB0=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE0,AcEE0=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB0,AcEB0=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE1,AcTE1=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB1,AcTB1=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE1,AcEE1=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     AgTT0[np.where(AgTT0==0)] = 1e30
     AgTT1[np.where(AgTT1==0)] = 1e30
     AgEE0[np.where(AgEE0==0)] = 1e30
@@ -800,7 +799,6 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     
 def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,simn):
     """Curvedsky dumb N0 for MV"""
-    import tempura as cs
     print('compute dumb N0')
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
@@ -816,11 +814,11 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    AgTT,AcTT=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
-    AgTE,AcTE=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
-    AgTB,AcTB=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
-    AgEE,AcEE=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
-    AgEB,AcEB=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
+    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
+    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
+    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
+    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
+    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
 
     #prepare the sim total power spectrum
     cldata=get_sim_power((0,0,simn))
@@ -828,28 +826,28 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     #dataxdata
     sim_ocl[np.where(sim_ocl==0)] = 1e30
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE0,AcTE0=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
-    AgTB0,AcTB0=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
-    AgEE0,AcEE0=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
-    AgEB0,AcEB0=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
-    ATTTE0,__=cs.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
-    ATTEE0,__=cs.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATEEE0,__=cs.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATBEB0,__=cs.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
+    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
+    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
+    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
+    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
+    ATTTE0,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
+    ATTEE0,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATEEE0,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATBEB0,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
 
 
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=cs.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE1,AcTE1=cs.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
-    AgTB1,AcTB1=cs.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
-    AgEE1,AcEE1=cs.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
-    AgEB1,AcEB1=cs.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
-    ATTTE1,__=cs.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATTEE1,__=cs.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATEEE1,__=cs.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATBEB1,__=cs.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
+    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
+    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
+    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
+    ATTTE1,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATTEE1,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATEEE1,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATBEB1,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
 
 
     AgTT0[np.where(AgTT0==0)] = 1e30
@@ -901,7 +899,6 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
 
 def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """return normalization for mask reconstruction"""
-    import tempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -916,9 +913,9 @@ def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    A_mask = cs.norm_tau.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
-    Alpp, __ = cs.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
-    Rlpt = cs.norm_lens.ttt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
+    A_mask = tempura.norm_tau.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Alpp, __ = tempura.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Rlpt = tempura.norm_lens.ttt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
     fac=ls*(ls+1)*0.5
     detR=1-Alpp*A_mask*Rlpt**2
     bhmask=Alpp*Rlpt/detR
@@ -928,7 +925,6 @@ def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """Normalizations for point source reconstruction"""
-    import tempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -943,9 +939,9 @@ def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    A_ps = cs.norm_src.qtt(lmax,rlmin,rlmax,ocl[0,:])
-    Alpp, __ = cs.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
-    Rlps = cs.norm_lens.stt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
+    A_ps = tempura.norm_src.qtt(lmax,rlmin,rlmax,ocl[0,:])
+    Alpp, __ = tempura.norm_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:])
+    Rlps = tempura.norm_lens.stt(lmax,rlmin,rlmax,lcl[0,:],ocl[0,:]) #this is unnormalized
     fac=ls*(ls+1)*0.5
     detR=1-Alpp*A_ps*Rlps**2
     bhps=Alpp*Rlps/detR
@@ -957,7 +953,6 @@ def bias_hard_ps_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
 
 def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """example of reconstruction using Toshiya's cmblensplus pipeline"""
-    import tempura as cs
     mlmax=lmax
 
     polcomb='TT'
@@ -976,15 +971,15 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    Ag, Ac, Wg, Wc = cs.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
+    Ag, Ac, Wg, Wc = tempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl) #the Als used (same norm as used for theory) TT,TE,EE,TB,EB
     #load the beam deconvolved alms
     sTalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/talms.fits')
     sEalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/ealms.fits')
     sBalm=hp.fitsfunc.read_alm(config['data_path']+'pipetest/balms.fits')
     mlm=int(0.5*(-3+np.sqrt(9-8*(1-len(sTalm)))))
-    sTalm = cs.utils.lm_healpy2healpix(len(sTalm), sTalm, mlm) 
-    sEalm = cs.utils.lm_healpy2healpix(len(sEalm), sEalm, mlm) 
-    sBalm = cs.utils.lm_healpy2healpix(len(sBalm), sBalm, mlm) 
+    sTalm = tempura.utils.lm_healpy2healpix(len(sTalm), sTalm, mlm) 
+    sEalm = tempura.utils.lm_healpy2healpix(len(sEalm), sEalm, mlm) 
+    sBalm = tempura.utils.lm_healpy2healpix(len(sBalm), sBalm, mlm) 
     Talm=sTalm[:rlmax+1,:rlmax+1]/Tcmb
     Ealm=sEalm[:rlmax+1,:rlmax+1]/Tcmb
     Balm=sBalm[:rlmax+1,:rlmax+1]/Tcmb
@@ -1001,11 +996,11 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     Balm *= Fl[2,:,:]
     # compute unnormalized estimator
     glm, clm = {}, {}
-    glm['TT'], clm['TT'] = cs.rec_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],Talm,Talm)
-    glm['TE'], clm['TE'] = cs.rec_lens.qte(lmax,rlmin,rlmax,lcl[3,:],Talm,Ealm)
-    glm['EE'], clm['EE'] = cs.rec_lens.qee(lmax,rlmin,rlmax,lcl[1,:],Ealm,Ealm)
-    glm['TB'], clm['TB'] = cs.rec_lens.qtb(lmax,rlmin,rlmax,lcl[3,:],Talm,Balm)
-    glm['EB'], clm['EB'] = cs.rec_lens.qeb(lmax,rlmin,rlmax,lcl[1,:],Ealm,Balm)
+    glm['TT'], clm['TT'] = tempura.rec_lens.qtt(lmax,rlmin,rlmax,lcl[0,:],Talm,Talm)
+    glm['TE'], clm['TE'] = tempura.rec_lens.qte(lmax,rlmin,rlmax,lcl[3,:],Talm,Ealm)
+    glm['EE'], clm['EE'] = tempura.rec_lens.qee(lmax,rlmin,rlmax,lcl[1,:],Ealm,Ealm)
+    glm['TB'], clm['TB'] = tempura.rec_lens.qtb(lmax,rlmin,rlmax,lcl[3,:],Talm,Balm)
+    glm['EB'], clm['EB'] = tempura.rec_lens.qeb(lmax,rlmin,rlmax,lcl[1,:],Ealm,Balm)
     
     
     # normalized estimators
@@ -1022,18 +1017,18 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     phifname = "/project/projectdirs/act/data/actsims_data/signal_v0.4/fullskyPhi_alm_%s.fits" % istr
     kalms=plensing.phi_to_kappa(hp.read_alm(phifname))
     phimap=hp.alm2map(kalms.astype(complex),2048)
-    kalms=cs.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
+    kalms=tempura.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
     kalms = solint.get_kappa_alm(0+0)
     lm=int(0.5*(-3+np.sqrt(9-8*(1-len(kalms)))))
-    kalms = cs.utils.lm_healpy2healpix(len(kalms), kalms, lm) 
+    kalms = tempura.utils.lm_healpy2healpix(len(kalms), kalms, lm) 
     kalms=kalms[:lmax+1,:lmax+1]
     macl=np.zeros(rlmax+1)
     micl=np.zeros(rlmax+1)
     mxcl=np.zeros(rlmax+1)
-    micl+=cs.utils.alm2cl(rlmax,kalms,kalms)/w2
-    acl=cs.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
+    micl+=tempura.utils.alm2cl(rlmax,kalms,kalms)/w2
+    acl=tempura.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
     macl+= fac**2*acl
-    xcl=cs.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
+    xcl=tempura.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
 
