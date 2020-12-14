@@ -42,58 +42,130 @@ elif set==2 or set==3:
 
 =================
 """
-    
-    
-def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
-         include_meanfield=False,gaussian_sims=False,include_main=True,
-         qxy=None,qab=None):
+
+def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
+         power, nsims, include_meanfield=False,
+         gaussian_sims=False, include_main=True,
+         qxy=None, qab=None, bias_harden=False, ils=None,
+         blens=None, bhps=None, Alpp=None, A_ps=None):
     """
-    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB.
     qfunc(XY,x,y) returns QE XY reconstruction 
     get_kmap("T",(0,0,1)
-
     e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
-
-
     gaussian_sims=True indicates we don't need to involve pairs
     of sims because the sims are not lensed.
+    This is the usual 1xnsims RDN0. If type is unspecified, 
+    this will return the usual QE RDN0. 
+    estimator_type='bh' returns the point source hardened RDN0.
+    
+    Parameters
+    ----------
+    icov: int
+        The index of the realization if performing a covariance
+    calculation - otherwise, set to zero.
+    alpha: str
+        Label for the types of the first pair of maps 
+    used for reconstruction, any two of "T", "E", "B" e.g.
+    "TT" or "TE".
+    beta: str
+        Label for the types of the second combination of maps 
+    used for reconstruction, any two of "T", "E", "B" e.g.
+    "TT" or "TE"
+    qfunc: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(alpha, x, y). See e.g. SoLensPipe.qfunc
+    get_kmap: function
+        Function for getting the a_lms of simulated map
+    comm: mpi thing
+        Let's think about what we want this to be in general. 
+    I'd likowere to add a joblib option here.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    include_meanfield: bool (default=False)
+        Subtract mean field from RDN0 estimate
+    gaussian_sims: bool (default=False)
+        Use Gaussian sims i.e. without any lensing
+    include_main: bool (default=True)
+        Not sure
+    qxy:
+        Not sure
+    qab:
+        Not sure
+    bias_harden: bool
+        Caclulate RDN0 for the bias hardened case
+    ils: not sure (default=None)
+        Not sure
+    blens: not sure (default=None)
+        Not sure
+    bhps: not sure (default=None)
+        Not sure
+    Alpp: not sure (default=None)
+        Not sure
+    A_ps: not sure (default=None)
+        Not sure
+
+    Returns
+    -------
+    rdn0: np.array
+        Estimate of the RDN0 bias
+    
     """
     eX,eY = alpha
     eA,eB = beta
-    qa = lambda x,y: qfunc(alpha,x,y)
-    qb = lambda x,y: qfunc(beta,x,y)
-    # Data #need to shuffle this so that make all sims same as data
-    #for loop here as well, change the data
 
+    if type=='bh':
+        qa = lambda x,y: qfunc(alpha,x,y,ils, blens, bhps, Alpp, A_ps)
+        qb = lambda x,y: qfunc(beta,x,y,ils, blens, bhps, Alpp, A_ps)
+    else:
+        qa = lambda x,y: qfunc(alpha,x,y)
+        qb = lambda x,y: qfunc(beta,x,y)
+
+    # Data
+    X = get_kmap((0,0,0))
+    Y = X
+    A = X
+    B = X
     if include_meanfield: 
         qxy = qa(X,Y) if qxy is None else qxy
         qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):  
-            X=get_kmap((icov,0,i))
-            Y = get_kmap((icov,0,i))
-            A = get_kmap((icov,0,i))
-            B = get_kmap((icov,0,i))
-            j=i+nsims
-            Xs=get_kmap((icov,0,j))
-            Ys  = get_kmap((icov,0,j))
-            As  = get_kmap((icov,0,j))
-            Bs  = get_kmap((icov,0,j))
+    if comm is not None:
+        rank,size = comm.rank, comm.size
+    else:
+        rank,size = 0, 1
+    with bench.show("sim"):
+        for i in range(rank+1, nsims+1, size):
+            print(i)
+            Xs  = get_kmap((icov,0,i))
+            Ys  = Xs
+            As  = Xs
+            Bs  = Xs
             if include_meanfield:
                 rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+                print(rdn0)
             if include_main:
+                print("main rdn0")
+                print(power(qa(X,Ys),qb(A,Bs)))
                 rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
-            if not(gaussian_sims):
-                Ysp=get_kmap((icov,1,i))
-                Asp=get_kmap((icov,1,i))
-                Bsp = get_kmap((icov,1,i))
-                rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
-            else:
-                rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
-    totrdn0 = utils.allreduce(rdn0,comm) 
+                if not(gaussian_sims):
+                    print("non gaussian")
+                    Ysp = get_kmap((icov,1,i))
+                    Asp = Ysp
+                    Bsp = Ysp
+                    rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                else:
+                    rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+    try:
+        totrdn0 = utils.allreduce(rdn0,comm)
+    except AttributeError:
+        totrdn0 = rdn0
     return totrdn0/nsims
+    
 
 def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     """
