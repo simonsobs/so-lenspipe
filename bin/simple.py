@@ -37,7 +37,7 @@ parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 args = parser.parse_args()
 
-solint,Als,Alcurl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
+solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
       
 w2 = solint.wfactor(2)
 w3 = solint.wfactor(3)
@@ -80,7 +80,7 @@ for task in my_tasks:
         # Get simulated, prepared filtered T, E, B maps, i.e. (1/(C+N) * teb_alm)
         t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
         # Get the reconstructed kappa map alms and filter it with the normalization
-        recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(Als['L'],Als[polcomb]))
+        recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
     
     # Subtract a meanfield if necessary
     recon_alms = recon_alms - mf_alm
@@ -132,7 +132,7 @@ if rank==0:
         
     
     ls = np.arange(xcl.size)
-    Nl = maps.interp(Als['L'],Nl)(ls)
+    Nl = maps.interp(ils,Nl)(ls)
     pl = io.Plotter('CL',xyscale='loglog')
     pl.add(ls,acl,alpha=0.5,label='rr')
     if args.write_meanfield or args.read_meanfield:
