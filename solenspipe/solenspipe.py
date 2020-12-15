@@ -426,7 +426,16 @@ class SOLensInterface(object):
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
-        polcomb=alpha
+
+        
+        """
+        wrapper to compute normalized bias hardened temperature convergent alms. (See Eq. 27 of https://arxiv.org/pdf/1209.0091.pdf)
+        ils: lensing multipoles L, used for the conversion from phi_alms to kappa_alms
+        blens: lensing response function
+        bhps: point source response function
+        Alpp: Lensing Phi Normalization 
+        A_ps: Point source Normalization
+        """
         
         # Frank: Some of the bias hardening normalization code requires
         # using functions from cmblensplus from Toshiya. The Tcmb factor
@@ -434,24 +443,33 @@ class SOLensInterface(object):
         # dimensionless whereas in solenspipe it is in microKelvins. So we
         # hard code the conversion here since it shouldn't change.
         Tcmb = 2.726e6
-        
+        polcomb=alpha #Only TT used for bias hardening
+        #point source reconstruction
         source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
+        #lensing reconstruction
         phi=qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+        #normalise the point sources alms
         s_alms=qe.filter_alms(source,maps.interp(ils,A_ps*bhps*Tcmb**2))
+        #normalised lensing phi_alms
         phi_alms = qe.filter_alms(phi,maps.interp(ils,2*Alpp*blens))
+        #bias hardened alms
         balms=phi_alms-s_alms
         recon_alms=hp.almxfl(balms,ils*(ils+1)*0.5)
         return recon_alms
 
     def get_mv_curl(self,polcomb,talm,ealm,balm):
-    
         return self.qfunc_curl(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc_curl(self,alpha,X,Y):
+        """
+         Wrapper for the core falafel full-sky curl reconstruction function
+        Calculates the unnormalised curl estimator. 
+        By construction, the lensing field is given by the gradient of the deflection field which is irrotational. 
+        Systematics mimicking lensing need not obey this symmetry and give a non zero curl."""
         polcomb = alpha
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -462,7 +480,7 @@ class SOLensInterface(object):
         return self.qfuncmask(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfuncmask(self,alpha,X,Y):
-        """mask reconstruction"""
+        """Wrapper for the analysis mask reconstruction based on Eq 22 of https://arxiv.org/pdf/1209.0091.pdf"""
         polcomb = alpha
         return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -472,13 +490,14 @@ class SOLensInterface(object):
         return self.qfunc_ps(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc_ps(self,alpha,X,Y):
-        """Point source reconstruction from Falafel"""
+        """Wrapper for point source reconstruction from Falafel"""
         polcomb = alpha
         return qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
 
     def qfuncshear(self,Talm,fTalm):
+        """Wrapper for full sky shear reconstruction from Falafel, the shear estimator is a foreground immune estimator."""
         return qe.qe_shear(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
 
     def get_noise_power(self,channel=None,beam_deconv=False):
