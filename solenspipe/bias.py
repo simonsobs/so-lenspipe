@@ -45,9 +45,7 @@ elif set==2 or set==3:
 
 def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
          power, nsims, include_meanfield=False,
-         gaussian_sims=False, include_main=True,
-         qxy=None, qab=None, bias_harden=False, ils=None,
-         blens=None, bhps=None, Alpp=None, A_ps=None):
+         gaussian_sims=False, include_main=True):
     """
     Anisotropic MC-RDN0 for alpha=XY cross beta=AB.
     qfunc(XY,x,y) returns QE XY reconstruction 
@@ -90,22 +88,6 @@ def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
         Use Gaussian sims i.e. without any lensing
     include_main: bool (default=True)
         Not sure
-    qxy:
-        Not sure
-    qab:
-        Not sure
-    bias_harden: bool
-        Caclulate RDN0 for the bias hardened case
-    ils: not sure (default=None)
-        Not sure
-    blens: not sure (default=None)
-        Not sure
-    bhps: not sure (default=None)
-        Not sure
-    Alpp: not sure (default=None)
-        Not sure
-    A_ps: not sure (default=None)
-        Not sure
 
     Returns
     -------
@@ -116,12 +98,8 @@ def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
     eX,eY = alpha
     eA,eB = beta
 
-    if type=='bh':
-        qa = lambda x,y: qfunc(alpha,x,y,ils, blens, bhps, Alpp, A_ps)
-        qb = lambda x,y: qfunc(beta,x,y,ils, blens, bhps, Alpp, A_ps)
-    else:
-        qa = lambda x,y: qfunc(alpha,x,y)
-        qb = lambda x,y: qfunc(beta,x,y)
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
 
     # Data
     X = get_kmap((0,0,0))
