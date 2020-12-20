@@ -62,6 +62,7 @@ def initialize_args(args):
 
     config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
     opath = config['data_path']
+    output_path=config['output_path']
 
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
 
@@ -73,7 +74,7 @@ def initialize_args(args):
         white_noise=wnoise, beam_fwhm=beam,
         disable_noise=disable_noise,
         atmosphere=atmosphere,zero_sim=args.zero_sim)
-    if rank==0: solint.plot(mask,f'{opath}/{args.label}_{args.polcomb}_{isostr}mask')
+    if rank==0: solint.plot(mask,f'{output_path}/{args.label}_{args.polcomb}_{isostr}mask')
     
     # Choose the frequency channel
     channel = mapsims.SOChannel("LA", 145)
@@ -411,6 +412,185 @@ class SOLensInterface(object):
         almt = qe.filter_alms(oalms[0],filt_t,lmin=lmin,lmax=lmax)
         return almt
 
+    def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
+
+        if not(self.zero_map):
+            print("prepare map")
+            # Convert the solenspipe convention to the Alex convention
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+            ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=False)
+            if foreground==True:
+                print("using foregrounds")
+                #psm=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lenspsmask.fits")
+                #imap=(cmb_map[0] + noise_map[0]+self.get_beamed_foregrounds())
+                path="/home/r/rbond/jiaqu/scratch/so_lens/shear/inpainted_map.fits"
+                from pixell import reproject
+                imap=reproject.enmap_from_healpix(path, self.shape, self.wcs,ncomp=1, rot=None,lmax=6000) 
+                enmap.write_fits("/home/r/rbond/jiaqu/scratch/so_lens/shear/inpainted_map_car.fits",imap)
+                imap=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lens/shear/inpainted_map_car.fits")
+                #imap=imap*psm
+                plots = enplot.get_plots(imap, downgrade = 4)
+                fname=f'forelens'
+                enplot.write(f"{spath}/{fname}",plots)
+            else:
+                imap = (cmb_map + noise_map)
+            imap = imap * self.mask
+            imap=imap[0]
+
+            oalms = self.map2alm(imap)
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            filt_t = lambda x: 1.
+            almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
+            return almt
+
+    def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        print("loading shear map")
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+
+        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+        noise_map = self.get_noise_map(noise_seed,channel)
+        if foreground==True:
+            print("using foregrounds")
+            #psm=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lenspsmask.fits")
+            #imap=(cmb_map[0] + noise_map[0]+self.get_beamed_foregrounds())
+            imap=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lens/shear/inpainted_map_car.fits")
+            #imap=imap*psm
+        else:
+            imap = (cmb_map + noise_map)
+        imap = imap * self.mask
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        return almt
+
+    def prepare_m4_map(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        print("loading m4 map")
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+        noise_map = self.get_noise_map(noise_seed,channel)
+        if foreground==True:
+            print("using foregrounds")
+            #psm=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lenspsmask.fits")
+            #imap=(cmb_map[0] + noise_map[0]+self.get_beamed_foregrounds())
+            imap=enmap.read_map("/home/r/rbond/jiaqu/scratch/so_lens/shear/inpainted_map_car.fits")
+            #imap=imap*psm
+        else:
+            imap = (cmb_map + noise_map)
+        imap = imap * self.mask
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        #filt_t = lambda x: (1./(x**6*(self.cltt(x) + nells_T(x))**2))*(x*der(self.cltt(x))-x**2*der(der(self.cltt(x))))
+        filt_t = lambda x: (1./(x**5*(self.cltt(x) + nells_T(x))**2))*(der(self.cltt(x)))
+        #filt_t = lambda x: -(1./(x**5*(self.cltt(x) + nells_T(x))**2))*(der(self.cltt(x)))+(1./(x**4*(self.cltt(x) + nells_T(x))**2))*der(der(self.cltt(x)))
+        #filt_t = lambda x: (1./(x**6*(self.cltt(x) + nells_T(x))**2))*(x*der(self.cltt(x)))
+        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        return almt
+
+    def get_beamed_foregrounds(self):
+        cib=enmap.read_map(f"{spath}/shear/cib.fits")
+        tsz=enmap.read_map(f"{spath}/shear/tsz.fits")
+        ksz=enmap.read_map(f"{spath}/shear/ksz.fits")
+        cib_alm=curvedsky.map2alm(cib,lmax=self.mlmax)
+        tsz_alm=curvedsky.map2alm(tsz,lmax=self.mlmax)
+        
+        ksz_alm=curvedsky.map2alm(ksz,lmax=self.mlmax)
+        cib_alm=curvedsky.almxfl(cib_alm,lambda x: maps.gauss_beam(self.beam,x))
+        tsz_alm=curvedsky.almxfl(tsz_alm,lambda x: maps.gauss_beam(self.beam,x))
+        ksz_alm=curvedsky.almxfl(ksz_alm,lambda x: maps.gauss_beam(self.beam,x))
+        cib=self.alm2map(cib_alm,ncomp=1)
+        tsz=self.alm2map(tsz_alm,ncomp=1)
+        ksz=self.alm2map(ksz_alm,ncomp=1)
+        #return cib+tsz+ksz
+        return cib+tsz+ksz
+
+
+
+    def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
+        if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
+        xs = {'T':0,'E':1,'B':2}
+        return self.cache[seed][:3] if filtered else self.cache[seed][3:]
+
+    def get_smap(self,channel,seed,lmin,lmax,filtered=True):
+        tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax)
+        tf=self.prepare_shear_map1(channel,seed,lmin,lmax)
+        return tmap,tf
+
+    def get_m4map(self,channel,seed,lmin,lmax,filtered=True):
+        tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax)
+        tf=self.prepare_m4_map(channel,seed,lmin,lmax)
+        return tmap,tf
+
+
+    def get_mv_kappa(self,polcomb,talm,ealm,balm):
+        
+        return self.qfunc(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfunc(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+
+    def get_mv_curl(self,polcomb,talm,ealm,balm):
+    
+        return self.qfunc_curl(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfunc_curl(self,alpha,X,Y):
+        polcomb = alpha
+        return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][1]
+
+    def get_mv_mask(self,polcomb,talm,ealm,balm):
+        
+        return self.qfuncmask(polcomb,[talm,ealm,balm],[talm,ealm,balm])
+
+    def qfuncmask(self,alpha,X,Y):
+        """mask reconstruction"""
+        polcomb = alpha
+        return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+                         self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
+                         xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
+
+    def qfuncshear(self,Talm,fTalm):
+        return qe.qe_shear(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
+
+    def qfuncs_m4(self,Talm,fTalm):
+        return qe.qe_m4(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
+
     def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
         # Wrapper around self.prepare_map that uses caching
         if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
@@ -560,10 +740,11 @@ class SOLensInterface(object):
         """
 
         #Build the filenames.
+        output_path=config['output_path']
         lstr = "" if label is None else f"{label}_"
         wstr = "" if self.wnoise is None else "wnoise_"
-        als_fname = opath+"als_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
-        als_curl_fname = opath+"als_curl_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        als_fname = output_path+"als_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        als_curl_fname = output_path+"als_curl_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
 
         #stuff for reading/writing the cached files. Assuming for now
         #they should be human readable, if not - we could simplify
@@ -675,8 +856,8 @@ class SOLensInterface(object):
         from solenspipe import biastheory as nbias
         lstr = "" if label is None else f"{label}_"
         wstr = "" if self.wnoise is None else "wnoise_"
-        onormfname = opath+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
-        n1fname=opath+"analytic_n1_%s%slmin_%d_lmax_%d.txt"% (wstr,lstr,lmin,lmax)
+        onormfname = output_path+"norm_%s%slmin_%d_lmax_%d.txt" % (wstr,lstr,lmin,lmax)
+        n1fname=output_path+"analytic_n1_%s%slmin_%d_lmax_%d.txt"% (wstr,lstr,lmin,lmax)
         try:
             return np.loadtxt(n1fname,unpack=True)
         except:
@@ -917,7 +1098,7 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
 
 def bias_hard_mask_norms(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     """return normalization for mask reconstruction"""
-    import curvedsky as cs
+    import pytempura as cs
     Tcmb = 2.726e6    # CMB temperature
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
