@@ -2,8 +2,8 @@ from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
-from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
-import pytempura as tempura
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot
+import pytempura
 import numpy as np
 import os,sys
 import healpy as hp
@@ -14,9 +14,52 @@ from falafel import qe
 import os
 import glob
 import traceback
+from falafel.utils import get_cmb_alm, get_kappa_alm, \
+    get_theory_dicts, get_theory_dicts_white_noise, \
+    change_alm_lmax, get_theory_dicts_white_noise
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,curl=False):
+    """
+    Prepares a qfunc lambda function for an estimator est1. Optionally,
+    normalize it with Al1. Optionally, bias harden it (which
+    results in a normalized estimator) against est1 with
+    normalization Al2 and unnormalized cross-response R12.
+    """
+    est1 = est1.upper()
+    assert est1 in pytempura.est_list
+    if est2 is not None:
+        bh = True
+        assert est2 in pytempura.est_list
+        assert Al1 is not None
+        assert Al2 is not None
+        assert R12 is not None
+    else:
+        bh = False
+
+    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL'] # TODO: add other
+    icomp = 0 if not(curl) else 1
+    qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                   fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                   estimators=[est1],
+                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1][icomp]
+
+    if bh:
+        assert est2 in ['SRC'] # TODO: add mask
+        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        # The bias-hardened estimator Eq 27 of arxiv:1209.0091
+        return lambda X,Y: cs.almxfl( \
+                                    (cs.almxfl(qfunc1(X,Y),Al1) - \
+                                     cs.almxfl(qfunc2(X,Y),Al1 * Al2 * R12)) , \
+                                      1. / (1. - Al1 * Al2 * R12**2.) \
+                                  )
+    else:
+        if Al1 is not None: return lambda X,Y: qe.filter_alms(qfunc1(X,Y),Al1)
+        else: return qfunc1
+
+
 
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
@@ -97,17 +140,6 @@ def convert_seeds(seed,nsims=100,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_cmb_alm(i,iset,path=config['signal_path']):
-    sstr = str(iset).zfill(2)
-    istr = str(i).zfill(5)
-    fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
-    return hp.read_alm(fname,hdu=(1,2,3))
-
-
-def get_kappa_alm(i,path=config['signal_path']):
-    istr = str(i).zfill(5)
-    fname = path + "fullskyPhi_alm_%s.fits" % istr
-    return plensing.phi_to_kappa(hp.read_alm(fname))
 
 def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     """
@@ -201,13 +233,13 @@ class SOLensInterface(object):
             hmap = hp.alm2map(alm.astype(np.complex128),nside=self.nside,verbose=False)
             return hmap[None] if ncomp==1 else hmap
         else:
-            return curvedsky.alm2map(alm,enmap.empty((ncomp,)+self.shape,self.wcs))
+            return cs.alm2map(alm,enmap.empty((ncomp,)+self.shape,self.wcs))
         
     def map2alm(self,imap):
         if self.healpix:
             return hp.map2alm(imap,lmax=self.mlmax,iter=0)
         else:
-            return curvedsky.map2alm(imap,lmax=self.mlmax)
+            return cs.map2alm(imap,lmax=self.mlmax)
 
 
     def get_kappa_alm(self,i):
@@ -248,7 +280,7 @@ class SOLensInterface(object):
         if self.beam is None:
             self.beam = self.nsim.get_beam_fwhm(channel)
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-        cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
+        cmb_alm = cs.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
         cmb_map = self.alm2map(cmb_alm)
         return cmb_map
 
@@ -289,7 +321,7 @@ class SOLensInterface(object):
             oalms = self.map2alm(imap)
 
 
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             #hp.fitsfunc.write_alm("/global/cscratch1/sd/jia_qu/maps/testTT.fits",oalms[0])
             oalms[~np.isfinite(oalms)] = 0
 
@@ -339,7 +371,7 @@ class SOLensInterface(object):
             imap = imap * self.mask
 
             oalms = self.map2alm(imap)
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
             clttsim=hp.alm2cl(oalms[0],oalms[0])/self.wfactor(2)
             cleesim=hp.alm2cl(oalms[1],oalms[1])/self.wfactor(2)
@@ -367,7 +399,7 @@ class SOLensInterface(object):
             oalms = self.map2alm(imap)
 
             beam=maps.gauss_beam(self.beam,ls)
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
 
             oalms[~np.isfinite(oalms)] = 0
             filt_t = lambda x: 1.
@@ -396,7 +428,7 @@ class SOLensInterface(object):
         
         oalms = self.map2alm(imap)
         print(self.disable_noise)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
 
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
@@ -751,7 +783,7 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    Ag, Ac, Wg, Wc = tempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
+    Ag, Ac, Wg, Wc = pytempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
     return ls,Ag*fac,Ac*fac
 
@@ -773,11 +805,11 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
 
     fac=ls*(ls+1)
     #prepare the sim total power spectrum
@@ -785,18 +817,18 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
     #dataxdata
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     AgTT0[np.where(AgTT0==0)] = 1e30
     AgTT1[np.where(AgTT1==0)] = 1e30
     AgEE0[np.where(AgEE0==0)] = 1e30
@@ -833,11 +865,11 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
-    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
-    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
-    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
-    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
+    AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
+    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
+    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
 
     #prepare the sim total power spectrum
     cldata=get_sim_power((0,0,simn))
@@ -845,28 +877,28 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     #dataxdata
     sim_ocl[np.where(sim_ocl==0)] = 1e30
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
-    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
-    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
-    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
-    ATTTE0,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
-    ATTEE0,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATEEE0,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATBEB0,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
+    ATTTE0,__=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
+    ATTEE0,__=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATEEE0,__=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATBEB0,__=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
 
 
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
-    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
-    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
-    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
-    ATTTE1,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATTEE1,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATEEE1,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATBEB1,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
+    ATTTE1,__=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATTEE1,__=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATEEE1,__=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATBEB1,__=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
 
 
     AgTT0[np.where(AgTT0==0)] = 1e30
@@ -1036,7 +1068,7 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     phifname = "/project/projectdirs/act/data/actsims_data/signal_v0.4/fullskyPhi_alm_%s.fits" % istr
     kalms=plensing.phi_to_kappa(hp.read_alm(phifname))
     phimap=hp.alm2map(kalms.astype(complex),2048)
-    kalms=tempura.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
+    kalms=pytempura.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
     kalms = solint.get_kappa_alm(0+0)
     lm=int(0.5*(-3+np.sqrt(9-8*(1-len(kalms)))))
     kalms = tempura.utils.lm_healpy2healpix(len(kalms), kalms, lm) 
@@ -1044,10 +1076,10 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     macl=np.zeros(rlmax+1)
     micl=np.zeros(rlmax+1)
     mxcl=np.zeros(rlmax+1)
-    micl+=tempura.utils.alm2cl(rlmax,kalms,kalms)/w2
-    acl=tempura.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
+    micl+=pytempura.utils.alm2cl(rlmax,kalms,kalms)/w2
+    acl=pytempura.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
     macl+= fac**2*acl
-    xcl=tempura.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
+    xcl=pytempura.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
 
@@ -1133,3 +1165,8 @@ class weighted_bin1D:
         
         
         
+def bias_hardened_n0(Nl,Nlbias,Cross):
+    ret = Nl*0
+    ret[1:] = Nl[1:] / (1.-Nl[1:]*Nlbias[1:]*Cross[1:]**2.)
+    return ret
+

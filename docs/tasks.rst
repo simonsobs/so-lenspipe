@@ -4,20 +4,16 @@ Pipeline tasks
 Conventions
 -----------
 
-We will store one-dimensional power spectra in 1d numpy arrays whose
-index corresponds to the multipole (so the first indices starting with
-zero store multipoles 0,1,2...etc.). All CMB power spectra are
-in units of :math:`(\mu K-{\rm rad})^2` and do not contain any
-factors of :math:`2 \pi` or :math:`\ell (\ell+1)`.
-
-We use lensing *convergence* everywhere (not potential).
-The ``falafel`` code returns unnormalized quadratic estimators and ``tempura``
-returns full-sky normalizations. Within ``solenspipe``, functions that
-return quadratic estimator reconstructions will return *normalized* estimators.
-
-We use the estimator normalization convention that results in the noise power 
-:math:`N_L` for an optimal estimator being equal to its 
-normalization :math:`A_L`.
+- We will store one-dimensional power spectra in 1d numpy arrays whose index
+  corresponds to the multipole (so the first indices starting with zero store multipoles 0,1,2...etc.). 
+- All CMB power spectra are in units of :math:`(\mu K-{\rm rad})^2` and do not
+  contain any factors of :math:`2 \pi` or :math:`\ell (\ell+1)`.
+- We use lensing *potential* internally (not convergence).
+- The ``falafel`` code returns unnormalized quadratic estimators and ``tempura``
+  returns full-sky normalizations. Within ``solenspipe``, functions that return
+  quadratic estimator reconstructions will return *normalized* estimators.
+- We use the estimator normalization convention that results in the noise power
+  :math:`N_L^{\phi \phi}` for an optimal estimator being equal to its  normalization :math:`A_L^{\phi}`.
 
 
 

@@ -11,14 +11,12 @@ These are quite general (independent of pixelization), FFT/SHT, region, array, e
 
 One abstracts out the following:
 
-qfunc(XY,x,y)
+qfunc(alpha,x,y)
 which for estimator XY e.g. "TT"
 x,y accepts fourier transformed beam deconvolved low pass filtered inpainted purified T, E or B maps.
 It should probably belong to some prepared object which knows about filters etc.
 
-get_kmap(X,seed)
-This is the tricky part.
-X can be "T", "E", or "B"
+get_kmap(seed)
 The way seed is used is very important. It should have the following logic.
 seed = (icov,set,i)
 If i==0, it shouldn't matter what icov or set are, it always returns the corresponding "data" kmap.
@@ -43,51 +41,42 @@ elif set==2 or set==3:
 =================
 """
 
-def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
-         power, nsims, include_meanfield=False,
-         gaussian_sims=False, include_main=True):
+def rdn0(icov, qfunc1, qfunc2, get_kmap, comm,
+         power, nsims):
+         
     """
-    Anisotropic MC-RDN0 for alpha=XY cross beta=AB.
-    qfunc(XY,x,y) returns QE XY reconstruction 
-    get_kmap("T",(0,0,1)
-    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    Using Monte Carlo sims, this function calculates
+    the anisotropic realization-dependent Gaussian N0 bias
+    between two quadratic estimators.
+    e.g. 
+    >> rdn0(0,qfunc,get_kmap,comm,power)
     gaussian_sims=True indicates we don't need to involve pairs
     of sims because the sims are not lensed.
     This is the usual 1xnsims RDN0. If type is unspecified, 
     this will return the usual QE RDN0. 
-    estimator_type='bh' returns the point source hardened RDN0.
+    e.g. If alpha=TT, beta=TE, then this calculates
+    the TTTE MCRDN0.
     
     Parameters
     ----------
     icov: int
-        The index of the realization if performing a covariance
-    calculation - otherwise, set to zero.
-    alpha: str
-        Label for the types of the first pair of maps 
-    used for reconstruction, any two of "T", "E", "B" e.g.
-    "TT" or "TE".
-    beta: str
-        Label for the types of the second combination of maps 
-    used for reconstruction, any two of "T", "E", "B" e.g.
-    "TT" or "TE"
-    qfunc: function
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    qfunc1: function
         Function for reconstructing lensing from maps x and y,
-    called as e.g. qfunc(alpha, x, y). See e.g. SoLensPipe.qfunc
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    qfunc2: function
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
     get_kmap: function
-        Function for getting the a_lms of simulated map
-    comm: mpi thing
-        Let's think about what we want this to be in general. 
-    I'd likowere to add a joblib option here.
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    comm: MPI communicator
     power: function
         Returns C(l) from two maps x,y, as power(x,y). 
     nsims: int
         Number of sims
-    include_meanfield: bool (default=False)
-        Subtract mean field from RDN0 estimate
-    gaussian_sims: bool (default=False)
-        Use Gaussian sims i.e. without any lensing
-    include_main: bool (default=True)
-        Not sure
 
     Returns
     -------
@@ -95,49 +84,31 @@ def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
         Estimate of the RDN0 bias
     
     """
-    eX,eY = alpha
-    eA,eB = beta
-
-    qa = lambda x,y: qfunc(alpha,x,y)
-    qb = lambda x,y: qfunc(beta,x,y)
+    qa = lambda x,y: qfunc1(x,y)
+    qb = lambda x,y: qfunc2(x,y)
 
     # Data
     X = get_kmap((0,0,0))
     Y = X
     A = X
     B = X
-    if include_meanfield: 
-        qxy = qa(X,Y) if qxy is None else qxy
-        qab = qb(A,B) if qab is None else qab
     # Sims
     rdn0 = 0.
     if comm is not None:
         rank,size = comm.rank, comm.size
     else:
         rank,size = 0, 1
-    with bench.show("sim"):
-        for i in range(rank+1, nsims+1, size):
-            print(i)
-            Xs  = get_kmap((icov,0,i))
-            Ys  = Xs
-            As  = Xs
-            Bs  = Xs
-            if include_meanfield:
-                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
-                print(rdn0)
-            if include_main:
-                print("main rdn0")
-                print(power(qa(X,Ys),qb(A,Bs)))
-                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
-                if not(gaussian_sims):
-                    print("non gaussian")
-                    Ysp = get_kmap((icov,1,i))
-                    Asp = Ysp
-                    Bsp = Ysp
-                    rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
-                else:
-                    rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+    for i in range(rank+1, nsims+1, size):
+        Xs  = get_kmap((icov,0,i))
+        Ys  = Xs
+        As  = Xs
+        Bs  = Xs
+        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+        Ysp = get_kmap((icov,1,i))
+        Asp = Ysp
+        Bsp = Ysp
+        rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
     try:
         totrdn0 = utils.allreduce(rdn0,comm)
     except AttributeError:
@@ -145,15 +116,13 @@ def rdn0(icov, alpha, beta, qfunc, get_kmap, comm,
     return totrdn0/nsims
     
 
-def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
+def mcn1(icov,qfunc1,qfunc2,get_kmap,comm,power,nsims,verbose=False):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
     """
-    eX,eY = alpha
-    eA,eB = beta
-    qa = lambda x,y: qfunc(alpha,x,y)
-    qb = lambda x,y: qfunc(beta,x,y)
+    qa = lambda x,y: qfunc1(x,y)
+    qb = lambda x,y: qfunc2(x,y)
     n1 = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
@@ -175,13 +144,12 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False):
     return  utils.allreduce(n1,comm) /nsims
 
 
-def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
+def mcmf(icov,qfunc,get_kmap,comm,nsims):
     """
     MCMF for alpha=XY
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
     """
-    eX,eY = alpha
-    qe = lambda x,y: qfunc(alpha,x,y)
+    qe = lambda x,y: qfunc(x,y)
     mf = 0.
     ntot = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
