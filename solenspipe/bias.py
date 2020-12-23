@@ -73,6 +73,8 @@ def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None,
         Function for reconstructing lensing from maps x and y,
     called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
     The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
     qfunc2: function, optional
         Same as above, for the third and fourth legs of the 4-point
     RDN0.
@@ -83,8 +85,10 @@ def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None,
 
     Returns
     -------
-    rdn0: np.array
-        Estimate of the RDN0 bias
+    rdn0: (N*(N+1)/2,...) array
+        Estimate of the RDN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0.
     
     """
     qa = qfunc1
@@ -134,7 +138,9 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=False):
     qfunc1: function
         Function for reconstructing lensing from maps x and y,
     called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
-    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple. 
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
     qfunc2: function, optional
         Same as above, for the third and fourth legs of the 4-point
     MCN1.
@@ -145,7 +151,11 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=False):
 
     Returns
     -------
-    mcn1: np.array
+    mcn1: (N*(N+1)/2,...) array
+        Estimate of the MCN1 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient MCN1, the
+    curl MCN1 and the gradient x curl MCN1.
+    
         Estimate of the MCN1 bias
 
     """
