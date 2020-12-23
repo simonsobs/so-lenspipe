@@ -21,42 +21,120 @@ from falafel.utils import get_cmb_alm, get_kappa_alm, \
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,curl=False):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
     results in a normalized estimator) against est1 with
     normalization Al2 and unnormalized cross-response R12.
+
+
+    Parameters
+    ----------
+
+    px : object
+        A falafal.qe.pixelization object that holds healpix or rectangular
+        pixel information and associated common functions
+    ucls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the response
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra.
+    mlmax : int
+        Maximum multipole for alm transforms
+    est1 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+    Al1 : ndarray
+        A (2,mlmax) shape numpy array containing the gradient-like (e.g. lensing
+        potential) and curl-like normalization.
+    est2 : str, optional
+        The name of a pre-defined falafel estimator to bias harden against
+    Al2 : ndarray, optional
+        A (mlmax,) shape numpy array containing the normalization of the 
+        estimator being hardened against.
+    R12 : ndarray, optional
+        An (mlmax,) or (1,mlmax) or (2,mlmax) shape numpy array containing 
+        the unnormalized cross-response of est1 and est2. If two components
+        are present, then the curl of est1 is also bias hardened using the
+        cross-response of est2 with curl specified through the second
+        component.
+
+    Returns
+    -------
+    qfunc : function
+        Quadratic estimator lambda function
+    
     """
     est1 = est1.upper()
     assert est1 in pytempura.est_list
+    if Al1 is not None:
+        assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
     if est2 is not None:
         bh = True
         assert est2 in pytempura.est_list
         assert Al1 is not None
         assert Al2 is not None
+        if Al2.ndim==2:
+            assert Al2.shape[0]==1
+            Al2 = Al2[0]
+        else:
+            assert Al2.ndim==1
         assert R12 is not None
+        if R12.ndim==1: 
+            R12 = R12[None]
+        else: 
+            assert R12.ndim==2
     else:
         bh = False
 
     assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL'] # TODO: add other
-    icomp = 0 if not(curl) else 1
     qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
                                    fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
                                    estimators=[est1],
-                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1][icomp]
+                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
         assert est2 in ['SRC'] # TODO: add mask
         qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
-        return lambda X,Y: cs.almxfl( \
-                                    (cs.almxfl(qfunc1(X,Y),Al1) - \
-                                     cs.almxfl(qfunc2(X,Y),Al1 * Al2 * R12)) , \
-                                      1. / (1. - Al1 * Al2 * R12**2.) \
-                                  )
+        if R12.shape[0]==1:
+            # Bias harden only gradient e.g. source hardening
+            def retfunc(X,Y):
+                q1 = qfunc1(X,Y)
+                q2 = qfunc2(X,Y)
+                g = cs.almxfl( \
+                               (cs.almxfl(q1[0],Al1[0]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                )
+                c = cs.almxfl(q1[1],Al1[1])
+                return np.asarray((g,c))
+        elif R12.shape[0]==2:
+            # Bias harden both e.g. mask hardening
+            def retfunc(X,Y):
+                q1 = qfunc1(X,Y)
+                q2 = qfunc2(X,Y)
+                g = cs.almxfl( \
+                               (cs.almxfl(q1[0],Al1[0]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                )
+                c = cs.almxfl( \
+                               (cs.almxfl(q1[1],Al1[1]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                               1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
+                )
+                return np.asarray((g,c))
+
+        return retfunc
+                
     else:
-        if Al1 is not None: return lambda X,Y: qe.filter_alms(qfunc1(X,Y),Al1)
+        if Al1 is not None: 
+            # TODO: Improve this construct by building a multi-dimensional almxfl
+            def retfunc(X,Y):
+                recon = qfunc1(X,Y)
+                return np.asarray((cs.almxfl(recon[0],Al1[0]),cs.almxfl(recon[1],Al1[1])))
+            return retfunc
         else: return qfunc1
 
 

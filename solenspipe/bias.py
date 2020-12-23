@@ -11,9 +11,9 @@ These are quite general (independent of pixelization), FFT/SHT, region, array, e
 
 One abstracts out the following:
 
-qfunc(alpha,x,y)
+qfunc(x,y)
 which for estimator XY e.g. "TT"
-x,y accepts fourier transformed beam deconvolved low pass filtered inpainted purified T, E or B maps.
+x,y accepts fourier transformed beam deconvolved filtered inpainted purified [T, E, B] maps.
 It should probably belong to some prepared object which knows about filters etc.
 
 get_kmap(seed)
@@ -41,8 +41,8 @@ elif set==2 or set==3:
 =================
 """
 
-def rdn0(icov, qfunc1, qfunc2, get_kmap, comm,
-         power, nsims):
+def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None, 
+         verbose=False):
          
     """
     Using Monte Carlo sims, this function calculates
@@ -62,21 +62,24 @@ def rdn0(icov, qfunc1, qfunc2, get_kmap, comm,
     icov: int
         The index of the realization passed to get_kmap if performing 
     a covariance calculation - otherwise, set to zero.
-    qfunc1: function
-        Function for reconstructing lensing from maps x and y,
-    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
-    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
-    qfunc2: function
-        Same as above, for the third and fourth legs of the 4-point
-    RDN0.
     get_kmap: function
         Function for getting the filtered a_lms of  data and simulation
     maps. See notes at top of module.
-    comm: MPI communicator
     power: function
         Returns C(l) from two maps x,y, as power(x,y). 
     nsims: int
         Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
 
     Returns
     -------
@@ -84,62 +87,89 @@ def rdn0(icov, qfunc1, qfunc2, get_kmap, comm,
         Estimate of the RDN0 bias
     
     """
-    qa = lambda x,y: qfunc1(x,y)
-    qb = lambda x,y: qfunc2(x,y)
-
-    # Data
-    X = get_kmap((0,0,0))
-    Y = X
-    A = X
-    B = X
-    # Sims
+    qa = qfunc1
+    qb = qfunc2
+    X = get_kmap((0,0,0)) # Data
     rdn0 = 0.
     if comm is not None:
         rank,size = comm.rank, comm.size
     else:
         rank,size = 0, 1
     for i in range(rank+1, nsims+1, size):
+        if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xs  = get_kmap((icov,0,i))
-        Ys  = Xs
-        As  = Xs
-        Bs  = Xs
-        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
-                + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
-        Ysp = get_kmap((icov,1,i))
-        Asp = Ysp
-        Bsp = Ysp
-        rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
-    try:
-        totrdn0 = utils.allreduce(rdn0,comm)
-    except AttributeError:
-        totrdn0 = rdn0
-    return totrdn0/nsims
+        qaXXs = qa(X,Xs)
+        qbXXs = qb(X,Xs) if qb is not None else qaXXs
+        qaXsX = qa(Xs,X)
+        qbXsX = qb(Xs,X) if qb is not None else qaXsX
+        rdn0 += power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
+                + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
+        Xsp = get_kmap((icov,1,i))
+        qaXsXsp = qa(Xs,Xsp)
+        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
+        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
+        rdn0 += (- power(qaXsXsp,qbXsXsp) - power(qaXsXsp,qbXspXs))
+    totrdn0 = utils.allreduce(rdn0,comm)
+    return totrdn0 / nsims
     
 
-def mcn1(icov,qfunc1,qfunc2,get_kmap,comm,power,nsims,verbose=False):
+def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=False):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+
+
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    MCN1.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+
+    Returns
+    -------
+    mcn1: np.array
+        Estimate of the MCN1 bias
+
     """
-    qa = lambda x,y: qfunc1(x,y)
-    qb = lambda x,y: qfunc2(x,y)
+    qa = qfunc1
+    qb = qfunc2
     n1 = 0.
+    if comm is not None:
+        rank,size = comm.rank, comm.size
+    else:
+        rank,size = 0, 1
     for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
         Xsk   = get_kmap((icov,2,i))
         Yskp  = get_kmap((icov,3,i))
-        Ask   = get_kmap((icov,2,i))
-        Bskp  = get_kmap((icov,3,i))
-        Askp  = get_kmap((icov,3,i))
-        Bsk   = get_kmap((icov,2,i))
         Xs    = get_kmap((icov,0,i))
         Ysp   = get_kmap((icov,1,i))
-        As    = get_kmap((icov,0,i))
-        Bsp   = get_kmap((icov,1,i))
-        Asp   = get_kmap((icov,1,i))
-        Bs    = get_kmap((icov,0,i))
-        term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+        qa_Xsk_Yskp = qa(Xsk,Yskp)
+        qb_Xsk_Yskp = qb(Xsk,Yskp) if qb is not None else qa_Xsk_Yskp
+        qb_Yskp_Xsk = qb(Yskp,Xsk) if qb is not None else qa(Yskp,Xsk)
+        qa_Xs_Ysp = qa(Xs,Ysp)
+        qb_Xs_Ysp = qb(Xs,Ysp) if qb is not None else qa_Xs_Ysp
+        qb_Ysp_Xs = qb(Ysp,Xs) if qb is not None else qa(Ysp,Xs)
+        term = power(qa_Xsk_Yskp,qb_Xsk_Yskp) + power(qa_Xsk_Yskp,qb(Yskp,Xsk)) \
+            - power(qa_Xs_Ysp,qb_Xs_Ysp) - power(qa_Xs_Ysp,qb_Ysp_Xs)
         n1 = n1 + term
     return  utils.allreduce(n1,comm) /nsims
 

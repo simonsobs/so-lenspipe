@@ -8,6 +8,7 @@ import solenspipe
 from solenspipe import bias
 import pytempura
 import healpy as hp
+from enlib import bench
 
 """
 In this example, we show how to:
@@ -34,7 +35,7 @@ noise_t = 0
 
 grad = True
 
-nsims = 2 # number of sims to test RDN0
+nsims = 1 # number of sims to test RDN0
 comm,rank,my_tasks = mpi.distribute(nsims)
 
 # Geometry
@@ -45,7 +46,8 @@ px = qe.pixelization(shape,wcs)
 ucls,tcls = utils.get_theory_dicts_white_noise(beam_fwhm,noise_t,grad=grad)
 
 # Get norms for lensing potential, sources and cross
-Als = pytempura.get_norms(['TT','src','src_x_tt'],ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+with bench.show("get norm"):
+    Als = pytempura.get_norms(['TT','src','src_x_tt'],ucls,tcls,lmin,lmax,k_ellmax=mlmax)
 ls = np.arange(Als['TT'][0].size)
 
 # Convert to noise per mode on lensing convergence
@@ -71,8 +73,8 @@ bin = lambda x: binner.bin(ells,x)[1]
 cents = binner.cents
 
 # These are the qfunc lambda functions we will use with RDN0
-q_tt = solenspipe.get_qfunc(px,ucls,mlmax,'TT',Al1=Als['TT'][0],est2=None,Al2=None,R12=None,curl=False)
-q_bh = solenspipe.get_qfunc(px,ucls,mlmax,'TT',Al1=Als['TT'][0],est2='SRC',Al2=Als['src'],R12=Als['src_x_tt'],curl=False)
+q_tt = solenspipe.get_qfunc(px,ucls,mlmax,'TT',Al1=Als['TT'],est2=None,Al2=None,R12=None)
+q_bh = solenspipe.get_qfunc(px,ucls,mlmax,'TT',Al1=Als['TT'],est2='SRC',Al2=Als['src'],R12=Als['src_x_tt'])
 
 if noise_t>0:
     lbeam = maps.gauss_beam(beam_fwhm,ells)
@@ -97,14 +99,17 @@ def get_kmap(seed):
 # Let's make a single map and cross-correlate with input
 if rank==0:
     # Get kappa alm
-    ikalm = utils.change_alm_lmax(utils.get_kappa_alm(0).astype(np.complex128),mlmax)
+    with bench.show("get kappa"):
+        ikalm = utils.change_alm_lmax(utils.get_kappa_alm(0).astype(np.complex128),mlmax)
     
     # Get data
-    Xdat = get_kmap((0,0,0))
+    with bench.show("get data"):
+        Xdat = get_kmap((0,0,0))
 
     # New convention in falafel means maps are potential; we convert to convergence
-    r_tt = plensing.phi_to_kappa(q_tt(Xdat,Xdat))
-    r_bh = plensing.phi_to_kappa(q_bh(Xdat,Xdat))
+    with bench.show("recon"):
+        r_tt = plensing.phi_to_kappa(q_tt(Xdat,Xdat)[0])
+    r_bh = plensing.phi_to_kappa(q_bh(Xdat,Xdat)[0])
 
     uicls = hp.alm2cl(ikalm,ikalm)
     icls = bin(uicls)
@@ -115,15 +120,17 @@ if rank==0:
     acls_bh = bin(hp.alm2cl(r_bh,r_bh))
 
 
+powfunc = lambda x,y: hp.alm2cl(x,y)
+
 # RDN0 for lensing potential using the callables defined earlier
 # converted to lensing convergence
 # For the usual quadratic estimator
-rdn0_tt = bin(bias.rdn0(0, q_tt,q_tt, get_kmap, comm,
-                lambda x,y: hp.alm2cl(x,y), nsims) * (ells*(ells+1.)/2.)**2.)
+rdn0_tt = np.asarray([bin(x) for x in bias.rdn0(0, get_kmap, powfunc, nsims, 
+                                                q_tt, comm=comm) * (ells*(ells+1.)/2.)**2.])
 # For the bias hardened one; note we use the same RDN0 function,
 # but a different qfunc function
-rdn0_bh = bin(bias.rdn0(0, q_bh,q_bh, get_kmap, comm,
-                        lambda x,y: hp.alm2cl(x,y), nsims) * (ells*(ells+1.)/2.)**2.)
+rdn0_bh = np.asarray([bin(x) for x in bias.rdn0(0, get_kmap, powfunc, nsims, 
+                                                q_bh, comm=comm) * (ells*(ells+1.)/2.)**2.])
 
 if rank==0:
     pl = io.Plotter('CL',xyscale='loglog')
@@ -132,8 +139,8 @@ if rank==0:
     pl.add(ells[1:],Nl_tt[1:],ls='--')
     pl.add(cents,icls+bin(Nl_tt),ls='--')
     # Convert RDN0 to convergence
-    pl.add(cents,rdn0_tt ,ls=':')
-    pl.add(cents,icls+(rdn0_tt ),ls=':')
+    pl.add(cents,rdn0_tt[0] ,ls=':')
+    pl.add(cents,icls+(rdn0_tt[0] ),ls=':')
     pl.add(cents,xcls_tt,marker='o')
     pl.add(cents,acls_tt,marker='o')
     pl._ax.set_ylim(1e-9,1e-6)
@@ -143,8 +150,8 @@ if rank==0:
     pl.add(ells[2:],theory.gCl('kk',ells)[2:],color='k')
     pl.add(cents,icls,color='k',marker='x',ls='none')
     # Convert RDN0 to convergence
-    pl.add(cents,rdn0_bh ,ls=':')
-    pl.add(cents,icls+(rdn0_bh ),ls=':')
+    pl.add(cents,rdn0_bh[0] ,ls=':')
+    pl.add(cents,icls+(rdn0_bh[0] ),ls=':')
     pl.add(ells[1:],Nl_bh[1:],ls='--')
     pl.add(cents,icls+bin(Nl_bh),ls='--')
     pl.add(cents,xcls_bh,marker='o')
