@@ -10,7 +10,7 @@ from falafel import qe
 from solenspipe import initialize_mask, SOLensInterface,get_kappa_alm
 import solenspipe as s
 import argparse
-import biastheory as nbias
+from solenspipe import biastheory as nbias
 
 config = io.config_from_yaml("../input/config.yml")
 
