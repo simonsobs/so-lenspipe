@@ -1,4 +1,5 @@
 import numpy as np
+from orphics import mpi
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
 from enlib import bench
@@ -41,21 +42,105 @@ elif set==2 or set==3:
 =================
 """
 
-def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None, 
+def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None, 
+         verbose=True, skip_rd=False):
+         
+    """
+    Using Monte Carlo sims, this function calculates
+    the anisotropic Gaussian N0 bias
+    between two quadratic estimators. It returns both the
+    data realization-dependent version (RDN0) and the pure-simulation
+    version (MCN0).
+    e.g. 
+    >> mcrdn0(0,qfunc,get_kmap,comm,power)
+    
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+    skip_rd: bool, optional
+        Whether to skip the RDN0 terms. The first returned component
+    is then None.
+
+    Returns
+    -------
+    rdn0: (N*(N+1)/2,...) array
+        Estimate of the RDN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0. None is returned
+    if skip_rd is True.
+
+    mcn0: (N*(N+1)/2,...) array
+        Estimate of the MCN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0.
+    
+    """
+    qa = qfunc1
+    qb = qfunc2
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        rdn0evals = []
+
+    comm,rank,my_tasks = mpi.distribute(nsims)
+
+    for i in my_tasks:
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (comm.rank,i))
+        Xs  = get_kmap((icov,0,i))
+        if not(skip_rd): 
+            qaXXs = qa(Xdat,Xs)
+            qbXXs = qb(Xdat,Xs) if qb is not None else qaXXs
+            qaXsX = qa(Xs,Xdat)
+            qbXsX = qb(Xs,Xdat) if qb is not None else qaXsX
+            rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
+                    + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
+        Xsp = get_kmap((icov,1,i))
+        qaXsXsp = qa(Xs,Xsp)
+        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
+        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
+        mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd): 
+        rdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        rdn0 = None
+    mcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None, 
          verbose=False):
          
     """
     Using Monte Carlo sims, this function calculates
-    the anisotropic realization-dependent Gaussian N0 bias
-    between two quadratic estimators.
+    the anisotropic realization-dependent Gaussian RDN0 bias
+    between two quadratic estimators. 
     e.g. 
     >> rdn0(0,qfunc,get_kmap,comm,power)
-    gaussian_sims=True indicates we don't need to involve pairs
-    of sims because the sims are not lensed.
-    This is the usual 1xnsims RDN0. If type is unspecified, 
-    this will return the usual QE RDN0. 
-    e.g. If alpha=TT, beta=TE, then this calculates
-    the TTTE MCRDN0.
     
     Parameters
     ----------
@@ -88,36 +173,61 @@ def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None,
     rdn0: (N*(N+1)/2,...) array
         Estimate of the RDN0 bias. If N=2 for gradient and curl,
     the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0. 
+
+    """
+    return mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=qfunc2, Xdat=Xdat, comm=comm, 
+           verbose=verbose, skip_rd=False)[0]
+
+def mcn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None, 
+         verbose=False):
+         
+    """
+    Using Monte Carlo sims, this function calculates
+    the anisotropic Gaussian N0 bias
+    between two quadratic estimators, using only simulations (MCN0).
+    e.g. 
+    >> mcrdn0(0,qfunc,get_kmap,comm,power)
+    
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+
+    Returns
+    -------
+    mcn0: (N*(N+1)/2,...) array
+        Estimate of the MCN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
     curl RDN0 and the gradient x curl RDN0.
     
     """
-    qa = qfunc1
-    qb = qfunc2
-    X = get_kmap((0,0,0)) # Data
-    rdn0 = 0.
-    if comm is not None:
-        rank,size = comm.rank, comm.size
-    else:
-        rank,size = 0, 1
-    for i in range(rank+1, nsims+1, size):
-        if verbose: print("Rank %d doing task %d" % (comm.rank,i))
-        Xs  = get_kmap((icov,0,i))
-        qaXXs = qa(X,Xs)
-        qbXXs = qb(X,Xs) if qb is not None else qaXXs
-        qaXsX = qa(Xs,X)
-        qbXsX = qb(Xs,X) if qb is not None else qaXsX
-        rdn0 += power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
-                + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
-        Xsp = get_kmap((icov,1,i))
-        qaXsXsp = qa(Xs,Xsp)
-        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
-        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
-        rdn0 += (- power(qaXsXsp,qbXsXsp) - power(qaXsXsp,qbXspXs))
-    totrdn0 = utils.allreduce(rdn0,comm)
-    return totrdn0 / nsims
-    
+    return mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=qfunc2, Xdat=None, comm=comm, 
+                  verbose=verbose, skip_rd=True)[1]
 
-def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=False):
+
+def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
@@ -161,27 +271,26 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=False):
     """
     qa = qfunc1
     qb = qfunc2
-    n1 = 0.
-    if comm is not None:
-        rank,size = comm.rank, comm.size
-    else:
-        rank,size = 0, 1
-    for i in range(comm.rank+1, nsims+1, comm.size):        
-        if verbose: print("Rank %d doing task %d" % (comm.rank,i))
-        Xsk   = get_kmap((icov,2,i))
-        Yskp  = get_kmap((icov,3,i))
-        Xs    = get_kmap((icov,0,i))
-        Ysp   = get_kmap((icov,1,i))
+    comm,rank,my_tasks = mpi.distribute(nsims)
+    n1evals = []
+    for i in my_tasks:
+        if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
+        Xs    = get_kmap((icov,0,i)) # S
+        Ysp   = get_kmap((icov,1,i)) # S'
+        Xsk   = get_kmap((icov,2,i)) # Sphi
+        Yskp  = get_kmap((icov,3,i)) # Sphi'
         qa_Xsk_Yskp = qa(Xsk,Yskp)
         qb_Xsk_Yskp = qb(Xsk,Yskp) if qb is not None else qa_Xsk_Yskp
         qb_Yskp_Xsk = qb(Yskp,Xsk) if qb is not None else qa(Yskp,Xsk)
         qa_Xs_Ysp = qa(Xs,Ysp)
         qb_Xs_Ysp = qb(Xs,Ysp) if qb is not None else qa_Xs_Ysp
         qb_Ysp_Xs = qb(Ysp,Xs) if qb is not None else qa(Ysp,Xs)
-        term = power(qa_Xsk_Yskp,qb_Xsk_Yskp) + power(qa_Xsk_Yskp,qb(Yskp,Xsk)) \
+        qb_Yskp_Xsk = qb(Yskp,Xsk) if qb is not None else qa(Yskp,Xsk)
+        term = power(qa_Xsk_Yskp,qb_Xsk_Yskp) + power(qa_Xsk_Yskp,qb_Yskp_Xsk) \
             - power(qa_Xs_Ysp,qb_Xs_Ysp) - power(qa_Xs_Ysp,qb_Ysp_Xs)
-        n1 = n1 + term
-    return  utils.allreduce(n1,comm) /nsims
+        n1evals.append(term.copy())
+    n1s = utils.allgatherv(n1evals,comm)
+    return n1s
 
 
 def mcmf(icov,qfunc,get_kmap,comm,nsims):

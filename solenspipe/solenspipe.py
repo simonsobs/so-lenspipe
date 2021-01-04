@@ -2,24 +2,81 @@ from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
-from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
 import pytempura
 import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-from mapsims import noise,Channel,SOStandalonePrecomputedCMB
-import mapsims
+#from mapsims import noise,Channel,SOStandalonePrecomputedCMB
+#import mapsims
 from falafel import qe
 import os
 import glob
-import traceback
+import traceback,warnings
 from falafel.utils import get_cmb_alm, get_kappa_alm, \
     get_theory_dicts, get_theory_dicts_white_noise, \
     change_alm_lmax, get_theory_dicts_white_noise
+from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+
+def get_sim_pixelization(lmax,is_healpix,verbose=False):
+    # Geometry
+    if is_healpix:
+        nside = futils.closest_nside(lmax)
+        shape = None ; wcs = None
+        if verbose: print(f"NSIDE: {nside}")
+    else:
+        px_arcmin = 2.0  / (lmax / 3000)
+        shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(px_arcmin/60.),proj='car')
+        nside = None
+        if verbose: print(f"shape,wcs: {shape}, {wcs}")
+    return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
+
+
+def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
+    # Get norms for lensing potential, sources and cross
+    est_norm_list = [est1]
+    if est2!=est1:
+        est_norm_list.append(est2)
+    bh = False
+    for e in est_norm_list:
+        if e.upper()=='TT' or e.upper()=='MV':
+            bh = True
+    if bh:
+        est_norm_list.append('src')
+        R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    else:
+        R_src_tt = None
+    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    ls = np.arange(Als[est1][0].size)
+
+    # Convert to noise per mode on lensing convergence
+    diag = est1==est2 
+    e1 = est1.upper()
+    e2 = est2.upper()
+    if diag:
+        Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
+        Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
+        if bh:
+            Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+        else:
+            Nl_g_bh = None
+    else:
+        assert ('MV' not in [e1,e2]) and ('MVPOL' not in [e1,e2])
+        R_e1_e2 = pytempura.get_cross(e1,e2,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+        Nl_phi_g = Als[e1][0]*Als[e2][0]*R_e1_e2[0]
+        Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
+        Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
+        Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
+        if bh:
+            Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+        else:
+            Nl_g_bh = None
+    return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
+
 
 def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     """
@@ -202,11 +259,13 @@ def initialize_args(args):
     Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
     return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
-def convert_seeds(seed,nsims=100,ndiv=4):
+def convert_seeds(seed,nsims=2000,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
-    nstep = nsims//ndiv #changed this to access roght files
+    nstep = nsims//ndiv
+    if i>=nstep: 
+        warnings.warn("i>=nstep: If more than one CMB set is being used (e.g for RDN0 and MCN1), you might be re-using sims.")
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep
         s_set = 0
@@ -1248,3 +1307,19 @@ def bias_hardened_n0(Nl,Nlbias,Cross):
     ret[1:] = Nl[1:] / (1.-Nl[1:]*Nlbias[1:]*Cross[1:]**2.)
     return ret
 
+
+def get_labels():
+    labs = bunch.Bunch()
+    labs.clii = r'$C_L^{\kappa \kappa}$'
+    labs.n1 = r'$N_L^{1,\kappa\kappa}$'
+    labs.nlg = r'$N_L^{0,\kappa\kappa}$'
+    labs.nlc = r'$N_L^{0,\omega\omega}$'
+    labs.tclng = r'$C_L^{\kappa \kappa} + N_L^{0,\kappa\kappa}$'
+    labs.rdn0g = r'$RDN_L^{0,\kappa\kappa}$'
+    labs.rdn0c = r'$RDN_L^{0,\omega\omega}$'
+    labs.mcn1g = r'$MCN_L^{1,\kappa\kappa}$'
+    labs.mcn1c = r'$MCN_L^{1,\omega\omega}$'
+    labs.tcrdn0g = r'$C_L^{\kappa \kappa} + RDN_L^{0,\kappa\kappa}$'
+    labs.xcl = r'$C_L^{\hat{\kappa} \kappa}$'
+    labs.acl = r'$C_L^{\hat{\kappa} \hat{\kappa}}$'
+    return labs
