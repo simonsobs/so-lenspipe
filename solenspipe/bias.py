@@ -83,7 +83,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     else:
         rank,size = 0, 1
     with bench.show("sim"):
-        for i in range(rank+1, nsims+1, size):
+        for i in range(rank+1, nsims, size):
             print(i)
             Xs  = get_kmap((icov,0,i))
             Ys  = Xs
@@ -99,7 +99,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
                 if not(gaussian_sims):
                     print("non gaussian")
-                    Ysp = get_kmap((icov,1,i))
+                    Ysp = get_kmap((icov,1,i+1))
                     Asp = Ysp
                     Bsp = Ysp
                     rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
@@ -340,6 +340,7 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False,type=None
     term_list=[]
     for i in range(comm.rank+1, nsims+1, comm.size):        
         if verbose: print("Rank %d doing task %d" % (comm.rank,i))
+        
         Xsk   = get_kmap((icov,2,i))
         Yskp  = get_kmap((icov,3,i))
         Ask   = Xsk
@@ -352,13 +353,126 @@ def mcn1(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False,type=None
         Bsp   = Ysp
         Asp   = Ysp
         Bs    = Xs
-        term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+        with bench.show("mcn1"):
+            term = power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
+                - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
         n1 = n1 + term
 
     return  utils.allreduce(n1,comm) /nsims
 
+def mean_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
+         include_meanfield=False,gaussian_sims=False,include_main=True,
+         qxy=None,qab=None,type=None,ils=None, blens=None, bhps=None, Alpp=None, A_ps=None):
+    """
+    Compute the average of nsimsx1 RDN0. Each of the nsims RDN0's are calculated as follows: Taking 2*nsims, we divide this batch of sims such as we treat the first half of nsims as the data and the second half
+    are the simulations. Such as the ith RDN0 have the ith simulation as the data and the ith+nsims simulation is the simulation.
+    Such pairing of sims reduces fluctuations of a particular sim and this  is used in the null test routines when there is no signal and also in bias subtraction to obtain the MC bias.
+    Anisotropic MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
+    get_kmap("T",(0,0,1)
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    gaussian_sims=True indicates we don't need to involve pairs
+    of sims because the sims are not lensed. 
+    """
+    eX,eY = alpha
+    eA,eB = beta
+    if type=='bh':
+        qa = lambda x,y: qfunc(alpha,x,y,ils, blens, bhps, Alpp, A_ps)
+        qb = lambda x,y: qfunc(beta,x,y,ils, blens, bhps, Alpp, A_ps)
+    else:
+        qa = lambda x,y: qfunc(alpha,x,y)
+        qb = lambda x,y: qfunc(beta,x,y)
+    # Data #need to shuffle this so that make all sims same as data
+    #for loop here as well, change the data
+    if include_meanfield: 
+        qxy = qa(X,Y) if qxy is None else qxy
+        qab = qb(A,B) if qab is None else qab
+    # Sims
+    rdn0 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):
+            #data
+            X=get_kmap((icov,0,i))
+            Y = get_kmap((icov,0,i))
+            A = get_kmap((icov,0,i))
+            B = get_kmap((icov,0,i))
+            j=i+nsims
+            Xs=get_kmap((icov,0,j))
+            Ys  = get_kmap((icov,0,j))
+            As  = get_kmap((icov,0,j))
+            Bs  = get_kmap((icov,0,j))
+            if include_meanfield:
+                rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+            if include_main:
+                rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                        + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+            if not(gaussian_sims):
+                Ysp=get_kmap((icov,1,j))
+                Asp=get_kmap((icov,1,j))
+                Bsp = get_kmap((icov,1,j))
+                rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+            else:
+                rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+    totrdn0 = utils.allreduce(rdn0,comm) 
 
+    return totrdn0/nsims
+
+def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,nmc=50,n=100,
+         include_meanfield=False,gaussian_sims=False,include_main=True,
+         qxy=None,qab=None):
+    """
+    MC-RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction 
+    get_kmap("T",(0,0,1)
+    Generates nmcxn rdn0s for covariance simulation
+    e.g. structure(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    gaussian_sims=True indicates we don't need to involve pairs
+    of sims because the sims are not lensed. Fluctuations reduced by dividing nsims into 2 halfs. Treat the first half as data the second half as sims.
+    """
+
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    
+    rdn0list=[]
+    step=np.int(np.ceil(1950/nmc))
+    for i in range(0,1950,step):
+        with bench.show("rdn0"):
+            #these are the data values
+            X = get_kmap((0,0,i))
+            Y = X
+            A = X
+            B = X
+            if include_meanfield: 
+                qxy = qa(X,Y) if qxy is None else qxy
+                qab = qb(A,B) if qab is None else qab
+            # Sims
+            rdn0 = 0.       
+            for j in range(i+1+comm.rank,i+n,comm.size):
+            #for j in range(i+1+comm.rank,i+201,comm.size):
+                print(j)
+                Xs  = get_kmap((icov,0,j))
+                Ys  = get_kmap((icov,0,j))
+                As  = get_kmap((icov,0,j))
+                Bs  = get_kmap((icov,0,j))
+                if include_meanfield:
+                    rdn0 += ((power(qa(Xs,Ys),qab) + power(qxy,qb(As,Bs)))) 
+                if include_main:
+                    rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+                            + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
+                    if not(gaussian_sims):
+                        Ysp = get_kmap((icov,1,j))
+                        Asp = Ysp
+                        Bsp = Ysp
+                        rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))
+                    else:
+                        rdn0 +=  (-power(qa(Xs,Ys),qb(As,Bs)))
+                
+            totrdn0 = utils.allreduce(rdn0,comm)
+            totrdn0=np.array(totrdn0/n)
+            rdn0list.append(totrdn0)
+    return rdn0list
+    
 def mcmf(icov,alpha,qfunc,get_kmap,comm,nsims):
     """
     MCMF for alpha=XY
