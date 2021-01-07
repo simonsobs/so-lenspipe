@@ -126,10 +126,10 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=No
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 
     if not(skip_rd): 
-        rdn0 = utils.allgatherv(rdn0evals,comm)
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
     else:
         rdn0 = None
-    mcn0 = utils.allgatherv(mcn0evals,comm)
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
 
 def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None, 
