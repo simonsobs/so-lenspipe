@@ -42,7 +42,7 @@ elif set==2 or set==3:
 =================
 """
 
-def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None, 
+def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi=True, 
          verbose=True, skip_rd=False):
          
     """
@@ -105,10 +105,14 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=No
         assert Xdat is not None # Data
         rdn0evals = []
 
-    comm,rank,my_tasks = mpi.distribute(nsims)
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = None, 0, range(nsims)
+        
 
     for i in my_tasks:
-        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (comm.rank,i))
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
         if not(skip_rd): 
             qaXXs = qa(Xdat,Xs)
@@ -125,8 +129,11 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=No
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 
-    if not(skip_rd): 
-        rdn0 = utils.allgatherv(rdn0evals,comm)
+    if not(skip_rd):
+        if use_mpi:
+            rdn0 = utils.allgatherv(rdn0evals,comm)
+        else:
+            rdn0 = rdn0evals
     else:
         rdn0 = None
     mcn0 = utils.allgatherv(mcn0evals,comm)
@@ -142,7 +149,7 @@ def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None
     e.g. 
     >> rdn0(0,qfunc,get_kmap,comm,power)
     
-    Parameters
+OA    Parameters
     ----------
     icov: int
         The index of the realization passed to get_kmap if performing 
