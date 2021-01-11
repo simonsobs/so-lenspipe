@@ -108,7 +108,7 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     if use_mpi:
         comm,rank,my_tasks = mpi.distribute(nsims)
     else:
-        comm,rank,my_tasks = None, 0, range(nsims)
+        comm,rank,my_tasks = pixell.mpi.FakeCommunicator(), 0, range(nsims)
         
 
     for i in my_tasks:
@@ -130,13 +130,10 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 
     if not(skip_rd):
-        if use_mpi:
-            rdn0 = utils.allgatherv(rdn0evals,comm)
-        else:
-            rdn0 = rdn0evals
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
     else:
-        rdn0 = None
-    mcn0 = utils.allgatherv(mcn0evals,comm)
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
 
 def rdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, comm=None, 
