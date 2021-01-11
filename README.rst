@@ -61,8 +61,8 @@ and scripts therein:
   (``python setup.py install --user``) 
 * `so\_noise\_models <https://github.com/simonsobs/so_noise_models>`__
   (``python setup.py install --user``)
-* `actsims <https://github.com/ACTCollaboration/actsims>`___
-  (clone repo and then `pip install -e . --user`)
+* `actsims <https://github.com/ACTCollaboration/actsims>`__
+  (clone repo and then ``pip install -e . --user``)
 * Other miscellaneous packages:
   healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow
   (Python Image Library)
