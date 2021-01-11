@@ -3,6 +3,7 @@ from orphics import mpi
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
 from enlib import bench
+from pixell.mpi import FakeCommunicator
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
@@ -108,7 +109,7 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     if use_mpi:
         comm,rank,my_tasks = mpi.distribute(nsims)
     else:
-        comm,rank,my_tasks = pixell.mpi.FakeCommunicator(), 0, range(nsims)
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
         
 
     for i in my_tasks:
