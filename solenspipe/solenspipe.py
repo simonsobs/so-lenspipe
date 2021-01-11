@@ -8,8 +8,8 @@ import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-#from mapsims import noise,Channel,SOStandalonePrecomputedCMB
-#import mapsims
+from mapsims import noise,Channel,SOStandalonePrecomputedCMB
+import mapsims
 from falafel import qe
 import os
 import glob
@@ -37,7 +37,59 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
 
 
 def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
-    # Get norms for lensing potential, sources and cross
+    """
+    Get norms for lensing potential, sources and cross
+
+
+    Parameters
+    ----------
+
+
+    est1 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+    est2 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+
+    ucls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the response
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra.
+
+    tcls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the filtering
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra added to the noise power spectra.
+    
+    lmin: int
+        Minumum CMB multipole 
+    lmax: int
+        Maximum CMB multipole
+    mlmax : int
+        Maximum multipole for alm transforms
+
+    Returns
+    -------
+    bh: bool
+        Specify whether Bias hardened norm is calculated
+    ls: ndarray
+        A (mlmax+1,) shape numpy array for the ell range of the normalization
+    Als: dict
+        Dictionary with key 'est1' and values correspond to a (2, mlmax+1) array in which the first component is the 
+        normalization for the gradient and the second component the curl normalizaton of the corresponding estimator.
+        if bh==True
+        key 'src' access the source normalization.
+    R_src_tt: ndarray
+        A (mlmax+1,) shape numpy array containing the unnormalized cross response between est1 and point sources. None if bh==False
+    Nl_g: ndarray
+        A (mlmax+1,) shape numpy array for the convergence N0 bias for est1
+    Nl_c: ndarray
+        A (mlmax+1,) shape numpy array for the curl N0 bias for est1
+    Nl_g_bh: ndarray
+        A (mlmax+1,) shape numpy array for the N0 bias for the bias hardened estimator. None if bh==False
+    
+    """
     est_norm_list = [est1]
     if est2!=est1:
         est_norm_list.append(est2)
@@ -595,16 +647,27 @@ class SOLensInterface(object):
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
-
-        
         """
         wrapper to compute normalized bias hardened temperature convergent alms. (See Eq. 27 of https://arxiv.org/pdf/1209.0091.pdf)
-        ils: lensing multipoles L, used for the conversion from phi_alms to kappa_alms
-        blens: lensing response function
-        bhps: point source response function
-        Alpp: Lensing Phi Normalization 
-        A_ps: Point source Normalization
+
+        Parameters
+        ----------
+
+            ils: lensing multipoles L, used for the conversion from phi_alms to kappa_alms
+            blens: lensing response function
+            bhps: point source response function
+            Alpp: Lensing Phi Normalization 
+            A_ps: Point source Normalization
+
+        Returns
+        -------
+        recon_alms : ndarray
+            A (mlmax,) shape numpy array containing the normalised BH quadratic estimator
+     
         """
+
+        
+  
         
         # Frank: Some of the bias hardening normalization code requires
         # using functions from cmblensplus from Toshiya. The Tcmb factor
