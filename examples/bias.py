@@ -211,7 +211,7 @@ for odict,isbh,bhlab in zip([bias_nobh,bias_bh],[False,True],['nobh','bh']):
                                 q1, 
                                 qfunc2=q2,
                                 Xdat=Xdat,
-                                comm=comm) 
+                                use_mpi=True) 
 
         rdn0 = rdn0 * (ells*(ells+1.)/2.)**2.
         mcn0 = mcn0 * (ells*(ells+1.)/2.)**2.
