@@ -2,8 +2,8 @@ from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
-from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
-import pytempura as tempura
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
+import pytempura
 import numpy as np
 import os,sys
 import healpy as hp
@@ -13,10 +13,240 @@ import mapsims
 from falafel import qe
 import os
 import glob
-import traceback
+import traceback,warnings
+from falafel.utils import get_cmb_alm, get_kappa_alm, \
+    get_theory_dicts, get_theory_dicts_white_noise, \
+    change_alm_lmax, get_theory_dicts_white_noise
+from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+
+def get_sim_pixelization(lmax,is_healpix,verbose=False):
+    # Geometry
+    if is_healpix:
+        nside = futils.closest_nside(lmax)
+        shape = None ; wcs = None
+        if verbose: print(f"NSIDE: {nside}")
+    else:
+        px_arcmin = 2.0  / (lmax / 3000)
+        shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(px_arcmin/60.),proj='car')
+        nside = None
+        if verbose: print(f"shape,wcs: {shape}, {wcs}")
+    return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
+
+
+def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
+    """
+    Get norms for lensing potential, sources and cross
+
+
+    Parameters
+    ----------
+
+
+    est1 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+    est2 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+
+    ucls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the response
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra.
+
+    tcls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the filtering
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra added to the noise power spectra.
+    
+    lmin: int
+        Minumum CMB multipole 
+    lmax: int
+        Maximum CMB multipole
+    mlmax : int
+        Maximum multipole for alm transforms
+
+    Returns
+    -------
+    bh: bool
+        Specify whether Bias hardened norm is calculated
+    ls: ndarray
+        A (mlmax+1,) shape numpy array for the ell range of the normalization
+    Als: dict
+        Dictionary with key 'est1' and values correspond to a (2, mlmax+1) array in which the first component is the 
+        normalization for the gradient and the second component the curl normalizaton of the corresponding estimator.
+        if bh==True
+        key 'src' access the source normalization.
+    R_src_tt: ndarray
+        A (mlmax+1,) shape numpy array containing the unnormalized cross response between est1 and point sources. None if bh==False
+    Nl_g: ndarray
+        A (mlmax+1,) shape numpy array for the convergence N0 bias for est1
+    Nl_c: ndarray
+        A (mlmax+1,) shape numpy array for the curl N0 bias for est1
+    Nl_g_bh: ndarray
+        A (mlmax+1,) shape numpy array for the N0 bias for the bias hardened estimator. None if bh==False
+    
+    """
+    est_norm_list = [est1]
+    if est2!=est1:
+        est_norm_list.append(est2)
+    bh = False
+    for e in est_norm_list:
+        if e.upper()=='TT' or e.upper()=='MV':
+            bh = True
+    if bh:
+        est_norm_list.append('src')
+        R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    else:
+        R_src_tt = None
+    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    ls = np.arange(Als[est1][0].size)
+
+    # Convert to noise per mode on lensing convergence
+    diag = est1==est2 
+    e1 = est1.upper()
+    e2 = est2.upper()
+    if diag:
+        Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
+        Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
+        if bh:
+            Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+        else:
+            Nl_g_bh = None
+    else:
+        assert ('MV' not in [e1,e2]) and ('MVPOL' not in [e1,e2])
+        R_e1_e2 = pytempura.get_cross(e1,e2,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+        Nl_phi_g = Als[e1][0]*Als[e2][0]*R_e1_e2[0]
+        Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
+        Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
+        Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
+        if bh:
+            Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+        else:
+            Nl_g_bh = None
+    return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
+
+
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
+    """
+    Prepares a qfunc lambda function for an estimator est1. Optionally,
+    normalize it with Al1. Optionally, bias harden it (which
+    results in a normalized estimator) against est1 with
+    normalization Al2 and unnormalized cross-response R12.
+
+
+    Parameters
+    ----------
+
+    px : object
+        A falafal.qe.pixelization object that holds healpix or rectangular
+        pixel information and associated common functions
+    ucls : dict
+        A dictionary mapping TT,TE,EE,BB to spectra used in the response
+        of various estimators. Typically these are gradient-field spectra
+        or lensed field spectra.
+    mlmax : int
+        Maximum multipole for alm transforms
+    est1 : str
+        The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
+        EB,TE,EE,TB.
+    Al1 : ndarray
+        A (2,mlmax) shape numpy array containing the gradient-like (e.g. lensing
+        potential) and curl-like normalization.
+    est2 : str, optional
+        The name of a pre-defined falafel estimator to bias harden against
+    Al2 : ndarray, optional
+        A (mlmax,) shape numpy array containing the normalization of the 
+        estimator being hardened against.
+    R12 : ndarray, optional
+        An (mlmax,) or (1,mlmax) or (2,mlmax) shape numpy array containing 
+        the unnormalized cross-response of est1 and est2. If two components
+        are present, then the curl of est1 is also bias hardened using the
+        cross-response of est2 with curl specified through the second
+        component.
+
+    Returns
+    -------
+    qfunc : function
+        Quadratic estimator lambda function
+    
+    """
+    est1 = est1.upper()
+    assert est1 in pytempura.est_list
+    if Al1 is not None:
+        assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
+    if est2 is not None:
+        bh = True
+        assert est2 in pytempura.est_list
+        assert Al1 is not None
+        assert Al2 is not None
+        if Al2.ndim==2:
+            assert Al2.shape[0]==1
+            Al2 = Al2[0]
+        else:
+            assert Al2.ndim==1
+        assert R12 is not None
+        if R12.ndim==1: 
+            R12 = R12[None]
+        else: 
+            assert R12.ndim==2
+    else:
+        bh = False
+
+    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL'] # TODO: add other
+    qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                   fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                   estimators=[est1],
+                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
+
+    if bh:
+        assert est2 in ['SRC'] # TODO: add mask
+        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        # The bias-hardened estimator Eq 27 of arxiv:1209.0091
+        if R12.shape[0]==1:
+            # Bias harden only gradient e.g. source hardening
+            def retfunc(X,Y):
+                q1 = qfunc1(X,Y)
+                q2 = qfunc2(X,Y)
+                g = cs.almxfl( \
+                               (cs.almxfl(q1[0],Al1[0]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                )
+                c = cs.almxfl(q1[1],Al1[1])
+                return np.asarray((g,c))
+        elif R12.shape[0]==2:
+            # Bias harden both e.g. mask hardening
+            def retfunc(X,Y):
+                q1 = qfunc1(X,Y)
+                q2 = qfunc2(X,Y)
+                g = cs.almxfl( \
+                               (cs.almxfl(q1[0],Al1[0]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                )
+                c = cs.almxfl( \
+                               (cs.almxfl(q1[1],Al1[1]) - \
+                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                               1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
+                )
+                return np.asarray((g,c))
+
+        return retfunc
+                
+    else:
+        if Al1 is not None: 
+            # TODO: Improve this construct by building a multi-dimensional almxfl
+            def retfunc(X,Y):
+                recon = qfunc1(X,Y)
+                return np.asarray((cs.almxfl(recon[0],Al1[0]),cs.almxfl(recon[1],Al1[1])))
+            return retfunc
+        else: return qfunc1
+
+
 
 def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     if healpix:
@@ -81,11 +311,13 @@ def initialize_args(args):
     Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
     return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
-def convert_seeds(seed,nsims=100,ndiv=4):
+def convert_seeds(seed,nsims=2000,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
-    nstep = nsims//ndiv #changed this to access roght files
+    nstep = nsims//ndiv
+    if i>=nstep: 
+        warnings.warn("i>=nstep: If more than one CMB set is being used (e.g for RDN0 and MCN1), you might be re-using sims.")
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep
         s_set = 0
@@ -97,17 +329,6 @@ def convert_seeds(seed,nsims=100,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_cmb_alm(i,iset,path=config['signal_path']):
-    sstr = str(iset).zfill(2)
-    istr = str(i).zfill(5)
-    fname = path + "fullskyLensedUnabberatedCMB_alm_set%s_%s.fits" % (sstr,istr)
-    return hp.read_alm(fname,hdu=(1,2,3))
-
-
-def get_kappa_alm(i,path=config['signal_path']):
-    istr = str(i).zfill(5)
-    fname = path + "fullskyPhi_alm_%s.fits" % istr
-    return plensing.phi_to_kappa(hp.read_alm(fname))
 
 def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     """
@@ -201,13 +422,13 @@ class SOLensInterface(object):
             hmap = hp.alm2map(alm.astype(np.complex128),nside=self.nside,verbose=False)
             return hmap[None] if ncomp==1 else hmap
         else:
-            return curvedsky.alm2map(alm,enmap.empty((ncomp,)+self.shape,self.wcs))
+            return cs.alm2map(alm,enmap.empty((ncomp,)+self.shape,self.wcs))
         
     def map2alm(self,imap):
         if self.healpix:
             return hp.map2alm(imap,lmax=self.mlmax,iter=0)
         else:
-            return curvedsky.map2alm(imap,lmax=self.mlmax)
+            return cs.map2alm(imap,lmax=self.mlmax)
 
 
     def get_kappa_alm(self,i):
@@ -248,7 +469,7 @@ class SOLensInterface(object):
         if self.beam is None:
             self.beam = self.nsim.get_beam_fwhm(channel)
         cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-        cmb_alm = curvedsky.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
+        cmb_alm = cs.almxfl(cmb_alm,lambda x: maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else cmb_alm
         cmb_map = self.alm2map(cmb_alm)
         return cmb_map
 
@@ -289,7 +510,7 @@ class SOLensInterface(object):
             oalms = self.map2alm(imap)
 
 
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             #hp.fitsfunc.write_alm("/global/cscratch1/sd/jia_qu/maps/testTT.fits",oalms[0])
             oalms[~np.isfinite(oalms)] = 0
 
@@ -339,7 +560,7 @@ class SOLensInterface(object):
             imap = imap * self.mask
 
             oalms = self.map2alm(imap)
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
             clttsim=hp.alm2cl(oalms[0],oalms[0])/self.wfactor(2)
             cleesim=hp.alm2cl(oalms[1],oalms[1])/self.wfactor(2)
@@ -367,7 +588,7 @@ class SOLensInterface(object):
             oalms = self.map2alm(imap)
 
             beam=maps.gauss_beam(self.beam,ls)
-            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
 
             oalms[~np.isfinite(oalms)] = 0
             filt_t = lambda x: 1.
@@ -396,7 +617,7 @@ class SOLensInterface(object):
         
         oalms = self.map2alm(imap)
         print(self.disable_noise)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        oalms = cs.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
         oalms[~np.isfinite(oalms)] = 0
 
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
@@ -426,7 +647,27 @@ class SOLensInterface(object):
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
 
     def qfunc_bh(self,alpha,X,Y,ils,blens,bhps,Alpp,A_ps):
-        polcomb=alpha
+        """
+        wrapper to compute normalized bias hardened temperature convergent alms. (See Eq. 27 of https://arxiv.org/pdf/1209.0091.pdf)
+
+        Parameters
+        ----------
+
+            ils: lensing multipoles L, used for the conversion from phi_alms to kappa_alms
+            blens: lensing response function
+            bhps: point source response function
+            Alpp: Lensing Phi Normalization 
+            A_ps: Point source Normalization
+
+        Returns
+        -------
+        recon_alms : ndarray
+            A (mlmax,) shape numpy array containing the normalised BH quadratic estimator
+     
+        """
+
+        
+  
         
         # Frank: Some of the bias hardening normalization code requires
         # using functions from cmblensplus from Toshiya. The Tcmb factor
@@ -434,24 +675,33 @@ class SOLensInterface(object):
         # dimensionless whereas in solenspipe it is in microKelvins. So we
         # hard code the conversion here since it shouldn't change.
         Tcmb = 2.726e6
-        
+        polcomb=alpha #Only TT used for bias hardening
+        #point source reconstruction
         source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
+        #lensing reconstruction
         phi=qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+        #normalise the point sources alms
         s_alms=qe.filter_alms(source,maps.interp(ils,A_ps*bhps*Tcmb**2))
+        #normalised lensing phi_alms
         phi_alms = qe.filter_alms(phi,maps.interp(ils,2*Alpp*blens))
+        #bias hardened alms
         balms=phi_alms-s_alms
         recon_alms=hp.almxfl(balms,ils*(ils+1)*0.5)
         return recon_alms
 
     def get_mv_curl(self,polcomb,talm,ealm,balm):
-    
         return self.qfunc_curl(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc_curl(self,alpha,X,Y):
+        """
+         Wrapper for the core falafel full-sky curl reconstruction function
+        Calculates the unnormalised curl estimator. 
+        By construction, the lensing field is given by the gradient of the deflection field which is irrotational. 
+        Systematics mimicking lensing need not obey this symmetry and give a non zero curl."""
         polcomb = alpha
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -462,7 +712,7 @@ class SOLensInterface(object):
         return self.qfuncmask(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfuncmask(self,alpha,X,Y):
-        """mask reconstruction"""
+        """Wrapper for the analysis mask reconstruction based on Eq 22 of https://arxiv.org/pdf/1209.0091.pdf"""
         polcomb = alpha
         return qe.qe_mask(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
@@ -472,13 +722,14 @@ class SOLensInterface(object):
         return self.qfunc_ps(polcomb,[talm,ealm,balm],[talm,ealm,balm])
 
     def qfunc_ps(self,alpha,X,Y):
-        """Point source reconstruction from Falafel"""
+        """Wrapper for point source reconstruction from Falafel"""
         polcomb = alpha
         return qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
 
     def qfuncshear(self,Talm,fTalm):
+        """Wrapper for full sky shear reconstruction from Falafel, the shear estimator is a foreground immune estimator."""
         return qe.qe_shear(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
 
     def get_noise_power(self,channel=None,beam_deconv=False):
@@ -732,7 +983,7 @@ def cmblensplus_norm(nltt,nlee,nlbb,theory,theory_cross,lmin,lmax):
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    Ag, Ac, Wg, Wc = tempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
+    Ag, Ac, Wg, Wc = pytempura.norm_lens.qall(QDO,lmax,rlmin,rlmax,lcl,ocl)
     fac=ls*(ls+1)
     return ls,Ag*fac,Ac*fac
 
@@ -754,11 +1005,11 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
 
     fac=ls*(ls+1)
     #prepare the sim total power spectrum
@@ -766,18 +1017,18 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     sim_ocl=np.array([cldata[0][:ls.size],cldata[1][:ls.size],cldata[2][:ls.size],cldata[3][:ls.size]])/Tcmb**2
     #dataxdata
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
-    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     AgTT0[np.where(AgTT0==0)] = 1e30
     AgTT1[np.where(AgTT1==0)] = 1e30
     AgEE0[np.where(AgEE0==0)] = 1e30
@@ -814,11 +1065,11 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     ocl= fcl+noise
-    AgTT,AcTT=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
-    AgTE,AcTE=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
-    AgTB,AcTB=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
-    AgEE,AcEE=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
-    AgEB,AcEB=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
+    AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:] ,gtype='k')
+    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:] ,gtype='k')
+    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:], gtype='k')
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:] ,gtype='k')
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:], gtype='k')
 
     #prepare the sim total power spectrum
     cldata=get_sim_power((0,0,simn))
@@ -826,28 +1077,28 @@ def diagonal_RDN0mv(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,s
     #dataxdata
     sim_ocl[np.where(sim_ocl==0)] = 1e30
     cl=ocl**2/(sim_ocl)
-    AgTT0,AcTT0=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE0,AcTE0=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
-    AgTB0,AcTB0=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
-    AgEE0,AcEE0=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
-    AgEB0,AcEB0=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
-    ATTTE0,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
-    ATTEE0,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATEEE0,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
-    ATBEB0,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:], gtype='k')
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:], gtype='k')
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] ,gtype='k')
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:], gtype='k')
+    ATTTE0,__=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*sim_ocl[0,:]/ocl[0,:],sim_ocl[3,:],gtype='k')
+    ATTEE0,__=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATEEE0,__=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*sim_ocl[1,:]/ocl[1,:], cl[1,:], sim_ocl[3,:], gtype='k')
+    ATBEB0,__=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], sim_ocl[3,:], gtype='k')
 
 
     #(data-sim) x (data-sim)
     cl=ocl**2/(ocl-sim_ocl)
-    AgTT1,AcTT1=tempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
-    AgTE1,AcTE1=tempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
-    AgTB1,AcTB1=tempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
-    AgEE1,AcEE1=tempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
-    AgEB1,AcEB1=tempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
-    ATTTE1,__=tempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATTEE1,__=tempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATEEE1,__=tempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
-    ATBEB1,__=tempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] ,gtype='k')
+    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:],gtype='k')
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:],gtype='k')
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],gtype='k')
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:],gtype='k')
+    ATTTE1,__=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-sim_ocl[0,:]/ocl[0,:])*ocl[1,:] , ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATTEE1,__=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATEEE1,__=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-sim_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],ocl[3,:]-sim_ocl[3,:],gtype='k')
+    ATBEB1,__=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], ocl[3,:]-sim_ocl[3,:],gtype='k')
 
 
     AgTT0[np.where(AgTT0==0)] = 1e30
@@ -1017,7 +1268,7 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     phifname = "/project/projectdirs/act/data/actsims_data/signal_v0.4/fullskyPhi_alm_%s.fits" % istr
     kalms=plensing.phi_to_kappa(hp.read_alm(phifname))
     phimap=hp.alm2map(kalms.astype(complex),2048)
-    kalms=tempura.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
+    kalms=pytempura.utils.hp_map2alm(2048, rlmax, mlmax, phimap)
     kalms = solint.get_kappa_alm(0+0)
     lm=int(0.5*(-3+np.sqrt(9-8*(1-len(kalms)))))
     kalms = tempura.utils.lm_healpy2healpix(len(kalms), kalms, lm) 
@@ -1025,10 +1276,10 @@ def cmblensplusreconstruction(solint,w2,w3,w4,nltt,nlee,nlbb,theory,theory_cross
     macl=np.zeros(rlmax+1)
     micl=np.zeros(rlmax+1)
     mxcl=np.zeros(rlmax+1)
-    micl+=tempura.utils.alm2cl(rlmax,kalms,kalms)/w2
-    acl=tempura.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
+    micl+=pytempura.utils.alm2cl(rlmax,kalms,kalms)/w2
+    acl=pytempura.utils.alm2cl(rlmax,glm[polcomb],glm[polcomb])/w4
     macl+= fac**2*acl
-    xcl=tempura.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
+    xcl=pytempura.utils.alm2cl(rlmax,glm[polcomb],kalms)/w3
     mxcl+=xcl*fac
     normMV=Ag[5]*fac**2
 
@@ -1114,3 +1365,24 @@ class weighted_bin1D:
         
         
         
+def bias_hardened_n0(Nl,Nlbias,Cross):
+    ret = Nl*0
+    ret[1:] = Nl[1:] / (1.-Nl[1:]*Nlbias[1:]*Cross[1:]**2.)
+    return ret
+
+
+def get_labels():
+    labs = bunch.Bunch()
+    labs.clii = r'$C_L^{\kappa \kappa}$'
+    labs.n1 = r'$N_L^{1,\kappa\kappa}$'
+    labs.nlg = r'$N_L^{0,\kappa\kappa}$'
+    labs.nlc = r'$N_L^{0,\omega\omega}$'
+    labs.tclng = r'$C_L^{\kappa \kappa} + N_L^{0,\kappa\kappa}$'
+    labs.rdn0g = r'$RDN_L^{0,\kappa\kappa}$'
+    labs.rdn0c = r'$RDN_L^{0,\omega\omega}$'
+    labs.mcn1g = r'$MCN_L^{1,\kappa\kappa}$'
+    labs.mcn1c = r'$MCN_L^{1,\omega\omega}$'
+    labs.tcrdn0g = r'$C_L^{\kappa \kappa} + RDN_L^{0,\kappa\kappa}$'
+    labs.xcl = r'$C_L^{\hat{\kappa} \kappa}$'
+    labs.acl = r'$C_L^{\hat{\kappa} \hat{\kappa}}$'
+    return labs
