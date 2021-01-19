@@ -5,28 +5,92 @@ import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-from mapsims import noise,SOChannel
 from falafel import qe
 import solenspipe as s
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
+from scipy.interpolate import interp1d
+import warnings
 
+
+def get_n1(ucls,tcls,clkk,Als,lmin,lmax,mlmax,lstep=20,offdiag=True):
+    ls = np.arange(2,ucls['TT'][2:].size+2)
+    clpp = clkk[2:ucls['TT'][2:].size+2]  / (ls*(ls+1.)/2.)**2.
+    cls = np.asarray([ls,ucls['TT'][2:] ,ucls['EE'][2:]  ,ucls['BB'][2:]  ,ucls['TE'][2:] ]  )
+    cltt = tcls['TT'][2:] 
+    clee = tcls['EE'][2:] 
+    clbb = tcls['BB'][2:] 
+    normarray = []
+    for x in ['TT','EE','EB','TE','TB']:
+        normarray.append(Als[x][0][2:])
+    try:
+        normarray.append(Als['BB'][0][2:])
+    except:
+        normarray.append(Als['TT'][0][2:]*0)
+        warnings.warn('Al_BB not found. Assuming zero.')
+    normarray = np.asarray(normarray)
+
+    Lmin = 2
+    n1 = {}
+    n1['TTTT'],n1['EEEE'],n1['EBEB'],n1['TETE'],n1['TBTB'] = compute_n1_py(
+        clpp=clpp,
+        normarray=normarray,
+        cls=cls,
+        rcltt=cls[1],
+        rclee=cls[2],
+        rclbb=cls[3],
+        rclte=cls[4],
+        cltt=cltt,
+        clee=clee,
+        clbb=clbb,
+        lmin=lmin,
+        Lmaxout=mlmax,
+        lmax_TT=lmax,
+        Lstep=lstep,
+        Lmin_out=Lmin
+        )
+
+    if offdiag:
+        n1['TTEE'],n1['TTEB'],n1['TTTE'],n1['TTTB'],n1['EEEB'],n1['EETE'],n1['EETB'],n1['EBTE'],n1['EBTB'],n1['TETB'] = compute_n1mix(
+            clpp=clpp,
+            normarray=normarray,
+            cls=cls,
+            rcltt=cls[1],
+            rclee=cls[2],
+            rclbb=cls[3],
+            rclte=cls[4],
+            cltt=cltt,
+            clee=clee,
+            clbb=clbb,
+            lmin=lmin,
+            Lmaxout=mlmax,
+            lmax_TT=lmax,
+            Lstep=lstep,
+            Lmin_out=Lmin
+            )
+
+
+    ells=np.arange(Lmin,mlmax,lstep)
+    lout = np.arange(ells.max()+1)
+    for key in n1.keys():
+        n1[key] = interp1d(ells,n1[key]* (ells * (ells+1.)/2.)**2.,bounds_error=False,fill_value=0,kind='linear')(lout) 
+        n1[key][2:]  = n1[key][2:] /  (lout[2:]  * (lout[2:] +1.)/2.)**2.
+    return n1
 
 def compute_n1_py(
     clpp=None,
     normarray=None,
     cls=None,
+    rcltt=None,
+    rclee=None,
+    rclbb=None,
+    rclte=None,
     cltt=None,
     clee=None,
     clbb=None,
-    cleb=None,
-    nells=None,
-    nellsp=None,
     lmin=None,
     Lmaxout=None,
     lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
     Lstep=None,
     Lmin_out=None
     ):
@@ -43,20 +107,13 @@ def compute_n1_py(
     cltt: 1d ClTT array used by the filters (cltt=cls[1])
     clee: cls[2]
     clbb: cls[3]
-    cleb: cls[4]
-    nells: 1d array of the temperature noise
-    nellsp: 1d array of the polarization noise
-            Size of nells and nellsp (int) determine lmax the maximum multipole used to compute N1
+    clte: cls[4]
     lmin: int
           minimum multipole used to compute N1
     Lmaxout: int
              Maximum multipole for the output
     lmax_TT: int
              Maximum multipole for temperature
-    lcorr_TT: int
-            Cut-off in ell for correlated noise ( zero if not wanted)
-    tmp_output: str
-        Output folder, where files can be saved
     Lstep: int
            Step size specifing the L's in which the N1 will be calculated
            
@@ -69,39 +126,38 @@ def compute_n1_py(
         clpp,
         normarray,
         cls,
+        rcltt,
+        rclee,
+        rclbb,
+        rclte,
         cltt,
         clee,
         clbb,
-        cleb,
-        nells,
-        nellsp,
         lmin,
         Lmaxout,
         lmax_TT,
-        lcorr_TT,
-        tmp_output,
         Lstep,
         Lmin_out)
     
     return n1tt,n1ee,n1eb,n1te,n1tb  
     
 def compute_n1mix(
-    phifile=None,
+    clpp=None,
     normarray=None,
-    lensedcmbfile=None,
+    cls=None,
+    rcltt=None,
+    rclee=None,
+    rclbb=None,
+    rclte=None,
     cltt=None,
     clee=None,
     clbb=None,
-    cleb=None,
-    noise_level=None,
-    noisep=None,
     lmin=None,
-    lmaxout=None,
+    Lmaxout=None,
     lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
     Lstep=None,
-    Lmin_out=None):
+    Lmin_out=None
+    ):
         
     """Calculation of the theoretical N1 bias for the different off diagonal polcomb combinations
     Parameters
@@ -125,8 +181,6 @@ def compute_n1mix(
              Maximum multipole for the output
     lmax_TT: int
              Maximum multipole for temperature
-    lcorr_TT: int
-            Cut-off in ell for correlated noise ( zero if not wanted)
     Lstep: int
            Step size specifing the L's in which the N1 will be calculated
            
@@ -137,20 +191,19 @@ def compute_n1mix(
     """        
 
     n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb=lensingbiases_f.compute_n1mix(
-        phifile,
+        clpp,
         normarray,
-        lensedcmbfile,
+        cls,
+        rcltt,
+        rclee,
+        rclbb,
+        rclte,
         cltt,
         clee,
         clbb,
-        cleb,
-        noise_level,
-        noisep,
         lmin,
-        lmaxout,
+        Lmaxout,
         lmax_TT,
-        lcorr_TT,
-        tmp_output,
         Lstep,
         Lmin_out)
     
@@ -175,7 +228,7 @@ def diff_cl(cl_array,bins):
         dcltt.append(2*0.001*cls[int(bins[i])])
     return dcltt
     
-def n1derivative_cltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n1derivative_cltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N1 wrt cltt
     Parameters
@@ -200,8 +253,8 @@ def n1derivative_cltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
 
     for i in range(len(array1001)):
         
-        a=compute_n1_py(clpp,norms,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-        b=compute_n1_py(clpp,norms,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+        a=compute_n1_py(clpp,norms,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
+        b=compute_n1_py(clpp,norms,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -219,7 +272,7 @@ def n1derivative_cltt(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
         np.savetxt('../data/n1{}dcltt.txt'.format(keys[k]),der)
     return derlist
     
-def n1derivative_clee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n1derivative_clee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N1 wrt clee
     Parameters
@@ -246,8 +299,8 @@ def n1derivative_clee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     for i in range(len(array1001)):
         print(i)
         
-        a=compute_n1_py(clpp,norms,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-        b=compute_n1_py(clpp,norms,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+        a=compute_n1_py(clpp,norms,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
+        b=compute_n1_py(clpp,norms,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -268,7 +321,7 @@ def n1derivative_clee(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
         np.savetxt('../data/n1{}dclee.txt'.format(keys[k]),der)
     return derlist      
     
-def n1derivative_clbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n1derivative_clbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N1 wrt clbb
     Parameters
@@ -293,8 +346,8 @@ def n1derivative_clbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     
     for i in range(len(array1001)):
         print(i)
-        a=compute_n1_py(clpp,norms,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-        b=compute_n1_py(clpp,norms,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+        a=compute_n1_py(clpp,norms,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
+        b=compute_n1_py(clpp,norms,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -316,7 +369,7 @@ def n1derivative_clbb(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
         np.savetxt('../data/n1{}dclbb.txt'.format(keys[k]),der)
     return derlist
     
-def n1derivative_clte(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n1derivative_clte(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N1 wrt clte
     Parameters
@@ -341,8 +394,8 @@ def n1derivative_clte(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     
     for i in range(len(array1001)):
         print(i)
-        a=compute_n1_py(clpp,norms,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-        b=compute_n1_py(clpp,norms,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+        a=compute_n1_py(clpp,norms,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
+        b=compute_n1_py(clpp,norms,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -373,8 +426,6 @@ def n1_derclphiphi(
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
     Lstep=None,
     Lmin_out=None
     ):
@@ -403,8 +454,6 @@ def n1_derclphiphi(
              Maximum multipole for the output
     lmax_TT: int
              Maximum multipole for temperature
-    lcorr_TT: int
-            Cut-off in ell for correlated noise ( zero if not wanted)
     Lstep: int
            Step size specifing the L's in which the N1 will be calculated
            
@@ -422,11 +471,10 @@ def n1_derclphiphi(
         lmin,
         lmaxout,
         lmax_TT,
-        lcorr_TT,
-        tmp_output,
         Lstep,
         Lmin_out)
-    n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
+    #n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
+    # TODO: Get the array without having a file saved
 
     return n1
 
@@ -444,8 +492,6 @@ def compute_n0_py(
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
     Lmin_out=None,
     Lstep=None):
     """Fortran Routine to calculate N0's
@@ -470,8 +516,6 @@ def compute_n0_py(
              Maximum multipole for the output
     lmax_TT: int
              Maximum multipole for temperature
-    lcorr_TT: int
-            Cut-off in ell for correlated noise ( zero if not wanted)
     Lstep: int
            Step size specifing the L's in which the N1 will be calculated
            
@@ -492,8 +536,7 @@ def compute_n0_py(
         lmin,
         lmaxout,
         lmax_TT,
-        lcorr_TT,
-        tmp_output,Lmin_out,Lstep)
+        Lmin_out,Lstep)
     return n0tt,n0ee,n0eb,n0te,n0tb
 
 	
@@ -509,8 +552,6 @@ def compute_n0mix_py(
     lmin=None,
     lmaxout=None,
     lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
     Lmin_out=None,
     Lstep=None):
         
@@ -536,8 +577,6 @@ def compute_n0mix_py(
              Maximum multipole for the output
     lmax_TT: int
              Maximum multipole for temperature
-    lcorr_TT: int
-            Cut-off in ell for correlated noise ( zero if not wanted)
     Lstep: int
            Step size specifing the L's in which the N1 will be calculated
            
@@ -558,13 +597,12 @@ def compute_n0mix_py(
         lmin,
         lmaxout,
         lmax_TT,
-        lcorr_TT,
-        tmp_output,Lmin_out,Lstep)
+        Lmin_out,Lstep)
         
     return n0ttee,n0ttte,n0eete,n0ebtb
 
 
-def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N0 wrt cltt
     Parameters
@@ -589,8 +627,8 @@ def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
 
     for i in range(len(array1001)):
         print(i)
-        a=compute_n0_py(clpp,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        a=compute_n0_py(clpp,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
+        b=compute_n0_py(clpp,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -608,7 +646,7 @@ def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
         np.savetxt('../data/n0{}dcltt.txt'.format(keys[k]),der)
     return derlist
     
-def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N0 wrt clee
     Parameters
@@ -634,8 +672,8 @@ def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     
     for i in range(len(array1001)):
         print(i)
-        a=compute_n0_py(clpp,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        a=compute_n0_py(clpp,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
+        b=compute_n0_py(clpp,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -657,7 +695,7 @@ def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     print(derlist)
     return derlist      
     
-def n0derivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n0derivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N0 wrt clbb
     Parameters
@@ -682,8 +720,8 @@ def n0derivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     
     for i in range(len(array1001)):
         print(i)
-        a=compute_n1_py(clpp,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n1_py(clpp,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        a=compute_n1_py(clpp,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
+        b=compute_n1_py(clpp,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])
@@ -705,7 +743,7 @@ def n0derivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
         np.savetxt('../data/n0{}dclbb.txt'.format(keys[k]),der)
     return derlist
     
-def n0derivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+def n0derivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lstep,Lmin_out):
     """
     Compute derivative of N0 wrt clte
     Parameters
@@ -731,8 +769,8 @@ def n0derivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
     for i in range(len(array1001)):
         print(i)
 
-        a=compute_n0_py(clpp,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        a=compute_n0_py(clpp,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
+        b=compute_n0_py(clpp,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,Lmin_out,Lstep)
         for j in range(len(N1001)):
             N1001[j].append(a[j])
             N0999[j].append(b[j])

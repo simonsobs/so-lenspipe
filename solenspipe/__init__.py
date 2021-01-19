@@ -1,4 +1,4 @@
-"""Top-level package for symlens."""
+"""Top-level package for SO-lenspipe."""
 
 __author__ = """Mathew Madhavacheril"""
 __email__ = 'mathewsyriac@gmail.com'
