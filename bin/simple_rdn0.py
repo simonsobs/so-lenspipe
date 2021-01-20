@@ -15,7 +15,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple rdn0 calculation')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=200,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=60,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -36,13 +36,13 @@ parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point so
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
 parser.add_argument("--curl", action='store_true',help='curl reconstruction')
 args = parser.parse_args()
-solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
-      
+solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
 car = "healpix_" if args.healpix else "car_"
+spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
 
 w4 = solint.wfactor(4)
 print(w4)
-get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
+get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
@@ -68,7 +68,7 @@ elif args.ps_bias_hardening:
 else:
     print("qfunc")
     qfunc = solint.qfunc
-nmax = len(ils)
+nmax = len(Als['L'])
 
 if args.ps_bias_hardening:
     rdn0= bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims,type='bh',ils=ils, blens=blens, bhps=bhps, Alpp=Alpp, A_ps=A_ps)
@@ -77,7 +77,8 @@ if args.ps_bias_hardening:
 else:
     print("normal rdn0")
     rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
-    rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
+    print(rdn0)
+    rdn0[:nmax] = rdn0[:nmax] * Als['L']**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
@@ -86,17 +87,17 @@ if args.curl:
 elif args.ps_bias_hardening:
     io.save_cols(f'{solenspipe.opath}/rdn0_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
 else:
-    io.save_cols(f'{solenspipe.opath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
+    io.save_cols(f'{spath}/rdn0nofor_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(Als['L'],rdn0[:nmax]))
 if rank==0:
     theory = cosmology.default_theory()
     
     ls = np.arange(rdn0.size)
     pl = io.Plotter('CL')
-    pl.add(ils,rdn0[:nmax])
-    pl.add(ils,Nl)
-    pl.add(ils,theory.gCl('kk',ils))
+    pl.add(Als['L'],rdn0[:nmax])
+    pl.add(Als['L'],Nl)
+    pl.add(Als['L'],theory.gCl('kk',Als['L']))
     #pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(f'{solenspipe.opath}recon_rdn0.png')
+    pl.done(f'{spath}recon_rdn0.png')
 
                                                                                 
 

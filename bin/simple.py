@@ -90,7 +90,7 @@ for task in my_tasks:
 
     with bench.show("sim"):
         # Get simulated, prepared filtered T, E, B maps, i.e. (1/(C+N) * teb_alm)
-        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
+        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
         Tcmb = 2.726e6
         # Get the reconstructed map for the TT estimator
         
@@ -197,9 +197,10 @@ if rank==0:
         acl = s.stats['acl']['mean']
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
-        np.savetxt(f'{solenspipe.opath}/aclbhtest1.txt',acl)
-        np.savetxt(f'{solenspipe.opath}/xcl.txt',xcl)
-        np.savetxt(f'{solenspipe.opath}/icl.txt',icl)
+        spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
+        np.savetxt(f'{spath}/aclnoforeground.txt',acl)
+        np.savetxt(f'{spath}/xcl.txt',xcl)
+        np.savetxt(f'{spath}/icl.txt',icl)
 
     if args.write_meanfield:
         mf_alm = s.stacks['rmf'] + 1j*s.stacks['imf']
@@ -219,7 +220,7 @@ if rank==0:
         
     else:
         Nl = maps.interp(ils,Nl)(ls)
-        np.savetxt(f'{solenspipe.opath}/N0.txt',Nl)
+        np.savetxt(f'{spath}/N0.txt',Nl)
 
 
     pl = io.Plotter('CL',xyscale='loglog')
@@ -233,7 +234,7 @@ if rank==0:
     pl.add(ls,icl+Nl,ls='--',label='input + N0 bias')
     pl._ax.set_ylim(1e-10,1e-2)
     pl._ax.set_xlim(1,3100)
-    pl.done(f'{solenspipe.opath}/{args.label}_{args.polcomb}_{isostr}recon.png')
+    pl.done(f'{spath}/{args.label}_{args.polcomb}_{isostr}recon.png')
     
 
 

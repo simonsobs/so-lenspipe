@@ -83,7 +83,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     else:
         rank,size = 0, 1
     with bench.show("sim"):
-        for i in range(rank+1, nsims, size):
+        for i in range(rank+1, nsims+1, size):
             print(i)
             Xs  = get_kmap((icov,0,i))
             Ys  = Xs
@@ -99,7 +99,7 @@ def rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                         + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B))
                 if not(gaussian_sims):
                     print("non gaussian")
-                    Ysp = get_kmap((icov,1,i+1))
+                    Ysp = get_kmap((icov,1,i))
                     Asp = Ysp
                     Bsp = Ysp
                     rdn0 += (- power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)))

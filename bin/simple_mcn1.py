@@ -16,7 +16,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=50,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=60,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -39,12 +39,13 @@ parser.add_argument("--curl", action='store_true',help='curl reconstruction')
 args = parser.parse_args()
 
 
-solint,ils,Als,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
+solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
 car = "healpix_" if args.healpix else "car_"
+spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
     
 
 w4 = solint.wfactor(4)
-get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True)
+get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
@@ -69,7 +70,7 @@ elif args.ps_bias_hardening:
     qfunc=solint.qfunc_bh
 else:
     qfunc = solint.qfunc
-nmax = len(ils)
+nmax = len(Als['L'])
 
 if args.ps_bias_hardening:
     mcn1= bias.mcn1(0,polcomb,polcomb,qfunc,get_kmap,comm,power,nsims,verbose=True,type='bh',ils=ils, blens=blens, bhps=bhps, Alpp=Alpp, A_ps=A_ps)
@@ -88,7 +89,7 @@ elif args.ps_bias_hardening:
     io.save_cols(f'{solenspipe.opath}/n1mc_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
 
 else:
-	io.save_cols(f'{solenspipe.opath}/n1mc_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
+	io.save_cols(f'{spath}/n1mcnoforeground_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(Als['L'],mcn1[:nmax]))
 
 if rank==0:
     theory = cosmology.default_theory()
@@ -96,8 +97,8 @@ if rank==0:
     ls = np.arange(mcn1.size)
     pl = io.Plotter('CL')
     pl.add(ls,mcn1)
-    pl.add(ls,theory.gCl('kk',ls))
+    pl.add(ls,theory.gCl('kk',Als['L']))
     #pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(f'{solenspipe.opath}/recon_mcn1.png')                       
+    pl.done(f'{spath}/recon_mcn1.png')                       
 
 

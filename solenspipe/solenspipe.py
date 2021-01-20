@@ -368,7 +368,7 @@ class SOLensInterface(object):
             s_i,s_set,noise_seed = convert_seeds(seed)
 
 
-            if foreground==True:
+            if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
                 """
                 plots = enplot.get_plots(imap, downgrade = 4)
@@ -377,7 +377,13 @@ class SOLensInterface(object):
                 """
                 #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
                 #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
-                imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+
+            elif seed==(0,0,0) and foreground==False:
+                print("no foreground")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
+
+
             else:
                 cmb_map = self.get_beamed_signal(channel,s_i,s_set)
                 noise_map = self.get_noise_map(noise_seed,channel)
@@ -394,7 +400,12 @@ class SOLensInterface(object):
             # Make 1/(C+N) filter functions
             filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
-            return almt
+
+          
+            # Cache the alms
+            self.cache = {}
+            self.cache[seed] = (almt,almt,almt,almt,almt,almt)
+            icov,s_set,i=seed
 
 
     def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
@@ -406,7 +417,7 @@ class SOLensInterface(object):
             s_i,s_set,noise_seed = convert_seeds(seed)
 
 
-            if foreground==True:
+            if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
                 """
                 plots = enplot.get_plots(imap, downgrade = 4)
@@ -414,8 +425,13 @@ class SOLensInterface(object):
                 enplot.write(f"{spath}/{fname}",plots)
                 """
                 #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
-                imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
                 #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
+
+            elif seed==(0,0,0) and foreground==False:
+                print("no foreground")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
+
             else:
                 cmb_map = self.get_beamed_signal(channel,s_i,s_set)
                 noise_map = self.get_noise_map(noise_seed,channel)
@@ -424,6 +440,7 @@ class SOLensInterface(object):
             imap=imap[0]
 
             oalms = self.map2alm(imap)
+
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
             filt_t = lambda x: 1.
@@ -441,13 +458,15 @@ class SOLensInterface(object):
         icov,s_set,s_n=seed
         s_i,s_set,noise_seed = convert_seeds(seed)
 
-
-
-        if foreground==True:
+        if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
             #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
             #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
-            imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+
+        elif seed==(0,0,0) and foreground==False:
+            print("no foreground")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
      
         else:
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
@@ -469,8 +488,8 @@ class SOLensInterface(object):
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
-        #filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
-        filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
         almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
         return almt
 
@@ -577,10 +596,10 @@ class SOLensInterface(object):
     def qfuncs_m4(self,Talm,fTalm):
         return qe.qe_m4(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
 
-    def get_kmap(self,channel,seed,lmin,lmax,filtered=True):
+    def get_kmap(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
         # Wrapper around self.prepare_map that uses caching
-        if not(seed in self.cache.keys()): self.prepare_map(channel,seed,lmin,lmax)
-        xs = {'T':0,'E':1,'B':2}
+        if not(seed in self.cache.keys()): self.prepare_qe_map1(channel,seed,lmin,lmax,foreground=foreground)
+        #xs = {'T':0,'E':1,'B':2}
         return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 
 
