@@ -113,6 +113,7 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         
 
     for i in my_tasks:
+        i=i+1
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
         if not(skip_rd): 
@@ -279,6 +280,7 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True):
     comm,rank,my_tasks = mpi.distribute(nsims)
     n1evals = []
     for i in my_tasks:
+        i=i+1
         if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
         Xs    = get_kmap((icov,0,i)) # S
         Ysp   = get_kmap((icov,1,i)) # S'
