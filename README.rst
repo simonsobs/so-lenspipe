@@ -86,47 +86,34 @@ of your own).
 Demo
 ----
 
-Run ``python bin/simple.py -h`` and if the installation is succesfull,
+Run ``python examples/bias.py -h`` and if the installation is succesfull,
 you should see
 
 ::
 
-    usage: simple.py [-h] [-N NSIMS] [--sindex SINDEX] [--lmin LMIN] [--lmax LMAX]
-                     [--isotropic] [--no-atmosphere] [--use-cached-norm]
-                     [--wnoise WNOISE] [--beam BEAM] [--disable-noise]
-                     [--zero-sim] [--write-meanfield] [--read-meanfield]
-                     [--healpix] [--no-mask] [--debug] [--flat-sky-norm]
-                     label polcomb
+		usage: bias.py [-h] [--nsims-n0 NSIMS_N0] [--nsims-n1 NSIMS_N1] [--healpix]
+					   [--new-scheme] [--lmax LMAX] [--lmin LMIN] [--biases BIASES]
+					   version est1 est2
 
-    Simple lensing reconstruction test.
+		Verify and benchmark RDN0 on the full noiseless sky.
 
-    positional arguments:
-      label                 Version label.
-      polcomb               Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.
+		positional arguments:
+		  version              Version name.
+		  est1                 Estimator 1, one of TT,TE,EE,EB,TB,MV,MVPOL.
+		  est2                 Estimator 2, same as above.
 
-    optional arguments:
-      -h, --help            show this help message and exit
-      -N NSIMS, --nsims NSIMS
-                            Number of sims.
-      --sindex SINDEX       Start index for sims.
-      --lmin LMIN           Minimum multipole.
-      --lmax LMAX           Minimum multipole.
-      --isotropic           Isotropic sims.
-      --no-atmosphere       Disable atmospheric noise.
-      --use-cached-norm     Use cached norm.
-      --wnoise WNOISE       Override white noise.
-      --beam BEAM           Override beam.
-      --disable-noise       Disable noise.
-      --zero-sim            Just make a sim of zeros. Useful for benchmarking.
-      --write-meanfield     Calculate and save mean-field map.
-      --read-meanfield      Read and subtract mean-field map.
-      --healpix             Use healpix instead of CAR.
-      --no-mask             No mask. Use with the isotropic flag.
-      --debug               Debug plots.
-      --flat-sky-norm       Use flat-sky norm.
+		optional arguments:
+		  -h, --help           show this help message and exit
+		  --nsims-n0 NSIMS_N0  Number of sims.
+		  --nsims-n1 NSIMS_N1  Number of sims.
+		  --healpix            Use healpix instead of CAR.
+		  --new-scheme         New simulation scheme.
+		  --lmax LMAX          Maximum multipole for lensing.
+		  --lmin LMIN          Minimum multipole for lensing.
+		  --biases BIASES      Maximum multipole for lensing.
 
 For a test beyond the imports, you can run
-``python bin/simple.py test TT -N 1`` but you'll need some files in your
+``python examples/bias.py test TT TT --lmax 300 --nsims-n0 1 --nsims-n1 1`` but you'll need some files in your
 ``data_path`` directory to get going.
 
 Note that if working on NERSC, you might have to run the scripts on an
