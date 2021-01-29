@@ -42,11 +42,8 @@ and scripts therein:
   (``pip install -e . --user``) 
 * `symlens <https://github.com/simonsobs/symlens/>`__
   (``pip install -e . --user``) 
-* `quicklens <https://github.com/msyriac/quicklens/>`__ (Python 3 fork of
-  Duncan Hanson's code used to get normalization of lensing estimators. if
-  running on NERSC, run
-  ``python setup.py build_ext -i --fcompiler=intelem --compiler=intelem``;
-  else run ``python setup.py build_ext -i`` , and then add to PYTHONPATH)
+* `tempura <https://github.com/simonsobs/tempura>`__ 
+  (Clone the repository then do ``python setup.py build_ext -i`` and then ``python setup.py install``)
 * `camb <https://camb.readthedocs.io/en/latest/>`__
   (``pip install camb --user``) 
 * `orphics <https://github.com/msyriac/orphics/>`__
