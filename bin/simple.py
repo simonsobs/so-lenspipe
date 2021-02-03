@@ -18,7 +18,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple lensing reconstruction test.')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=2,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")

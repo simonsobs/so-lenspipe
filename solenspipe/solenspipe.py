@@ -17,7 +17,7 @@ import traceback
 from collections import OrderedDict
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
-opath = config['data_path']
+opath = config['output_path']
 #mask path
 mpath="/global/cscratch1/sd/msyriac/data/depot/solenspipe"
 
@@ -358,6 +358,56 @@ class SOLensInterface(object):
         return clttsim,cleesim,clbbsim,cltesim
             
 
+    def prepare_m2_map(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        
+
+        fL=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/fL.txt')
+        fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/fl.txt')
+        #fL=np.ones(len(fL))
+        sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/sigma.txt')
+        print("loading m2 map")
+        icov,s_set,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+            """
+            elif seed==(0,0,0) and foreground==False:
+                print("no foreground")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
+            """
+
+        else:
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+            imap = (cmb_map + noise_map)
+
+        imap = imap * self.mask
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        ls=np.arange(len(fl[0]))
+        filter=[]
+        alms=[]
+        factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
+        for i in range(20):
+            #print(i)
+            alms.append(qe.filter_alms(oalms,sigma[i]*factor*fl[i][:len(ls)],lmin=lmin,lmax=lmax))
+        return alms
 
     def prepare_qe_map1(self,channel,seed,lmin,lmax,foreground=False):
 
@@ -398,7 +448,15 @@ class SOLensInterface(object):
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
             nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
             # Make 1/(C+N) filter functions
+
             filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
+            ell=np.arange(3000)
+            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/cltotal.txt',1/filt_t(ell))
+            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/cltt.txt',self.cltt(ell))
+            der=lambda x: np.gradient(x)
+            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/dercltt.txt',der(self.cltt(ell)))
+            
+
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
 
           
@@ -553,6 +611,11 @@ class SOLensInterface(object):
         tf=self.prepare_shear_map1(channel,seed,lmin,lmax,foreground=foreground)
         return tmap,tf
 
+    def get_m2map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
+        tmap= self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground)
+        tf=self.prepare_m2_map(channel,seed,lmin,lmax,foreground=foreground)
+        return tmap,tf
+
     def get_m4map(self,channel,seed,lmin,lmax,filtered=True):
         tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax)
         tf=self.prepare_m4_map(channel,seed,lmin,lmax)
@@ -568,6 +631,9 @@ class SOLensInterface(object):
         return qe.qe_all(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[polcomb][0]
+
+    def qfuncm2_nompi(self,t,t_alm,fL):
+        return qe.qe_multipole2_nompi(self.px,self.mlmax,fL,Talm=t,fTalm=t_alm)
 
     def get_mv_curl(self,polcomb,talm,ealm,balm):
     
