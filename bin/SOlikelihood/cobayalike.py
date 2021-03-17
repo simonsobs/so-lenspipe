@@ -29,9 +29,9 @@ from cobaya.model import get_model
 model_fiducial = get_model(info_fiducial)
 
 
-model_fiducial.likelihood.theory.needs(Cl={'pp': 10000,'tt': 10000,'te': 10000,'ee': 10000,'bb':10000})
+model_fiducial.add_requirements({'Cl':{'pp': 10000,'tt': 10000,'te': 10000,'ee': 10000,'bb':10000}})
 model_fiducial.logposterior({})
-Cls = model_fiducial.likelihood.theory.get_Cl(ell_factor=False)
+Cls = model_fiducial.provider.get_Cl(ell_factor=False)
 
 #same binning function used to bin the auto bandpowers
 def bandedcls(cl,_bin_edges):
@@ -79,18 +79,14 @@ N1clbb=np.loadtxt(opath+"n1mvdclbbe1.txt").transpose()
 n0=np.loadtxt(opath+"n0mv.txt")
 
 
-def my_like(
-       
-        _theory={'Cl': {'pp': 10000,'tt': 10000,'te': 10000,'ee': 10000,'bb':10000}},_self=None
-
-         ):
+def my_like(_self=None):
 
     
-    Cl_theo = _theory.get_Cl(ell_factor=False)['pp'][0:l_max]  
-    Cl_tt= _theory.get_Cl(ell_factor=False)['tt'][0:l_max] 
-    Cl_ee= _theory.get_Cl(ell_factor=False)['ee'][0:l_max]
-    Cl_te= _theory.get_Cl(ell_factor=False)['te'][0:l_max]
-    Cl_bb= _theory.get_Cl(ell_factor=False)['bb'][0:l_max]
+    Cl_theo = _self.provider.get_Cl(ell_factor=False)['pp'][0:l_max]  
+    Cl_tt= _self.provider.get_Cl(ell_factor=False)['tt'][0:l_max] 
+    Cl_ee= _self.provider.get_Cl(ell_factor=False)['ee'][0:l_max]
+    Cl_te= _self.provider.get_Cl(ell_factor=False)['te'][0:l_max]
+    Cl_bb= _self.provider.get_Cl(ell_factor=False)['bb'][0:l_max]
     Clkk_theo=(ls*(ls+1))**2*Cl_theo*0.25
     Clkk_binned,cents=bandedcls(Clkk_theo,bin_edges) 
     Cltt_binned,cents=bandedcls(Cl_tt,bin_edges)
@@ -127,7 +123,7 @@ info = {
         
         # Derived
         },
-    'likelihood': {'my_cl_like': my_like ,'planck_2018_lowl.TT':{},'planck_2018_highl_plik.TT':{}},
+    'likelihood': {'my_cl_like': {"external": my_like, "requires": {'Cl': {'pp': 10000,'tt': 10000,'te': 10000,'ee': 10000,'bb':10000}}} ,'planck_2018_lowl.TT':{},'planck_2018_highl_plik.TT':{}},
     'theory': {'camb': {'stop_at_error': True,'extra_args':{'kmax':0.9}}},
     'sampler': {'mcmc':None},
     'modules': modules_path,
