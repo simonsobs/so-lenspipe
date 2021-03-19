@@ -113,7 +113,7 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         
 
     for i in my_tasks:
-        i=i+1
+        i=i+2 #reserve seed 0 for data and seed 1 for sim 1 testing
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
         if not(skip_rd): 
