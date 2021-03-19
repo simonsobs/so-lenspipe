@@ -42,11 +42,8 @@ and scripts therein:
   (``pip install -e . --user``) 
 * `symlens <https://github.com/simonsobs/symlens/>`__
   (``pip install -e . --user``) 
-* `quicklens <https://github.com/msyriac/quicklens/>`__ (Python 3 fork of
-  Duncan Hanson's code used to get normalization of lensing estimators. if
-  running on NERSC, run
-  ``python setup.py build_ext -i --fcompiler=intelem --compiler=intelem``;
-  else run ``python setup.py build_ext -i`` , and then add to PYTHONPATH)
+* `tempura <https://github.com/simonsobs/tempura>`__ 
+  (Clone the repository then do ``python setup.py build_ext -i`` and then ``python setup.py install``)
 * `camb <https://camb.readthedocs.io/en/latest/>`__
   (``pip install camb --user``) 
 * `orphics <https://github.com/msyriac/orphics/>`__
@@ -61,11 +58,15 @@ and scripts therein:
   (``python setup.py install --user``) 
 * `so\_noise\_models <https://github.com/simonsobs/so_noise_models>`__
   (``python setup.py install --user``)
+* `soapack <https://github.com/simonsobs/soapack>`__
+  (``pip install -e . --user``)
+* `pyfisher <https://github.com/msyriac/pyfisher>`__
+  (``pip install -e . --user``)
 * `actsims <https://github.com/ACTCollaboration/actsims>`__
   (clone repo, checkout `new_scheme` branch, and then ``pip install -e . --user``)
 * Other miscellaneous packages:
   healpy, Cython, astropy, numpy, scipy, matplotlib, pyyaml, h5py, Pillow
-  (Python Image Library)
+  (Python Image Library), toml
   
 
 Installing
