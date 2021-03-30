@@ -32,6 +32,7 @@ parser.add_argument("--read-meanfield", action='store_true',help='Read and subtr
 parser.add_argument("--healpix", action='store_true',help='Use healpix instead of CAR.')
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
+parser.add_argument("--foreground", action='store_true',help='Use or not use foregrounds')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
@@ -45,7 +46,7 @@ spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
     
 
 w4 = solint.wfactor(4)
-get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
+get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
@@ -89,7 +90,10 @@ elif args.ps_bias_hardening:
     io.save_cols(f'{solenspipe.opath}/n1mc_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,mcn1[:nmax]))
 
 else:
-	io.save_cols(f'{spath}/n1mcnoforeground_{args.polcomb}_{isostr}_{nsims}_{args.label}.txt',(Als['L'],mcn1[:nmax]))
+    if args.foreground:
+        io.save_cols(f'{spath}/mcn1_foregrounds_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],mcn1[:nmax]))
+    else:
+        io.save_cols(f'{spath}/mcn1_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],mcn1[:nmax]))
 
 if rank==0:
     theory = cosmology.default_theory()

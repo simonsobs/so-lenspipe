@@ -1,6 +1,7 @@
 from __future__ import print_function
 from orphics import stats,io,mpi,maps,cosmology
 from pixell import enmap,curvedsky as cs
+from pixell import enplot
 import numpy as np
 import os,sys
 import solenspipe
@@ -18,7 +19,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Simple lensing reconstruction test.')
 parser.add_argument("label", type=str,help='Version label.')
 parser.add_argument("polcomb", type=str,help='Polarizaiton combination: one of mv,TT,TE,EB,TB,EE.')
-parser.add_argument("-N", "--nsims",     type=int,  default=2,help="Number of sims.")
+parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument("--sindex",     type=int,  default=0,help="Start index for sims.")
 parser.add_argument("--lmin",     type=int,  default=100,help="Minimum multipole.")
 parser.add_argument("--lmax",     type=int,  default=3000,help="Minimum multipole.")
@@ -34,6 +35,7 @@ parser.add_argument("--read-meanfield", action='store_true',help='Read and subtr
 parser.add_argument("--healpix", action='store_true',help='Use healpix instead of CAR.')
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
+parser.add_argument("--foreground", action='store_true',help='Use or not use foregrounds')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
@@ -69,28 +71,11 @@ s = stats.Stats(comm)
 for task in my_tasks:
 
     # Choose a seed. This has to be varied when simulating.
-    seed = (0,0,task+sindex)
-
-    # If debugging, get unfiltered maps and plot Cls
-    if task==0 and debug_cmb:
-        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=False)
-        tcl = hp.alm2cl(t_alm)
-        ls = np.arange(tcl.size)
-        pl = io.Plotter('Cell')
-        pl.add(ls,tcl/w2)
-        ls2,nells,nells_P = solint.get_noise_power(channel,beam_deconv=True)
-        theory = cosmology.default_theory()
-        pl.add(ls,theory.lCl('TT',ls) + maps.interp(ls2,nells)(ls),color='k')
-        pl._ax.set_xlim(1,6000)
-        pl._ax.set_ylim(1e-6,1e3)
-        pl.done(f'{solenspipe.opath}/tcl.png')
-        imap = enmap.downgrade(solint.alm2map(np.asarray([t_alm,e_alm,b_alm]),ncomp=3) * solenspipe.get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4),2)
-        for i in range(3): io.hplot(imap[i],f'{solenspipe.opath}/imap_{i}',mask=0)
-
+    seed = (0,0,task)
 
     with bench.show("sim"):
         # Get simulated, prepared filtered T, E, B maps, i.e. (1/(C+N) * teb_alm)
-        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
+        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground)
         Tcmb = 2.726e6
         # Get the reconstructed map for the TT estimator
         
@@ -147,6 +132,19 @@ for task in my_tasks:
         
         else:
             recon_alms = qe.filter_alms(solint.get_mv_kappa(polcomb,t_alm,e_alm,b_alm),maps.interp(ils,Als[polcomb]))
+            """
+            falms = recon_alms.copy()
+            ls = np.arange(solint.mlmax+1)
+            fls = ls * 1
+            fls[ls<2] = 0
+            fls[ls>200] = 0
+            falms = hp.almxfl(falms,fls)
+            rmap = solint.alm2map(falms,ncomp=1)[0] * solint.mask
+            plots = enplot.get_plots(rmap, downgrade = 1,color="gray")
+            print("make plot")
+            spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
+            #enplot.write(f'{spath}/reconstruct',plots)
+            """
     
     if args.read_meanfield:
         recon_alms = recon_alms - mf_alm
@@ -165,8 +163,13 @@ for task in my_tasks:
         rmap = solint.alm2map(falms,ncomp=1)[0] * maskb
         io.hplot(rmap,f'{solenspipe.opath}/frmap',mask=0,color='gray')
 
-    # Get the input kappa map alms
-    kalms = solint.get_kappa_alm(task+sindex)
+    # Get the input kappa map alms from websky if seed=(0,0,0)
+    if seed==(0,0,0):
+        kappa_path='/home/r/rbond/jiaqu/scratch/websky/websky/kap.fits' 
+        kappa_map=hp.fitsfunc.read_map(kappa_path)
+        kalms = hp.map2alm(kappa_map, lmax=solint.mlmax)
+    else:
+        kalms = solint.get_kappa_alm(task)
 
     acl = hp.alm2cl(recon_alms,recon_alms) # reconstruction raw autopower
     xcl = hp.alm2cl(recon_alms,kalms)  # cross-power of input and reconstruction
@@ -198,8 +201,15 @@ if rank==0:
         xcl = s.stats['xcl']['mean']
         icl = s.stats['icl']['mean']
         spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
-        np.savetxt(f'{spath}/aclnoforeground.txt',acl)
-        np.savetxt(f'{spath}/xcl.txt',xcl)
+        if args.foreground:
+            np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',acl)
+            np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',xcl)
+            np.savetxt(f'{spath}/norm_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',xcl/icl)
+        else:
+            np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}.txt',acl)
+            np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}.txt',xcl)
+            np.savetxt(f'{spath}/norm_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}.txt',xcl/icl)
+
         np.savetxt(f'{spath}/icl.txt',icl)
 
     if args.write_meanfield:

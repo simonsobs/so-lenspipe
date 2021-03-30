@@ -32,9 +32,11 @@ parser.add_argument("--healpix", action='store_true',help='Use healpix instead o
 parser.add_argument("--no-mask", action='store_true',help='No mask. Use with the isotropic flag.')
 parser.add_argument("--debug", action='store_true',help='Debug plots.')
 parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky norm.')
+parser.add_argument("--foreground", action='store_true',help='Use or not use foregrounds')
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
 parser.add_argument("--curl", action='store_true',help='curl reconstruction')
+
 args = parser.parse_args()
 solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
 car = "healpix_" if args.healpix else "car_"
@@ -42,7 +44,7 @@ spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
 
 w4 = solint.wfactor(4)
 print(w4)
-get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=False)
+get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
@@ -78,7 +80,7 @@ else:
     print("normal rdn0")
     rdn0 = bias.rdn0(icov=0,alpha=polcomb,beta=polcomb,qfunc=qfunc,get_kmap=get_kmap,comm=comm,power=power,nsims=nsims)
     print(rdn0)
-    rdn0[:nmax] = rdn0[:nmax] * Als['L']**2.
+    rdn0[:nmax] = rdn0[:nmax] * Als[polcomb]**2.
 if not(args.no_mask):
     rdn0[:nmax]=rdn0[:nmax]/w4
 rdn0[nmax:] = 0
@@ -87,7 +89,12 @@ if args.curl:
 elif args.ps_bias_hardening:
     io.save_cols(f'{solenspipe.opath}/rdn0_bh_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(ils,rdn0[:nmax]))
 else:
-    io.save_cols(f'{spath}/rdn0nofor_{polcomb}_{isostr}_{car}_{nsims}_{args.label}.txt',(Als['L'],rdn0[:nmax]))
+    if args.foreground:
+        io.save_cols(f'{spath}/rdn0_foregrounds_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],rdn0[:nmax]))
+    else:
+        print("saving no foregrounds")
+        io.save_cols(f'{spath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],rdn0[:nmax]))
+
 if rank==0:
     theory = cosmology.default_theory()
     

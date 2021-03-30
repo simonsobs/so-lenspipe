@@ -116,6 +116,14 @@ def get_kappa_alm(i,path=config['signal_path']):
     fname = path + "fullskyPhi_alm_%s.fits" % istr
     return plensing.phi_to_kappa(hp.read_alm(fname))
 
+
+def load_websky_sims(s_set,s_n):
+    sstr = str(s_set).zfill(2)
+    istr = str(s_n).zfill(5)
+    fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "websky_gaussforeground_inpaintcls_alm_set%s_%s.fits" % (sstr,istr)
+    imap=enmap.read_map(fname)
+    return imap
+
 def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     """
     Approximate correction to an n-point function for the loss of power
@@ -333,7 +341,8 @@ class SOLensInterface(object):
         self.cache = {}
         self.cache[seed] = (almt,alme,almb,oalms[0],oalms[1],oalms[2])
         icov,s_set,i=seed
-        
+
+
     def get_sim_power(self,channel,seed,lmin,lmax):
         """
         Generates the sim cmb+noise cls.
@@ -358,17 +367,18 @@ class SOLensInterface(object):
         return clttsim,cleesim,clbbsim,cltesim
             
 
-    def prepare_m2_map(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_m2_map(self,channel,seed,lmin,lmax,k,svd,old=False,foreground=False):
         """
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-        
-
-        fL=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/fL.txt')
-        fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/fl.txt')
-        #fL=np.ones(len(fL))
-        sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/sigma.txt')
+        k=k
+        if old==True:
+            print("use asymmetric")
+            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}old.txt')
+        else:
+            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}.txt')
+        #sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highsigma_Lmin{k}.txt')
         print("loading m2 map")
         icov,s_set,s_n=seed
         s_i,s_set,noise_seed = convert_seeds(seed)
@@ -376,11 +386,7 @@ class SOLensInterface(object):
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
-            """
-            elif seed==(0,0,0) and foreground==False:
-                print("no foreground")
-                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
-            """
+ 
 
         else:
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
@@ -404,9 +410,126 @@ class SOLensInterface(object):
         filter=[]
         alms=[]
         factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
+        for i in range(svd):
+            print(i)
+            alms.append(qe.filter_alms(oalms,factor*fl[i],lmin=lmin,lmax=lmax))
+        return alms
+
+
+    def prepare_hybrid_map(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highsigma.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shear_sigma.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shearl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shear_sigma.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shearl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearsigma200.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearl200.txt')
+        k=1000
+        sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma{k}1500.txt')
+        fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl{k}1500.txt')
+        print("loading m2 map")
+        icov,s_set,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+     
+        else:
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+            imap = (cmb_map + noise_map)
+
+        imap = imap * self.mask
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        ls=np.arange(len(fl[0]))
+        filter=[]
+        alms=[]
+        factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
+        #take the first one to be the shear alm
+        der=lambda x: np.gradient(x)
+        f=np.zeros(3000)
         for i in range(20):
-            #print(i)
-            alms.append(qe.filter_alms(oalms,sigma[i]*factor*fl[i][:len(ls)],lmin=lmin,lmax=lmax))
+            f[1500:]=fl[i]
+            print(i)
+            #alms.append(qe.filter_alms(oalms,sigma[i]*factor*fl[i][:len(ls)],lmin=lmin,lmax=lmax))
+            alms.append(qe.filter_alms(oalms,sigma[i]*factor*f,lmin=lmin,lmax=lmax))
+        return alms
+
+    def prepare_shear_svd_map(self,channel,seed,lmin,lmax,svdlmin,svdLmax,n_svd,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highsigma.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shear_sigma.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shearl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shear_sigma.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shearl.txt')
+        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearsigma200.txt')
+        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearl200.txt')
+        k=1000
+        #sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma{k}1500.txt')
+        #fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl{k}1500.txt')
+        fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl_lmin{svdlmin}_Lmax{svdLmax}.txt')
+        sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma_lmin{svdlmin}_Lmax{svdLmax}_nsvd{n_svd}.txt')
+        sigma=sigma.astype(list)
+        print("loading m2 map")
+        icov,s_set,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+     
+
+        else:
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+            imap = (cmb_map + noise_map)
+
+        imap = imap * self.mask
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        ls=np.arange(3000)
+        filter=[]
+        alms=[]
+        factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
+        #take the first one to be the shear alm
+        #filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
+        #almshear = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        #alms.append(almshear)
+        f=np.zeros(3000)
+        for i in range(n_svd):
+            f[1500:]=fl[i]
+            alms.append(qe.filter_alms(oalms,sigma[i]*factor*f,lmin=lmin,lmax=lmax))
         return alms
 
     def prepare_qe_map1(self,channel,seed,lmin,lmax,foreground=False):
@@ -414,7 +537,7 @@ class SOLensInterface(object):
         if not(self.zero_map):
             print("prepare map")
             # Convert the solenspipe convention to the Alex convention
-            icov,s_set,s_n=seed
+            icov,s_cmbseed,s_n=seed
             s_i,s_set,noise_seed = convert_seeds(seed)
 
 
@@ -426,37 +549,31 @@ class SOLensInterface(object):
                 enplot.write(f"{spath}/{fname}",plots)
                 """
                 #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
-                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
-                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms1.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
             elif seed==(0,0,0) and foreground==False:
                 print("no foreground")
-                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
-
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
 
             else:
-                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-                noise_map = self.get_noise_map(noise_seed,channel)
-                imap = (cmb_map + noise_map)
-            imap = imap * self.mask
-            imap=imap[0]
+  
+                imap=load_websky_sims(s_cmbseed,s_n)
+            imap = imap[0]
 
             oalms = self.map2alm(imap)
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
             oalms[~np.isfinite(oalms)] = 0
+            #cltt=hp.alm2cl(oalms)
+            #np.savetxt(f"/home/r/rbond/jiaqu/scratch/websky/websky/n1_cltt{s_n}_set{s_cmbseed}",cltt)
+
             ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
             nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
             nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
             # Make 1/(C+N) filter functions
 
             filt_t = lambda x: 1./(self.cltt(x) + nells_T(x))
-            ell=np.arange(3000)
-            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/cltotal.txt',1/filt_t(ell))
-            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/cltt.txt',self.cltt(ell))
-            der=lambda x: np.gradient(x)
-            np.savetxt('/home/r/rbond/jiaqu/scratch/so_lens/dercltt.txt',der(self.cltt(ell)))
-            
-
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
 
           
@@ -465,16 +582,13 @@ class SOLensInterface(object):
             self.cache[seed] = (almt,almt,almt,almt,almt,almt)
             icov,s_set,i=seed
 
-
-    def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_multipole_shearT_map(self,channel,seed,lmin,lmax,foreground=False):
 
         if not(self.zero_map):
             print("prepare map")
             # Convert the solenspipe convention to the Alex convention
-            icov,s_set,s_n=seed
+            icov,s_cmbseed,s_n=seed
             s_i,s_set,noise_seed = convert_seeds(seed)
-
-
             if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
                 """
@@ -483,18 +597,19 @@ class SOLensInterface(object):
                 enplot.write(f"{spath}/{fname}",plots)
                 """
                 #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
-                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
                 #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
-            elif seed==(0,0,0) and foreground==False:
-                print("no foreground")
-                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
-
+            
             else:
+                
                 cmb_map = self.get_beamed_signal(channel,s_i,s_set)
                 noise_map = self.get_noise_map(noise_seed,channel)
                 imap = (cmb_map + noise_map)
-            imap = imap * self.mask
+                
+
+            imap = imap* self.mask
             imap=imap[0]
 
             oalms = self.map2alm(imap)
@@ -506,6 +621,90 @@ class SOLensInterface(object):
             return almt
 
 
+    def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
+
+        if not(self.zero_map):
+            print("prepare map")
+            # Convert the solenspipe convention to the Alex convention
+            icov,s_cmbseed,s_n=seed
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+
+            if seed==(0,0,0) and foreground==True:
+                print("using foregrounds")
+                """
+                plots = enplot.get_plots(imap, downgrade = 4)
+                fname=f'forelens'
+                enplot.write(f"{spath}/{fname}",plots)
+                """
+                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+
+            
+            elif seed==(0,0,0) and foreground==False:
+                #print("no foreground")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
+
+            else:
+                """
+                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+                noise_map = self.get_noise_map(noise_seed,channel)
+                imap = (cmb_map + noise_map)
+                """
+                imap=load_websky_sims(s_cmbseed,s_n)
+
+            imap = imap
+            imap=imap[0]
+
+            oalms = self.map2alm(imap)
+
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            filt_t = lambda x: 1.
+            almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
+            return almt
+
+    def prepare_multipoleshear_map1(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        print("loading shear map")
+        icov,s_cmbseed,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
+            #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+
+
+        else:
+            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+            noise_map = self.get_noise_map(noise_seed,channel)
+            imap = (cmb_map + noise_map)
+     
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
+
+        imap = imap
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        return almt
 
     def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False):
         """
@@ -513,25 +712,25 @@ class SOLensInterface(object):
         Filters it and caches it.
         """
         print("loading shear map")
-        icov,s_set,s_n=seed
+        icov,s_cmbseed,s_n=seed
         s_i,s_set,noise_seed = convert_seeds(seed)
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
+            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
             #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
         elif seed==(0,0,0) and foreground==False:
-            print("no foreground")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/cmb_no_foreground.fits")
+            #print("no foreground")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
      
         else:
-            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-            noise_map = self.get_noise_map(noise_seed,channel)
-            imap = (cmb_map + noise_map)
+            imap=load_websky_sims(s_cmbseed,s_n)
+     
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
 
-        imap = imap * self.mask
+        imap = imap
         imap=imap[0]
         oalms = self.map2alm(imap)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
@@ -550,6 +749,86 @@ class SOLensInterface(object):
         #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
         almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
         return almt
+
+    def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        print("loading shear map")
+        icov,s_cmbseed,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
+            #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+
+        elif seed==(0,0,0) and foreground==False:
+            #print("no foreground")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
+     
+        else:
+            imap=load_websky_sims(s_cmbseed,s_n)
+     
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
+
+        imap = imap
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+        noise=hp.alm2cl(oalms)/self.wfactor(2)
+        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        cltotal = smooth_cls(hp.alm2cl(oalms)/self.wfactor(2))
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        cltotal = maps.interp(ls,cltotal) if not(self.disable_noise) else lambda x: x*0
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        #need to multiply by derivative cl
+        der=lambda x: np.gradient(x)
+        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
+        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        return almt
+
+
+    def prepare_m4temperature_map(self,channel,seed,lmin,lmax,foreground=False):
+
+        if not(self.zero_map):
+            print("prepare map")
+            # Convert the solenspipe convention to the Alex convention
+            icov,s_cmbseed,s_n=seed
+            s_i,s_set,noise_seed = convert_seeds(seed)
+
+
+            if seed==(0,0,0) and foreground==True:
+                print("using foregrounds")
+                """
+                plots = enplot.get_plots(imap, downgrade = 4)
+                fname=f'forelens'
+                enplot.write(f"{spath}/{fname}",plots)
+                """
+                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+
+            else:
+                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+                noise_map = self.get_noise_map(noise_seed,channel)
+                imap = (cmb_map + noise_map)
+
+            imap = imap
+            imap=imap[0]*self.mask
+            oalms = self.map2alm(imap)
+            oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
+            oalms[~np.isfinite(oalms)] = 0
+            filt_t = lambda x: 1.
+            almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
+            return almt
 
     def prepare_m4_map(self,channel,seed,lmin,lmax,foreground=False):
         """
@@ -580,11 +859,17 @@ class SOLensInterface(object):
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
-        #filt_t = lambda x: (1./(x**6*(self.cltt(x) + nells_T(x))**2))*(x*der(self.cltt(x))-x**2*der(der(self.cltt(x))))
-        filt_t = lambda x: (1./(x**5*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
-        #filt_t = lambda x: -(1./(x**5*(self.cltt(x) + nells_T(x))**2))*(der(self.cltt(x)))+(1./(x**4*(self.cltt(x) + nells_T(x))**2))*der(der(self.cltt(x)))
-        #filt_t = lambda x: (1./(x**6*(self.cltt(x) + nells_T(x))**2))*(x*der(self.cltt(x)))
-        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
+        #filt_t = lambda x: (1./(x**7*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        #filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
+        
+        ls=np.arange(3000)
+        filter=[]
+        alms=[]
+        factor=(1./(ls**7*(self.cltt(ls) + nells_T(ls))**2))*der(self.cltt(ls))
+        #np.savetxt("/home/r/rbond/jiaqu/scratch/so_lens/factor.txt",factor)
+        #np.savetxt("/home/r/rbond/jiaqu/scratch/so_lens/filter.txt",filt_t(ls))
+
+        almt = qe.filter_alms(oalms,factor,lmin=lmin,lmax=lmax)
         return almt
 
     def get_beamed_foregrounds(self):
@@ -613,12 +898,13 @@ class SOLensInterface(object):
 
     def get_m2map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
         tmap= self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground)
-        tf=self.prepare_m2_map(channel,seed,lmin,lmax,foreground=foreground)
+        #tf=self.prepare_m2_map(channel,seed,lmin,lmax,foreground=foreground)
+        tf=self.prepare_hybrid_map(channel,seed,lmin,lmax,foreground=foreground)
         return tmap,tf
 
-    def get_m4map(self,channel,seed,lmin,lmax,filtered=True):
-        tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax)
-        tf=self.prepare_m4_map(channel,seed,lmin,lmax)
+    def get_m4map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
+        tmap=self.prepare_m4temperature_map(channel,seed,lmin,lmax,foreground=foreground)
+        tf=self.prepare_m4_map(channel,seed,lmin,lmax,foreground=foreground)
         return tmap,tf
 
 
@@ -634,6 +920,9 @@ class SOLensInterface(object):
 
     def qfuncm2_nompi(self,t,t_alm,fL):
         return qe.qe_multipole2_nompi(self.px,self.mlmax,fL,Talm=t,fTalm=t_alm)
+
+    def qfunc_hybridshear(self,t,t_alm,fL,sigmaL):
+        return qe.testhybrid(self.px,self.mlmax,fL,sigmaL,Talm=t,fTalm=t_alm)
 
     def get_mv_curl(self,polcomb,talm,ealm,balm):
     
@@ -1399,6 +1688,5 @@ class weighted_bin1D:
             matrix.append(col)
         matrix=np.array(matrix)
         return matrix 
-        
         
         
