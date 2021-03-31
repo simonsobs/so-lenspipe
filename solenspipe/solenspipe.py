@@ -134,7 +134,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
-    results in a normalized estimator) against est1 with
+    results in a normalized estimator) against est2 with
     normalization Al2 and unnormalized cross-response R12.
 
 
@@ -175,6 +175,8 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     
     """
     est1 = est1.upper()
+    print(pytempura.est_list)
+    print(est1)
     assert est1 in pytempura.est_list
     if Al1 is not None:
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
@@ -196,11 +198,15 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     else:
         bh = False
 
-    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL'] # TODO: add other
-    qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
-                                   fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
-                                   estimators=[est1],
-                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
+    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL','shear'] # TODO: add other
+    if est1=='shear':
+        qfunc1 = lambda X,Y: qe.qe_shear(px,mlmax,
+                            Talm=X[0],fTalm=Y[1])
+    else:
+        qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                    fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                    estimators=[est1],
+                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
         assert est2 in ['SRC','MASK'] 
