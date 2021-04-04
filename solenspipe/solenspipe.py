@@ -95,7 +95,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     for e in est_norm_list:
         if e.upper()=='TT' or e.upper()=='MV':
             bh = True
-    if bh:
+    if bh and est2=='SRC':
         est_norm_list.append('src')
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     else:
@@ -110,7 +110,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     if diag:
         Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
         Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
-        if bh:
+        if bh and est2=='SRC':
             Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
         else:
             Nl_g_bh = None
@@ -121,14 +121,14 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
         Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
         Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
         Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
-        if bh:
+        if bh and est2=='SRC':
             Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
         else:
             Nl_g_bh = None
     return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
 
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=None):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
@@ -201,8 +201,12 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
-        assert est2 in ['SRC'] # TODO: add mask
-        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        assert est2 in ['SRC','PH'] # TODO: add mask
+        if est2=='SRC':
+            qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        elif est2=='PH':
+            print("PH WUOEONWO")
+            qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,profile,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
             # Bias harden only gradient e.g. source hardening
