@@ -73,9 +73,9 @@ with bench.show("INIT"):
     
 
 with bench.show("NORM"):
-    # Get norms for TSZ profile
-    R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
-    R_src_tt[0:3000]/=profile[0:3000]
+    # Get response for TSZ profile
+    R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)/=profile[0:3000]
+    #normalization filter for tsz has an extra profile function
     tcls["TT"][0:3000] /= profile[0:3000]
     Als_src = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     Als_src['src'][0:3000]*=(profile**2)[0:3000]
@@ -112,9 +112,8 @@ with bench.show("QFUNC"):
     q_bh_2 = solenspipe.get_qfunc(px,ucls,mlmax,e2,Al1=Als[e2],est2='PH',Al2=Als_src['src'],R12=R_src_tt,profile=profile) 
 
 
-# This is the filtered map loading function that RDN0 and MCN1 will use
+#input maps are still normal inverse variance filtered maps
 tcls["TT"][0:3000] *= (profile**2)[0:3000]
-#tcls["TT"][0:3000] *= (profile)[0:3000]
 def get_kmap(seed):
     s_i,s_set,noise_seed = solenspipe.convert_seeds(seed)
     dalm = solenspipe.get_cmb_alm(s_i,s_set)
