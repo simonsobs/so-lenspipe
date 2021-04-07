@@ -36,9 +36,8 @@ parser.add_argument( "--lmax",     type=int,  default=3000,help="Maximum multipo
 parser.add_argument( "--lmin",     type=int,  default=100,help="Minimum multipole for lensing.")
 args = parser.parse_args()
 
-spath='/home/r/rbond/jiaqu/scratch/so_lens/shear/'
 
-profile=np.loadtxt(f"{spath}tsz_profile.txt")
+profile=np.loadtxt(f"../data/tsz_profile.txt")
 
 with bench.show("INIT"):
     # Multipole limits and resolution
