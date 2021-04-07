@@ -73,7 +73,7 @@ with bench.show("INIT"):
 
 with bench.show("NORM"):
     # Get response for TSZ profile
-    R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)/=profile[0:3000]
+    R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)/profile[0:3000]
     #normalization filter for tsz has an extra profile function
     tcls["TT"][0:3000] /= profile[0:3000]
     Als_src = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
