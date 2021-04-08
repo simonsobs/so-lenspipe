@@ -378,7 +378,7 @@ class SOLensInterface(object):
             fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}old.txt')
         else:
             fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}.txt')
-        #sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highsigma_Lmin{k}.txt')
+        sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highsigma_Lmin{k}.txt')
         print("loading m2 map")
         icov,s_set,s_n=seed
         s_i,s_set,noise_seed = convert_seeds(seed)
@@ -422,14 +422,6 @@ class SOLensInterface(object):
         Filters it and caches it.
         """
         
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highsigma.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shear_sigma.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shearl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shear_sigma.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shearl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearsigma200.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearl200.txt')
         k=1000
         sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma{k}1500.txt')
         fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl{k}1500.txt')
@@ -478,17 +470,7 @@ class SOLensInterface(object):
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
         """
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/highsigma.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shear_sigma.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd600_shearl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shear_sigma.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/svd400_shearl.txt')
-        #sigma=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearsigma200.txt')
-        #fl=np.loadtxt('/home/r/rbond/jiaqu/scratch/so_lens/shearl200.txt')
         k=1000
-        #sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma{k}1500.txt')
-        #fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl{k}1500.txt')
         fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearl_lmin{svdlmin}_Lmax{svdLmax}.txt')
         sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/shearsigma_lmin{svdlmin}_Lmax{svdLmax}_nsvd{n_svd}.txt')
         sigma=sigma.astype(list)
@@ -896,11 +878,18 @@ class SOLensInterface(object):
         tf=self.prepare_shear_map1(channel,seed,lmin,lmax,foreground=foreground)
         return tmap,tf
 
+
+    def get_m2map(self,channel,seed,lmin,lmax,k,svd,old=False,filtered=True,foreground=False):
+        t= self.prepare_multipole_shearT_map(channel,seed,lmin,lmax,foreground=foreground) #prepare the T map
+        tf=self.prepare_m2_map(channel,seed,lmin,lmax,k,svd,old=old,foreground=foreground)
+        return t,tf
+    """
     def get_m2map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
         tmap= self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground)
         #tf=self.prepare_m2_map(channel,seed,lmin,lmax,foreground=foreground)
         tf=self.prepare_hybrid_map(channel,seed,lmin,lmax,foreground=foreground)
         return tmap,tf
+    """
 
     def get_m4map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
         tmap=self.prepare_m4temperature_map(channel,seed,lmin,lmax,foreground=foreground)

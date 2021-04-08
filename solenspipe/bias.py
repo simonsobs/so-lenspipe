@@ -235,7 +235,7 @@ def structure(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,nmc=50,n=100,
 
 def rdn0_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
          include_meanfield=False,gaussian_sims=False,include_main=True,
-         qxy=None,qab=None,type=None,fL=None):
+         qxy=None,qab=None,type=None,fL=None,sigmaL=None):
     """
     Anisotropic MC-RDN0  shear 
     Still need to incorporate this in the template RDN0
@@ -252,8 +252,8 @@ def rdn0_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
         qa = lambda x,y: qfunc(x,y)
         qb = lambda x,y: qfunc(x,y)
     elif type=='m2':
-        qa = lambda x,y: qfunc(x,y,fL)
-        qb = lambda x,y: qfunc(x,y,fL)
+        qa = lambda x,y: qfunc(x,y,fL,sigmaL)
+        qb = lambda x,y: qfunc(x,y,fL,sigmaL)
     # Data
     X = get_kmap((0,0,0))
     Y = X
@@ -291,7 +291,7 @@ def rdn0_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
     return totrdn0/nsims
 
 
-def mcn1_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False,type=None,fL=None):
+def mcn1_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False,type=None,fL=None,sigmaL=None):
     """
     MCN1 for shear
      for alpha=XY cross beta=AB
@@ -304,8 +304,8 @@ def mcn1_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,verbose=False,typ
         qa = lambda x,y: qfunc(x,y)
         qb = lambda x,y: qfunc(x,y)
     elif type=='m2':
-        qa = lambda x,y: qfunc(x,y,fL)
-        qb = lambda x,y: qfunc(x,y,fL)
+        qa = lambda x,y: qfunc(x,y,fL,sigmaL)
+        qb = lambda x,y: qfunc(x,y,fL,sigmaL)
     n1 = 0.
     term_list=[]
     for i in range(comm.rank+1, nsims+1, comm.size):        
