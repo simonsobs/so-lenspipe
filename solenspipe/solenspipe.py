@@ -385,7 +385,7 @@ class SOLensInterface(object):
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
  
 
         else:
@@ -530,9 +530,6 @@ class SOLensInterface(object):
                 fname=f'forelens'
                 enplot.write(f"{spath}/{fname}",plots)
                 """
-                #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
-                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
-                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms1.fits")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
             elif seed==(0,0,0) and foreground==False:
