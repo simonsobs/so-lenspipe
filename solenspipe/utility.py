@@ -586,12 +586,13 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     gdicts = [{} for i in range(nsplits)]
     ind = 0
     """
-    ras=np.delete(ras,104) 
-    decs=np.delete(decs,104) 
     ras=np.delete(ras,78) 
     decs=np.delete(decs,78) 
+    ras=np.delete(ras,104) 
+    decs=np.delete(decs,104) 
     ras=np.delete(ras,375) 
-    decs=np.delete(decs,375) 
+    decs=np.delete(decs,375)
+
     ras=np.delete(ras,835) 
     decs=np.delete(decs,835) 
     ras=np.delete(ras,883) 
@@ -603,12 +604,9 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     ras=np.delete(ras,1101) 
     decs=np.delete(decs,1101) 
     """
-
     nmax=len(ras)
-    print(nmax)
     inds = []
-    print("hello")
-    for ra,dec in zip(ras[376:nmax],decs[376:nmax]):
+    for ra,dec in zip(ras[:nmax],decs[:nmax]):
         print(ind)
         for i in range(nsplits):
             py,px = omap.sky2pix((dec*utils.degree,ra*utils.degree))
