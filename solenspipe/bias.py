@@ -43,7 +43,7 @@ elif set==2 or set==3:
 =================
 """
 
-def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi=True, 
+def mcrdn0(icov, get_kmap, power, nsims, qfunc1,get_kmap1=None, qfunc2=None, Xdat=None,Xdat1=None, use_mpi=True, 
          verbose=True, skip_rd=False):
          
     """
@@ -98,12 +98,14 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     curl RDN0 and the gradient x curl RDN0.
     
     """
-    qa = qfunc1
+    qa = qfunc1 
     qb = qfunc2
 
     mcn0evals = []
     if not(skip_rd): 
         assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
         rdn0evals = []
 
     if use_mpi:
@@ -116,17 +118,28 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         i=i+2
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
+        if get_kmap1 is None:
+            Xs1=Xs
+        else:
+            Xs1=get_kmap1((icov,0,i))
         if not(skip_rd): 
-            qaXXs = qa(Xdat,Xs)
-            qbXXs = qb(Xdat,Xs) if qb is not None else qaXXs
-            qaXsX = qa(Xs,Xdat)
-            qbXsX = qb(Xs,Xdat) if qb is not None else qaXsX
+            qaXXs = qa(Xdat,Xs) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+            qbXXs = qb(Xdat1,Xs1) if qb is not None else qaXXs #this is split 2
+            qaXsX = qa(Xs,Xdat)  #split 1
+            qbXsX = qb(Xs1,Xdat1) if qb is not None else qaXsX #this is split 2
             rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
                     + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
-        Xsp = get_kmap((icov,1,i))
-        qaXsXsp = qa(Xs,Xsp)
-        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
-        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
+        Xsp = get_kmap((icov,1,i)) 
+        if get_kmap1 is None:
+            Xsp1=Xsp
+        else:
+            Xsp1=get_kmap1((icov,1,i))
+
+        qaXsXsp = qa(Xs,Xsp) #split1 
+        qbXsXsp = qb(Xs1,Xsp1) if qb is not None else qaXsXsp #split2
+
+        qbXspXs = qb(Xsp1,Xs1) if qb is not None else qa(Xsp,Xs) #this is not present
+
         mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
@@ -378,6 +391,9 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
         feed_dict[f'us{i}'] = us[i]
         feed_dict[f'vs{i}'] = vs[i]
     return cross_estimator_symbolic(xyuv,m,qe_func,pow_func,eval_feed_dict=feed_dict)
+
+
+
 
 def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
                              coadd_name_func = lambda x: f'{x}c',field_names=['x','y','u','v'],

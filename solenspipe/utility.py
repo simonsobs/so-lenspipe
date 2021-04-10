@@ -567,7 +567,7 @@ def smooth_cls(cl,points=300):
     return cls
 
 
-def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,nmax=294,dataSet='DR5',null=False):
+def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     #code by Will Coulton
     rmin = 15.0 * utils.arcmin
     width = 40. * utils.arcmin
@@ -580,19 +580,35 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,nmax=294,dataSet='DR5',nul
     shape,wcs = omap.shape[-2:],omap.wcs
 
     print(shape,omap.shape,ivar.shape)
-    ras,decs = sints.get_act_mr3f_union_sources(version='20210209_sncut_10')
+    ras,decs = sints.get_act_mr3f_union_sources(version='20210209_sncut_10_aggressive')
 
     zmap = omap.copy()
     gdicts = [{} for i in range(nsplits)]
     ind = 0
+    """
     ras=np.delete(ras,104) 
     decs=np.delete(decs,104) 
     ras=np.delete(ras,78) 
     decs=np.delete(decs,78) 
+    ras=np.delete(ras,375) 
+    decs=np.delete(decs,375) 
+    ras=np.delete(ras,835) 
+    decs=np.delete(decs,835) 
+    ras=np.delete(ras,883) 
+    decs=np.delete(decs,883) 
+    ras=np.delete(ras,999) 
+    decs=np.delete(decs,999) 
+    ras=np.delete(ras,1099) 
+    decs=np.delete(decs,1099) 
+    ras=np.delete(ras,1101) 
+    decs=np.delete(decs,1101) 
+    """
 
-    nmax=nmax
+    nmax=len(ras)
+    print(nmax)
     inds = []
-    for ra,dec in zip(ras[:nmax],decs[:nmax]):
+    print("hello")
+    for ra,dec in zip(ras[376:nmax],decs[376:nmax]):
         print(ind)
         for i in range(nsplits):
             py,px = omap.sky2pix((dec*utils.degree,ra*utils.degree))
