@@ -585,26 +585,30 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     zmap = omap.copy()
     gdicts = [{} for i in range(nsplits)]
     ind = 0
+    ras=np.delete(ras,375) 
+    decs=np.delete(decs,375)
+    ras=np.delete(ras,698) 
+    decs=np.delete(decs,698)
     """
     ras=np.delete(ras,78) 
     decs=np.delete(decs,78) 
     ras=np.delete(ras,104) 
     decs=np.delete(decs,104) 
-    ras=np.delete(ras,375) 
-    decs=np.delete(decs,375)
-
-    ras=np.delete(ras,835) 
-    decs=np.delete(decs,835) 
-    ras=np.delete(ras,883) 
-    decs=np.delete(decs,883) 
-    ras=np.delete(ras,999) 
-    decs=np.delete(decs,999) 
-    ras=np.delete(ras,1099) 
-    decs=np.delete(decs,1099) 
-    ras=np.delete(ras,1101) 
-    decs=np.delete(decs,1101) 
     """
-    nmax=len(ras)
+   
+    """
+    ras=np.delete(ras,834) 
+    decs=np.delete(decs,834) 
+    ras=np.delete(ras,878) 
+    decs=np.delete(decs,878) 
+    ras=np.delete(ras,995) 
+    decs=np.delete(decs,995) 
+    ras=np.delete(ras,1093) 
+    decs=np.delete(decs,1093) 
+    ras=np.delete(ras,1095) 
+    decs=np.delete(decs,1095)
+    """
+    nmax=600
     inds = []
     for ra,dec in zip(ras[:nmax],decs[:nmax]):
         print(ind)
