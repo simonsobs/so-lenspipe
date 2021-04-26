@@ -6,7 +6,6 @@ import os,sys
 import healpy as hp
 from enlib import bench
 from falafel import qe
-import solenspipe as s
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
 from scipy.interpolate import interp1d

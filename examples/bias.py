@@ -169,10 +169,10 @@ if rank==0:
     r_nobh_1 = plensing.phi_to_kappa(q_nobh_1(Xdat,Xdat))
     r_nobh_2 = plensing.phi_to_kappa(q_nobh_2(Xdat,Xdat))
 
-    uicls = hp.alm2cl(ikalm,ikalm)
-    uxcls_nobh_1 = hp.alm2cl(r_nobh_1[0],ikalm)
-    uxcls_nobh_2 = hp.alm2cl(r_nobh_2[0],ikalm)
-    uacls_nobh = hp.alm2cl(r_nobh_1,r_nobh_2)
+    uicls = cs.alm2cl(ikalm,ikalm)
+    uxcls_nobh_1 = cs.alm2cl(r_nobh_1[0],ikalm)
+    uxcls_nobh_2 = cs.alm2cl(r_nobh_2[0],ikalm)
+    uacls_nobh = cs.alm2cl(r_nobh_1,r_nobh_2)
     np.save(f'{opath}uicls_{e1}_{e2}.npy',uicls)
     np.save(f'{opath}uxcls_nobh_1_{e1}_{e2}.npy',uxcls_nobh_1)
     np.save(f'{opath}uxcls_nobh_2_{e1}_{e2}.npy',uxcls_nobh_2)
@@ -181,15 +181,15 @@ if rank==0:
     if bh:
         r_bh_1 = plensing.phi_to_kappa(q_bh_1(Xdat,Xdat))
         r_bh_2 = plensing.phi_to_kappa(q_bh_2(Xdat,Xdat))
-        uxcls_bh_1 = hp.alm2cl(r_bh_1[0],ikalm)
-        uxcls_bh_2 = hp.alm2cl(r_bh_2[0],ikalm)
-        uacls_bh = hp.alm2cl(r_bh_1,r_bh_2)
+        uxcls_bh_1 = cs.alm2cl(r_bh_1[0],ikalm)
+        uxcls_bh_2 = cs.alm2cl(r_bh_2[0],ikalm)
+        uacls_bh = cs.alm2cl(r_bh_1,r_bh_2)
         np.save(f'{opath}uxcls_bh_1_{e1}_{e2}.npy',uxcls_bh_1)
         np.save(f'{opath}uxcls_bh_2_{e1}_{e2}.npy',uxcls_bh_2)
         np.save(f'{opath}uacls_bh_{e1}_{e2}.npy',uacls_bh)
 
 
-powfunc = lambda x,y: hp.alm2cl(x,y)
+powfunc = lambda x,y: cs.alm2cl(x,y)
 
 bias_nobh = {}
 bias_bh = {}

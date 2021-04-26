@@ -8,8 +8,6 @@ import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-from mapsims import noise,Channel,SOStandalonePrecomputedCMB
-import mapsims
 from falafel import qe
 import os
 import glob
@@ -264,6 +262,8 @@ def get_mask(lmax=3000,car_deg=2,hp_deg=4,healpix=False,no_mask=False):
     return mask
 
 def initialize_args(args):
+    from mapsims import noise,Channel,SOStandalonePrecomputedCMB
+    import mapsims
     # Lensing reconstruction ell range
     # We don't need to redefine all these variables!
     # just use the args.lmin etc. below instead of lmin
@@ -360,6 +360,8 @@ def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
 class SOLensInterface(object):
     def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
 
+        from mapsims import noise,Channel,SOStandalonePrecomputedCMB
+        import mapsims
         self.rolloff_ell = rolloff_ell
         self.mask = mask
         self._debug = False
