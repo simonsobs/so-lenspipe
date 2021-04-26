@@ -204,7 +204,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
 
     if bh:
         assert est2 in ['SRC'] # TODO: add mask
-        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        qfunc2 = lambda X,Y: qe.source(px,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
             # Bias harden only gradient e.g. source hardening
@@ -677,7 +677,7 @@ class SOLensInterface(object):
         Tcmb = 2.726e6
         polcomb=alpha #Only TT used for bias hardening
         #point source reconstruction
-        source=qe.qe_pointsources(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
+        source=qe.source(self.px,lambda x,y: self.theory.lCl(x,y),lambda x,y:self.theory_cross.lCl(x,y),
                          self.mlmax,Y[0],Y[1],Y[2],estimators=[polcomb],
                          xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])
         #lensing reconstruction
