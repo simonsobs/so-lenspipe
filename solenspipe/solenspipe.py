@@ -91,8 +91,6 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
     nstep = nsims//ndiv #changed this to access roght files
-    print("nstep")
-    print(nstep)
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep
         s_set = 0
@@ -367,53 +365,7 @@ class SOLensInterface(object):
         return clttsim,cleesim,clbbsim,cltesim
             
 
-    def prepare_m2_map(self,channel,seed,lmin,lmax,k,svd,old=False,foreground=False):
-        """
-        Generates a beam-deconvolved simulation.
-        Filters it and caches it.
-        """
-        k=k
-        if old==True:
-            print("use asymmetric")
-            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}old.txt')
-        else:
-            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}.txt')
-        sigma=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highsigma_Lmin{k}.txt')
-        print("loading m2 map")
-        icov,s_set,s_n=seed
-        s_i,s_set,noise_seed = convert_seeds(seed)
 
-        if seed==(0,0,0) and foreground==True:
-            print("using foregrounds")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
- 
-
-        else:
-            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-            noise_map = self.get_noise_map(noise_seed,channel)
-            imap = (cmb_map + noise_map)
-
-        imap = imap * self.mask
-        imap=imap[0]
-        oalms = self.map2alm(imap)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-        noise=hp.alm2cl(oalms)/self.wfactor(2)
-        
-        oalms[~np.isfinite(oalms)] = 0
-        oalms=oalms.astype(np.complex128)
-        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
-        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
-        #need to multiply by derivative cl
-        der=lambda x: np.gradient(x)
-        ls=np.arange(len(fl[0]))
-        filter=[]
-        alms=[]
-        factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
-        for i in range(svd):
-            print(i)
-            alms.append(qe.filter_alms(oalms,factor*fl[i],lmin=lmin,lmax=lmax))
-        return alms
 
 
     def prepare_hybrid_map(self,channel,seed,lmin,lmax,foreground=False):
@@ -480,15 +432,18 @@ class SOLensInterface(object):
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
      
 
         else:
+            """
             cmb_map = self.get_beamed_signal(channel,s_i,s_set)
             noise_map = self.get_noise_map(noise_seed,channel)
             imap = (cmb_map + noise_map)
+            """
+            imap=load_websky_sims(s_set,s_n)
 
-        imap = imap * self.mask
+        imap = imap
         imap=imap[0]
         oalms = self.map2alm(imap)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
@@ -503,11 +458,6 @@ class SOLensInterface(object):
         filter=[]
         alms=[]
         factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
-        #take the first one to be the shear alm
-        #filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
-        #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
-        #almshear = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
-        #alms.append(almshear)
         f=np.zeros(3000)
         for i in range(n_svd):
             f[1500:]=fl[i]
@@ -524,12 +474,7 @@ class SOLensInterface(object):
 
 
             if seed==(0,0,0) and foreground==True:
-                print("using foregrounds")
-                """
-                plots = enplot.get_plots(imap, downgrade = 4)
-                fname=f'forelens'
-                enplot.write(f"{spath}/{fname}",plots)
-                """
+
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
             elif seed==(0,0,0) and foreground==False:
@@ -570,25 +515,16 @@ class SOLensInterface(object):
             s_i,s_set,noise_seed = convert_seeds(seed)
             if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
-                """
-                plots = enplot.get_plots(imap, downgrade = 4)
-                fname=f'forelens'
-                enplot.write(f"{spath}/{fname}",plots)
-                """
-                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
-                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
-                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
-
             
+            elif seed==(0,0,0) and foreground==False:
+                print(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
             else:
-                
-                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-                noise_map = self.get_noise_map(noise_seed,channel)
-                imap = (cmb_map + noise_map)
+                imap=load_websky_sims(s_cmbseed,s_n)
                 
 
-            imap = imap* self.mask
+            imap = imap
             imap=imap[0]
 
             oalms = self.map2alm(imap)
@@ -599,6 +535,48 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
             return almt
 
+    def prepare_m2_map(self,channel,seed,lmin,lmax,k,svd,old=False,foreground=False):
+        """
+        Generates a beam-deconvolved simulation.
+        Filters it and caches it.
+        """
+        k=k
+        if old==True:
+            print("use asymmetric")
+            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}old.txt')
+        else:
+            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}.txt')
+        print("loading m2 map for hybrid estimator")
+        icov,s_cmbseed,s_n=seed
+        s_i,s_set,noise_seed = convert_seeds(seed)
+
+        if seed==(0,0,0) and foreground==True:
+            print("using foregrounds")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+ 
+        elif seed==(0,0,0) and foreground==False:
+            print(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
+        else:
+            print("no foreground")
+            imap=load_websky_sims(s_cmbseed,s_n)
+
+        imap = imap
+        imap=imap[0]
+        oalms = self.map2alm(imap)
+        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms        
+        oalms[~np.isfinite(oalms)] = 0
+        oalms=oalms.astype(np.complex128)
+        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
+        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
+        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
+        ls=np.arange(len(fl[0]))
+        alms=[]
+        factor=1./(ls*(self.cltt(ls) + nells_T(ls)))**2
+        for i in range(svd):
+            print(i)
+            alms.append(qe.filter_alms(oalms,factor*fl[i],lmin=lmin,lmax=lmax))
+        return alms
 
     def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
 
@@ -611,14 +589,6 @@ class SOLensInterface(object):
 
             if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
-                """
-                plots = enplot.get_plots(imap, downgrade = 4)
-                fname=f'forelens'
-                enplot.write(f"{spath}/{fname}",plots)
-                """
-                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/map_set{s_set}s_i{s_n}.fits")
-                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/inpainted_websky_alms.fits")
-                #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set{s_set}s_i{s_n}down10.fits")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
             
@@ -656,17 +626,17 @@ class SOLensInterface(object):
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
-            #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
 
         else:
-            cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-            noise_map = self.get_noise_map(noise_seed,channel)
-            imap = (cmb_map + noise_map)
-     
-            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
+            print("no foreground")
+            if foreground==False:
+                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+                noise_map = self.get_noise_map(noise_seed,channel)
+                imap = (cmb_map + noise_map)
+            else:
+                imap=load_websky_sims(s_cmbseed,s_n)
 
         imap = imap
         imap=imap[0]
@@ -696,8 +666,6 @@ class SOLensInterface(object):
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
-            #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
         elif seed==(0,0,0) and foreground==False:
@@ -705,9 +673,13 @@ class SOLensInterface(object):
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
      
         else:
-            imap=load_websky_sims(s_cmbseed,s_n)
-     
-            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
+            print("no foreground")
+            if foreground==False:
+                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+                noise_map = self.get_noise_map(noise_seed,channel)
+                imap = (cmb_map + noise_map)
+            else:
+                imap=load_websky_sims(s_cmbseed,s_n)     
 
         imap = imap
         imap=imap[0]
@@ -740,8 +712,6 @@ class SOLensInterface(object):
 
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
-            #imap=enmap.read_map(f"/global/cscratch1/sd/jia_qu/maps/websky/foreground_sims/foregroundmap_set{s_set}s_i{s_n}.fits")
-            #imap=enmap.read_map("/global/cscratch1/sd/jia_qu/maps/websky/maps/inpainted_set1s_i0.fits")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
         elif seed==(0,0,0) and foreground==False:
@@ -749,7 +719,13 @@ class SOLensInterface(object):
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
      
         else:
-            imap=load_websky_sims(s_cmbseed,s_n)
+            print("no foreground")
+            if foreground==False:
+                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
+                noise_map = self.get_noise_map(noise_seed,channel)
+                imap = (cmb_map + noise_map)
+            else:
+                imap=load_websky_sims(s_cmbseed,s_n)
      
             #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
 
