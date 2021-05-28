@@ -494,7 +494,7 @@ def reconvolve_maps(maps,mask,beamdec,beamconv):
     return reconvolved_map
 
 
-def convert_seeds(seed,nsims=100,ndiv=4):
+def convert_seeds(seed,nsims=2000,ndiv=4):
     # Convert the solenspipe convention to the Alex convention
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
@@ -511,7 +511,10 @@ def convert_seeds(seed,nsims=100,ndiv=4):
     return s_i,s_set,noise_seed
 
 def get_beamed_signal(s_i,s_set,beam,shape,wcs):
-    s_i,s_set,noise_seed = convert_seeds((0,s_set,s_i))
+    print(s_i,s_set)
+    s_i,s_set,_ = convert_seeds((0,s_set,s_i))
+    print(f"set:{s_set}")
+    print(f"s_i:{s_i}")
     cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
     cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
@@ -585,10 +588,29 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     zmap = omap.copy()
     gdicts = [{} for i in range(nsplits)]
     ind = 0
+
+    """
+    ras=np.delete(ras,202) 
+    decs=np.delete(decs,202)
+    ras=np.delete(ras,262) 
+    decs=np.delete(decs,262)
     ras=np.delete(ras,375) 
     decs=np.delete(decs,375)
     ras=np.delete(ras,698) 
     decs=np.delete(decs,698)
+    ras=np.delete(ras,833) 
+    decs=np.delete(decs,833)  
+    ras=np.delete(ras,880) 
+    decs=np.delete(decs,880) 
+    ras=np.delete(ras,995) 
+    decs=np.delete(decs,995)   
+    ras=np.delete(ras,999) 
+    decs=np.delete(decs,999)  
+    ras=np.delete(ras,1093) 
+    decs=np.delete(decs,1093)
+    ras=np.delete(ras,1094) 
+    decs=np.delete(decs,1094)   
+    """
     """
     ras=np.delete(ras,78) 
     decs=np.delete(decs,78) 
@@ -608,9 +630,41 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     ras=np.delete(ras,1095) 
     decs=np.delete(decs,1095)
     """
-    nmax=600
+    ra=ras.copy()
+    de=decs.copy()
+
+    #loop through all the ras and dec and delete those which are singular
+    ind=0
+    fault=[]
+    
+    for i in range(len(ras)):
+        print(i)
+        for j in range(nsplits):
+            print(f"split{j}")
+            try:
+                py,px = omap.sky2pix((decs[i]*utils.degree,ras[i]*utils.degree))
+                pbox = [[int(py) - N//2,int(px) - N//2],[int(py) + N//2,int(px) + N//2]]
+                thumb = enmap.extract_pixbox(omap[j], pbox)  
+                modrmap = thumb.modrmap()
+                thumb[:,modrmap<rmin] = 0
+                enmap.insert(zmap[j],thumb)
+                shape,wcs = thumb.shape,thumb.wcs
+                thumb_ivar = enmap.extract_pixbox(ivar[j][0], pbox)
+                pcov = pixcov.pcov_from_ivar(N,decs[i],ras[i],thumb_ivar,theory.lCl,beam_fn,iau=True,full_map=False)
+            except:
+                print("omiting singular matrix")
+                fault.append(i)
+
+    print(fault)
+    ran = np.delete(ra, fault)
+    den = np.delete(de, fault)
+
+
+
     inds = []
-    for ra,dec in zip(ras[:nmax],decs[:nmax]):
+    k=0
+
+    for ra,dec in zip(ran[k:],den[k:]):
         print(ind)
         for i in range(nsplits):
             py,px = omap.sky2pix((dec*utils.degree,ra*utils.degree))
@@ -620,24 +674,26 @@ def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
             thumb[:,modrmap<rmin] = 0
             enmap.insert(zmap[i],thumb)
             shape,wcs = thumb.shape,thumb.wcs
-            modlmap = enmap.modlmap(shape,wcs)
+            #modlmap = enmap.modlmap(shape,wcs)
             thumb_ivar = enmap.extract_pixbox(ivar[i][0], pbox)
             pcov = pixcov.pcov_from_ivar(N,dec,ra,thumb_ivar,theory.lCl,beam_fn,iau=True,full_map=False)
-            gdicts[i][ind] = pixcov.make_geometry(shape,wcs,rmin,n=N,deproject=True,iau=True,res=res,pcov=pcov)
-        inds.append(ind)
-        ind = ind + 1
+            gdicts[i][ind+k] = pixcov.make_geometry(shape,wcs,rmin,n=N,deproject=True,iau=True,res=res,pcov=pcov)
+        inds.append(ind+k)
+        ind = ind+1 
+                       
+
 
     imap = omap.copy()
 
     if null:
         for i in range(nsplits):
-            imap[i] = pixcov.inpaint(omap[i],np.asarray([decs[:nmax],ras[:nmax]]),hole_radius_arcmin=rmin/utils.arcmin,npix_context=N,resolution_arcmin=res/utils.arcmin,
+            imap[i] = pixcov.inpaint(omap[i],np.asarray([den[k:],ran[k:]]),hole_radius_arcmin=rmin/utils.arcmin,npix_context=N,resolution_arcmin=res/utils.arcmin,
                         cmb2d_TEB=None,n2d_IQU=None,beam2d=None,deproject=True,iau=True,tot_pow2d=None,
                         geometry_tags=inds,geometry_dicts=gdicts[0],verbose=True)
 
     else:
         for i in range(nsplits):
-            imap[i] = pixcov.inpaint(omap[i],np.asarray([decs[:nmax],ras[:nmax]]),hole_radius_arcmin=rmin/utils.arcmin,npix_context=N,resolution_arcmin=res/utils.arcmin,
+            imap[i] = pixcov.inpaint(omap[i],np.asarray([den[:],ran[:]]),hole_radius_arcmin=rmin/utils.arcmin,npix_context=N,resolution_arcmin=res/utils.arcmin,
                         cmb2d_TEB=None,n2d_IQU=None,beam2d=None,deproject=True,iau=True,tot_pow2d=None,
                         geometry_tags=inds,geometry_dicts=gdicts[i],verbose=True)
 
