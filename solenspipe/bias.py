@@ -43,7 +43,7 @@ elif set==2 or set==3:
 =================
 """
 
-def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi=True, 
+def mcrdn0(icov, get_kmap, power, nsims, qfunc1,get_kmap1=None, qfunc2=None, Xdat=None,Xdat1=None, use_mpi=True, 
          verbose=True, skip_rd=False):
          
     """
@@ -62,7 +62,9 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     a covariance calculation - otherwise, set to zero.
     get_kmap: function
         Function for getting the filtered a_lms of  data and simulation
-    maps. See notes at top of module.
+    get_kmap1: function , optional
+        Function for getting the filtered a_lms of  data and simulation
+    maps for a subset of the data, i.e split 1. See notes at top of module.
     power: function
         Returns C(l) from two maps x,y, as power(x,y). 
     nsims: int
@@ -83,7 +85,6 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     skip_rd: bool, optional
         Whether to skip the RDN0 terms. The first returned component
     is then None.
-
     Returns
     -------
     rdn0: (N*(N+1)/2,...) array
@@ -91,19 +92,20 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     the three components correspond to the gradient RDN0, the
     curl RDN0 and the gradient x curl RDN0. None is returned
     if skip_rd is True.
-
     mcn0: (N*(N+1)/2,...) array
         Estimate of the MCN0 bias. If N=2 for gradient and curl,
     the three components correspond to the gradient RDN0, the
     curl RDN0 and the gradient x curl RDN0.
     
     """
-    qa = qfunc1
+    qa = qfunc1 
     qb = qfunc2
 
     mcn0evals = []
     if not(skip_rd): 
         assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
         rdn0evals = []
 
     if use_mpi:
@@ -113,20 +115,30 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         
 
     for i in my_tasks:
-        i=i+1
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
+        if get_kmap1 is None:
+            Xs1=Xs
+        else:
+            Xs1=get_kmap1((icov,0,i))
         if not(skip_rd): 
-            qaXXs = qa(Xdat,Xs)
-            qbXXs = qb(Xdat,Xs) if qb is not None else qaXXs
-            qaXsX = qa(Xs,Xdat)
-            qbXsX = qb(Xs,Xdat) if qb is not None else qaXsX
+            qaXXs = qa(Xdat,Xs) 
+            qbXXs = qb(Xdat1,Xs1) if qb is not None else qaXXs #this is split 2
+            qaXsX = qa(Xs,Xdat)  #split 1
+            qbXsX = qb(Xs1,Xdat1) if qb is not None else qaXsX #this is split 2
             rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
                     + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
-        Xsp = get_kmap((icov,1,i))
-        qaXsXsp = qa(Xs,Xsp)
-        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
-        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
+        Xsp = get_kmap((icov,1,i)) 
+        if get_kmap1 is None:
+            Xsp1=Xsp
+        else:
+            Xsp1=get_kmap1((icov,1,i))
+
+        qaXsXsp = qa(Xs,Xsp) #split1 
+        qbXsXsp = qb(Xs1,Xsp1) if qb is not None else qaXsXsp #split2
+
+        qbXspXs = qb(Xsp1,Xs1) if qb is not None else qa(Xsp,Xs) #this is not present
+
         mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
