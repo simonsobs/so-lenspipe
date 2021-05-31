@@ -201,8 +201,11 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
-        assert est2 in ['SRC'] # TODO: add mask
-        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        assert est2 in ['SRC','MASK'] 
+        if est2=='SRC':
+            qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        elif est2=='MASK':
+            qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
             # Bias harden only gradient e.g. source hardening
@@ -1369,6 +1372,9 @@ class weighted_bin1D:
         
 def bias_hardened_n0(Nl,Nlbias,Cross):
     ret = Nl*0
+    print(len(Nl))
+    print(len(Nlbias))
+    print(len(Cross))
     ret[1:] = Nl[1:] / (1.-Nl[1:]*Nlbias[1:]*Cross[1:]**2.)
     return ret
 
