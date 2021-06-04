@@ -276,7 +276,6 @@ def rdn0_shear(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,
                 print(rdn0)
             if include_main:
                 print("main rdn0")
-                print(power(qa(X[0],Ys[1]),qb(A[0],Bs[1])))
                 rdn0 += power(qa(X[0],Ys[1]),qb(A[0],Bs[1])) + power(qa(Xs[0],Y[1]),qb(A[0],Bs[1])) \
                         + power(qa(Xs[0],Y[1]),qb(As[0],B[1])) + power(qa(X[0],Ys[1]),qb(As[0],B[1]))
                 if not(gaussian_sims):

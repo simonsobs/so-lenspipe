@@ -464,7 +464,7 @@ class SOLensInterface(object):
             alms.append(qe.filter_alms(oalms,sigma[i]*factor*f,lmin=lmin,lmax=lmax))
         return alms
 
-    def prepare_qe_map1(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_qe_map1(self,channel,seed,lmin,lmax,foreground=False,trispectrum=False):
 
         if not(self.zero_map):
             print("prepare map")
@@ -476,14 +476,26 @@ class SOLensInterface(object):
             if seed==(0,0,0) and foreground==True:
 
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+                #imap=enmap.read_map("/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
+
+            elif seed==(0,0,0) and trispectrum==True:
+                print("source trispectrum")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground.fits")
+                imap=enmap.read_map("/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
 
             elif seed==(0,0,0) and foreground==False:
-                print("no foreground")
+                print("cmb with no foreground")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
 
             else:
-  
-                imap=load_websky_sims(s_cmbseed,s_n)
+                if trispectrum==True:
+                    sstr = str(s_cmbseed).zfill(2)
+                    istr = str(s_n).zfill(5)
+                    fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                    print(fname)
+                    imap=enmap.read_map(fname)
+                else:
+                    imap=load_websky_sims(s_cmbseed,s_n)
             imap = imap[0]
 
             oalms = self.map2alm(imap)
@@ -506,7 +518,7 @@ class SOLensInterface(object):
             self.cache[seed] = (almt,almt,almt,almt,almt,almt)
             icov,s_set,i=seed
 
-    def prepare_multipole_shearT_map(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_multipole_shearT_map(self,channel,seed,lmin,lmax,foreground=False,trispectrum=False):
 
         if not(self.zero_map):
             print("prepare map")
@@ -516,13 +528,23 @@ class SOLensInterface(object):
             if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
+            elif seed==(0,0,0) and trispectrum==True:
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
             
             elif seed==(0,0,0) and foreground==False:
                 print(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
             else:
-                imap=load_websky_sims(s_cmbseed,s_n)
-                
+                if trispectrum:
+                    sstr = str(s_cmbseed).zfill(2)
+                    istr = str(s_n).zfill(5)
+                    fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                    print(fname)
+                    imap=enmap.read_map(fname)
+                else:
+                    print("no foreground")
+                    imap=load_websky_sims(s_cmbseed,s_n)                
 
             imap = imap
             imap=imap[0]
@@ -535,7 +557,7 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
             return almt
 
-    def prepare_m2_map(self,channel,seed,lmin,lmax,k,svd,old=False,foreground=False):
+    def prepare_m2_map(self,channel,seed,lmin,lmax,k,svd,old=False,foreground=False,trispectrum=False):
         """
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
@@ -543,7 +565,7 @@ class SOLensInterface(object):
         k=k
         if old==True:
             print("use asymmetric")
-            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}old.txt')
+            fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin_spline{k}old.txt')
         else:
             fl=np.loadtxt(f'/home/r/rbond/jiaqu/scratch/so_lens/highl_Lmin{k}.txt')
         print("loading m2 map for hybrid estimator")
@@ -553,13 +575,22 @@ class SOLensInterface(object):
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
- 
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
+        elif seed==(0,0,0) and trispectrum==True:
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
         elif seed==(0,0,0) and foreground==False:
             print(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
         else:
-            print("no foreground")
-            imap=load_websky_sims(s_cmbseed,s_n)
+            if trispectrum:
+                sstr = str(s_cmbseed).zfill(2)
+                istr = str(s_n).zfill(5)
+                fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                print(fname)
+                imap=enmap.read_map(fname)
+            else:
+                print("no foreground")
+                imap=load_websky_sims(s_cmbseed,s_n)
 
         imap = imap
         imap=imap[0]
@@ -578,7 +609,7 @@ class SOLensInterface(object):
             alms.append(qe.filter_alms(oalms,factor*fl[i],lmin=lmin,lmax=lmax))
         return alms
 
-    def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_shearT_map1(self,channel,seed,lmin,lmax,foreground=False,trispectrum=False):
 
         if not(self.zero_map):
             print("prepare map")
@@ -590,10 +621,17 @@ class SOLensInterface(object):
             if seed==(0,0,0) and foreground==True:
                 print("using foregrounds")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
-
+                #foreground only
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground.fits")
             
+            elif seed==(0,0,0) and trispectrum==True:
+                print("source trispectrum")
+                #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
+                imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_maskedSN20.fits")
+
+
             elif seed==(0,0,0) and foreground==False:
-                #print("no foreground")
+                print("cmb with gaussian fake foreground")
                 imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
 
             else:
@@ -602,11 +640,18 @@ class SOLensInterface(object):
                 noise_map = self.get_noise_map(noise_seed,channel)
                 imap = (cmb_map + noise_map)
                 """
-                imap=load_websky_sims(s_cmbseed,s_n)
+                if trispectrum==True:
+                    sstr = str(s_cmbseed).zfill(2)
+                    istr = str(s_n).zfill(5)
+                    fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                    print(fname)
+                    imap=enmap.read_map(fname)
+                
+                else:
+                    
+                    imap=load_websky_sims(s_cmbseed,s_n)
 
-            imap = imap
             imap=imap[0]
-
             oalms = self.map2alm(imap)
 
             oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
@@ -615,7 +660,7 @@ class SOLensInterface(object):
             almt = qe.filter_alms(oalms.copy(),filt_t,lmin=lmin,lmax=lmax)
             return almt
 
-    def prepare_multipoleshear_map1(self,channel,seed,lmin,lmax,foreground=False):
+    def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False,trispectrum=False):
         """
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
@@ -627,61 +672,28 @@ class SOLensInterface(object):
         if seed==(0,0,0) and foreground==True:
             print("using foregrounds")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground.fits") #foreground only
 
-
-        else:
-            print("no foreground")
-            if foreground==False:
-                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-                noise_map = self.get_noise_map(noise_seed,channel)
-                imap = (cmb_map + noise_map)
-            else:
-                imap=load_websky_sims(s_cmbseed,s_n)
-
-        imap = imap
-        imap=imap[0]
-        oalms = self.map2alm(imap)
-        oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
-        noise=hp.alm2cl(oalms)/self.wfactor(2)
-        
-        oalms[~np.isfinite(oalms)] = 0
-        oalms=oalms.astype(np.complex128)
-        ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-        nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
-        nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
-        #need to multiply by derivative cl
-        der=lambda x: np.gradient(x)
-        filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
-        almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
-        return almt
-
-    def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False):
-        """
-        Generates a beam-deconvolved simulation.
-        Filters it and caches it.
-        """
-        print("loading shear map")
-        icov,s_cmbseed,s_n=seed
-        s_i,s_set,noise_seed = convert_seeds(seed)
-
-        if seed==(0,0,0) and foreground==True:
-            print("using foregrounds")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
-
+        elif seed==(0,0,0) and trispectrum==True:
+            print("foreground only trispectrum")
+            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_maskedSN20.fits")
         elif seed==(0,0,0) and foreground==False:
-            #print("no foreground")
+            print("no foreground")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
      
         else:
-            print("no foreground")
-            if foreground==False:
-                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-                noise_map = self.get_noise_map(noise_seed,channel)
-                imap = (cmb_map + noise_map)
+
+            if trispectrum==True:
+                print("foreground only")
+                sstr = str(s_cmbseed).zfill(2)
+                istr = str(s_n).zfill(5)
+                fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                print(fname)
+                imap=enmap.read_map(fname)
             else:
                 imap=load_websky_sims(s_cmbseed,s_n)     
 
-        imap = imap
         imap=imap[0]
         oalms = self.map2alm(imap)
         oalms = curvedsky.almxfl(oalms,lambda x: 1./maps.gauss_beam(self.beam,x)) if not(self.disable_noise) else oalms
@@ -700,8 +712,8 @@ class SOLensInterface(object):
         #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
         almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
         return almt
-
-    def prepare_shear_map1(self,channel,seed,lmin,lmax,foreground=False):
+        
+    def prepare_multipoleshear_map1(self,channel,seed,lmin,lmax,foreground=False,trispectrum=False):
         """
         Generates a beam-deconvolved simulation.
         Filters it and caches it.
@@ -714,21 +726,24 @@ class SOLensInterface(object):
             print("using foregrounds")
             imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/masked_websky_alms_agressive.fits")
 
+        elif seed==(0,0,0) and trispectrum==True:
+            print("foreground only trispectrum")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_alms_foreground_masked.fits")
         elif seed==(0,0,0) and foreground==False:
-            #print("no foreground")
-            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
-     
-        else:
             print("no foreground")
-            if foreground==False:
-                cmb_map = self.get_beamed_signal(channel,s_i,s_set)
-                noise_map = self.get_noise_map(noise_seed,channel)
-                imap = (cmb_map + noise_map)
-            else:
-                imap=load_websky_sims(s_cmbseed,s_n)
-     
-            #imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/foreground_sims/foregroundmap_set{sstr}_{istr}.fits")
+            imap=enmap.read_map(f"/home/r/rbond/jiaqu/scratch/websky/websky/websky_gaussian_foreground.fits")
 
+        else:
+            
+            if trispectrum==True:
+                print("foreground only")
+                sstr = str(s_cmbseed).zfill(2)
+                istr = str(s_n).zfill(5)
+                fname = "/home/r/rbond/jiaqu/scratch/websky/websky/" + "gaussforeground_only%s_%s.fits" % (sstr,istr)
+                print(fname)
+                imap=enmap.read_map(fname)
+            else:
+                imap=load_websky_sims(s_cmbseed,s_n)     
         imap = imap
         imap=imap[0]
         oalms = self.map2alm(imap)
@@ -737,17 +752,16 @@ class SOLensInterface(object):
         
         oalms[~np.isfinite(oalms)] = 0
         oalms=oalms.astype(np.complex128)
-        cltotal = smooth_cls(hp.alm2cl(oalms)/self.wfactor(2))
         ls,nells,nells_P = self.get_noise_power(channel,beam_deconv=True)
-        cltotal = maps.interp(ls,cltotal) if not(self.disable_noise) else lambda x: x*0
         nells_T = maps.interp(ls,nells) if not(self.disable_noise) else lambda x: x*0
         nells_P = maps.interp(ls,nells_P) if not(self.disable_noise) else lambda x: x*0
         #need to multiply by derivative cl
         der=lambda x: np.gradient(x)
         filt_t = lambda x: (1./(x*(self.cltt(x) + nells_T(x))**2))*der(self.cltt(x))
-        #filt_t = lambda x: (1./(x*(cltotal(x))**2))*der(self.cltt(x))
         almt = qe.filter_alms(oalms,filt_t,lmin=lmin,lmax=lmax)
         return almt
+
+
 
 
     def prepare_m4temperature_map(self,channel,seed,lmin,lmax,foreground=False):
@@ -846,23 +860,17 @@ class SOLensInterface(object):
 
 
 
-    def get_smap(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
-        tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground)
-        tf=self.prepare_shear_map1(channel,seed,lmin,lmax,foreground=foreground)
+    def get_smap(self,channel,seed,lmin,lmax,filtered=True,foreground=False,trispectrum=False):
+        tmap=self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground,trispectrum=trispectrum)
+        tf=self.prepare_shear_map1(channel,seed,lmin,lmax,foreground=foreground,trispectrum=trispectrum)
         return tmap,tf
 
 
-    def get_m2map(self,channel,seed,lmin,lmax,k,svd,old=False,filtered=True,foreground=False):
-        t= self.prepare_multipole_shearT_map(channel,seed,lmin,lmax,foreground=foreground) #prepare the T map
-        tf=self.prepare_m2_map(channel,seed,lmin,lmax,k,svd,old=old,foreground=foreground)
+    def get_m2map(self,channel,seed,lmin,lmax,k,svd,old=False,filtered=True,foreground=False,trispectrum=False):
+        t= self.prepare_multipole_shearT_map(channel,seed,lmin,lmax,foreground=foreground,trispectrum=trispectrum) #prepare the T map
+        tf=self.prepare_m2_map(channel,seed,lmin,lmax,k,svd,old=old,foreground=foreground,trispectrum=trispectrum)
         return t,tf
-    """
-    def get_m2map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
-        tmap= self.prepare_shearT_map1(channel,seed,lmin,lmax,foreground=foreground)
-        #tf=self.prepare_m2_map(channel,seed,lmin,lmax,foreground=foreground)
-        tf=self.prepare_hybrid_map(channel,seed,lmin,lmax,foreground=foreground)
-        return tmap,tf
-    """
+
 
     def get_m4map(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
         tmap=self.prepare_m4temperature_map(channel,seed,lmin,lmax,foreground=foreground)
@@ -913,9 +921,9 @@ class SOLensInterface(object):
     def qfuncs_m4(self,Talm,fTalm):
         return qe.qe_m4(self.px,self.mlmax,Talm=Talm,fTalm=fTalm)
 
-    def get_kmap(self,channel,seed,lmin,lmax,filtered=True,foreground=False):
+    def get_kmap(self,channel,seed,lmin,lmax,filtered=True,foreground=False,trispectrum=False):
         # Wrapper around self.prepare_map that uses caching
-        if not(seed in self.cache.keys()): self.prepare_qe_map1(channel,seed,lmin,lmax,foreground=foreground)
+        if not(seed in self.cache.keys()): self.prepare_qe_map1(channel,seed,lmin,lmax,foreground=foreground,trispectrum=trispectrum)
         #xs = {'T':0,'E':1,'B':2}
         return self.cache[seed][:3] if filtered else self.cache[seed][3:]
 

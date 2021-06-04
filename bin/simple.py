@@ -40,6 +40,8 @@ parser.add_argument("--flat-sky-norm", action='store_true',help='Use flat-sky no
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
 parser.add_argument("--curl", action='store_true',help='curl reconstruction')
+parser.add_argument("--trispectrum", action='store_true',help='foreground trispectrum reconstruction')
+
 
 args = parser.parse_args()
 
@@ -75,7 +77,7 @@ for task in my_tasks:
 
     with bench.show("sim"):
         # Get simulated, prepared filtered T, E, B maps, i.e. (1/(C+N) * teb_alm)
-        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground)
+        t_alm,e_alm,b_alm = solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground,trispectrum=args.trispectrum)
         Tcmb = 2.726e6
         # Get the reconstructed map for the TT estimator
         
@@ -202,9 +204,14 @@ if rank==0:
         icl = s.stats['icl']['mean']
         spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
         if args.foreground:
-            np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',acl)
-            np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',xcl)
-            np.savetxt(f'{spath}/norm_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground.txt',xcl/icl)
+            np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foreground_masked.txt',acl)
+            np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foregroundt_masked.txt',xcl)
+            np.savetxt(f'{spath}/norm_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}foregroundt.txt',xcl/icl)
+        
+        elif args.trispectrum:
+            np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}trispectrum_masked.txt',acl)
+            np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}trispectrum_masked.txt',xcl)
+            np.savetxt(f'{spath}/norm_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}trispectrum_masked.txt',xcl/icl)
         else:
             np.savetxt(f'{spath}/acl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}.txt',acl)
             np.savetxt(f'{spath}/xcl_{args.label}_lmin{args.lmin}_lmax{args.lmax}_nsims{args.nsims}.txt',xcl)

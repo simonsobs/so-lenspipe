@@ -36,6 +36,8 @@ parser.add_argument("--foreground", action='store_true',help='Use or not use for
 parser.add_argument("--ps_bias_hardening", action='store_true',help='TT point source hardening estimator.')
 parser.add_argument("--mask_bias_hardening", action='store_true',help='TT mask hardening estimator.')
 parser.add_argument("--curl", action='store_true',help='curl reconstruction')
+parser.add_argument("--trispectrum", action='store_true',help='foreground trispectrum reconstruction')
+
 
 args = parser.parse_args()
 solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr = solenspipe.initialize_args(args)
@@ -44,7 +46,7 @@ spath="/home/r/rbond/jiaqu/scratch/so_lens/shear/"
 
 w4 = solint.wfactor(4)
 print(w4)
-get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground)
+get_kmap = lambda seed: solint.get_kmap(channel,seed,lmin,lmax,filtered=True,foreground=args.foreground,trispectrum=args.trispectrum)
 power = lambda x,y: hp.alm2cl(x,y)
 if args.curl:
     qfunc = solint.qfunc_curl
@@ -91,6 +93,8 @@ elif args.ps_bias_hardening:
 else:
     if args.foreground:
         io.save_cols(f'{spath}/rdn0_foregrounds_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],rdn0[:nmax]))
+    if args.trispectrum:
+        io.save_cols(f'{spath}/rdn0_trispectrum_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],rdn0[:nmax]))
     else:
         print("saving no foregrounds")
         io.save_cols(f'{spath}/rdn0_{polcomb}_{isostr}_{car}_{nsims}_{args.label}_lmin{args.lmin}_lmax{args.lmax}.txt',(Als['L'],rdn0[:nmax]))
