@@ -7,6 +7,7 @@ from falafel import qe,utils
 import solenspipe
 from enlib import bench
 from solenspipe import bias,biastheory
+from solenspipe import four_split_phi,split_phi_to_cl
 import pytempura
 import healpy as hp
 from enlib import bench
@@ -14,20 +15,8 @@ import matplotlib.pyplot as plt
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-"""
-Here we calculate RDN0, MCN0 and MCN1 for any estimator combination, e.g.
-MVMV
-Mvpol Mvpol
-TTTT
-TTTE
-TTEE
-TTEB
-etc.
-and compare against theory N0 on the full noiseless sky
-for both gradient and curl
-with and without bias hardening of TT.
-"""
 
+#srun -n 40 python 4split_rdn0.py test TT TT
 import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Verify and benchmark RDN0 on the full noiseless sky.')
@@ -56,96 +45,7 @@ nsims_n1 = args.nsims_n1 # number of sims to test MCN1
 comm = mpi.MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None,qfunc2=None):
-    """
-    return the phi_alms used for the 4 split estimator
-    """
-    q_bh_1=q_func1
-    if Xdatp_0 is None:
-        
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_3))
-        phi_xy01 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_1))
-        phi_xy02 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_2))
-        phi_xy03 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_3))
-        phi_xy10=phi_xy01
-        phi_xy12= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))
-        phi_xy13= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_3))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        phi_xy23=plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_3))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
-    
-    else:
 
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_3))
-        phi_xy01 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_1))
-        phi_xy02 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_2))
-        phi_xy03 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_3))
-        phi_xy10=phi_xy01
-
-        #phi_xy10=plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_0))
-        phi_xy12= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_2))
-        phi_xy13= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_3))
-        #phi_xy20=plensing.phi_to_kappa(q_bh_1(Xdatp_2,Xdatp_0))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        #phi_xy21=plensing.phi_to_kappa(q_bh_1(Xdatp_2,Xdatp_1))
-        phi_xy23=plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_3))
-        #phi_xy30=plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_0))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        #phi_xy31=plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_1))
-        #phi_xy32=plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_2))
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
-
-    phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
-    
-
-    return phi_xy
-
-def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
-    phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
-    phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
-    if cross is False:
-        tg1=m**4*cs.alm2cl(phi_x,phi_xp)
-        tg2=-4*m**2*(cs.alm2cl(phi_x0,phi_x0p)+cs.alm2cl(phi_x1,phi_x1p)+cs.alm2cl(phi_x2,phi_x2p)+cs.alm2cl(phi_x3,phi_x3p))
-        tg3=m*(cs.alm2cl(phi01,phi01p)+cs.alm2cl(phi02,phi02p)+cs.alm2cl(phi03,phi03p)+cs.alm2cl(phi12,phi12p)+cs.alm2cl(phi13,phi13p)+cs.alm2cl(phi23,phi23p))
-    else:
-        tg1=m**4*cs.alm2cl(phi_x,ikalm)
-        tg2=-4*m**2*(cs.alm2cl(phi_x0,ikalm)+cs.alm2cl(phi_x1,ikalm)+cs.alm2cl(phi_x2,ikalm)+cs.alm2cl(phi_x3,ikalm))
-        tg3=m*(cs.alm2cl(phi01,ikalm)+cs.alm2cl(phi02,ikalm)+cs.alm2cl(phi03,ikalm)+cs.alm2cl(phi12,ikalm)+cs.alm2cl(phi13,ikalm)+cs.alm2cl(phi23,ikalm))
-
-
-    auto =(1/(m*(m-1)*(m-2)*(m-3)))*(tg1+tg2+tg3)
-    return auto
 
 # Geometry
 px_arcmin = 2.0  / (args.lmax / 3000)
@@ -259,16 +159,13 @@ def get_kmap3(seed):
 
 
 
-
-
-
 with bench.show("prep"):
     q1 = q_nobh_1
     q2 = q_nobh_1 
 
     powfunc = lambda x,y: split_phi_to_cl(x,y)
 
-    phifunc=lambda Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0,Xdatp_1,Xdatp_2,Xdatp_3,qf:four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0,Xdatp_1,Xdatp_2,Xdatp_3,qf)
+    phifunc=lambda Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0,Xdatp_1,Xdatp_2,Xdatp_3,qf:four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0,Xdatp_1,Xdatp_2,Xdatp_3,q_func1=qf)
 
     bias_nobh = {}
     bias_bh = {}
@@ -293,15 +190,15 @@ with bench.show("rd"):
                             q1, get_kmap1=get_kmap1,get_kmap2=get_kmap2,get_kmap3=get_kmap3,
                             qfunc2=None,
                             Xdat=Xdat0,Xdat1=Xdat1,Xdat2=Xdat2,Xdat3=Xdat3,
-                            use_mpi=True, skip_rd=True) 
+                            use_mpi=True, skip_rd=False) 
 
 
 
-    #rdn0 = rdn0 * (ells*(ells+1.)/2.)**2.
-    mcn0 = mcn0 * (ells*(ells+1.)/2.)**2.
+    rdn0 = rdn0
+    mcn0 = mcn0
     bhlab='nobh'
     if rank==0: 
-        #np.save(f'{opath}rdn0_{bhlab}_{e1}_{e2}no.npy',rdn0)
-        np.save(f'{opath}mcn0_{bhlab}_{e1}_{e2}no.npy',mcn0)
+        np.save(f'{opath}rdn0_{bhlab}_{e1}_{e2}.npy',rdn0)
+        np.save(f'{opath}mcn0_{bhlab}_{e1}_{e2}.npy',mcn0)
 
 

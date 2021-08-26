@@ -1,6 +1,8 @@
 from __future__ import print_function
 from orphics import maps,io,cosmology,stats,mpi
 from pixell import enmap,lensing as plensing,curvedsky as cs,bunch,utils as putils
+from solenspipe import four_split_phi,split_phi_to_cl
+
 import numpy as np
 import os,sys
 from falafel import qe,utils
@@ -28,7 +30,7 @@ with and without bias hardening of TT.
 """
 
 import argparse
-# Parse command line
+# srun -n 1 -u python 4split_auto.py TT TT
 parser = argparse.ArgumentParser(description='Verify and benchmark RDN0 on the full noiseless sky.')
 parser.add_argument("est1", type=str,help='Estimator 1, one of TT,TE,EE,EB,TB,MV,MVPOL.')
 parser.add_argument("est2", type=str,help='Estimator 2, same as above.')
@@ -37,117 +39,9 @@ parser.add_argument( "--healpix", action='store_true',help='Use healpix instead 
 parser.add_argument( "--lmax",     type=int,  default=3000,help="Maximum multipole for lensing.")
 parser.add_argument( "--lmin",     type=int,  default=100,help="Minimum multipole for lensing.")
 args = parser.parse_args()
-#Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,
-def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,q_func1,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,qfunc2=None):
-    """Return kappa_alms combinations required for the 4cross estimator.
-
-    Args:
-        Xdat_0 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 0
-        Xdat_1 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 1
-        Xdat_2 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 2
-        Xdat_3 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 3
-        q_func1 (function): function for quadratic estimator
-        Xdatp_0 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 0 used for RDN0 for different sim data combination
-        Xdatp_1 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 1 used for RDN0 for different sim data combination
-        Xdatp_2 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 2 used for RDN0 for different sim data combination
-        Xdatp_3 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 3 used for RDN0 for different sim data combination
-        qfunc2 ([type], optional): [description]. Defaults to None.
-
-    Returns:
-        array: Combination of reconstructed kappa alms
-    """
-    q_bh_1=q_func1
-    if Xdatp_0 is None:
-        
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_3))
-        phi_xy01 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_1))
-        phi_xy02 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_2))
-        phi_xy03 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_3))
-        phi_xy10=phi_xy01
-        phi_xy12= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))
-        phi_xy13= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_3))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        phi_xy23=plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_3))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
-    
-    else:
-
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_3))
-        phi_xy01 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_1))
-        phi_xy02 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_2))
-        phi_xy03 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_3))
-        phi_xy10=phi_xy01
-
-        phi_xy12= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_2))
-        phi_xy13= plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_3))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        phi_xy23=plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_3))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
-
-    phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
-    
-
-    return phi_xy
-
-def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
-    """Generate 4cross Clkk
-
-    Args:
-        xy (array): array of kappa_alms obtained from four_split_phi
-        uv (array): array of kappa_alms obtained from four_split_phi
-        m (int, optional): [description]. Defaults to 4.
-        cross (bool, optional): Compute the cross spectrum between auto and input. Defaults to False.
-        ikalm (array, optional): Used if cross is True, input theory kappa alms. Defaults to None.
-
-    Returns:
-        [array]: reconstructed clkk
-    """
-    phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
-    phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
-    if cross is False:
-        tg1=m**4*cs.alm2cl(phi_x,phi_xp)
-        tg2=-4*m**2*(cs.alm2cl(phi_x0,phi_x0p)+cs.alm2cl(phi_x1,phi_x1p)+cs.alm2cl(phi_x2,phi_x2p)+cs.alm2cl(phi_x3,phi_x3p))
-        tg3=m*(cs.alm2cl(phi01,phi01p)+cs.alm2cl(phi02,phi02p)+cs.alm2cl(phi03,phi03p)+cs.alm2cl(phi12,phi12p)+cs.alm2cl(phi13,phi13p)+cs.alm2cl(phi23,phi23p))
-    else:
-        tg1=m**4*cs.alm2cl(phi_x,ikalm)
-        tg2=-4*m**2*(cs.alm2cl(phi_x0,ikalm)+cs.alm2cl(phi_x1,ikalm)+cs.alm2cl(phi_x2,ikalm)+cs.alm2cl(phi_x3,ikalm))
-        tg3=m*(cs.alm2cl(phi01,ikalm)+cs.alm2cl(phi02,ikalm)+cs.alm2cl(phi03,ikalm)+cs.alm2cl(phi12,ikalm)+cs.alm2cl(phi13,ikalm)+cs.alm2cl(phi23,ikalm))
 
 
-    auto =(1/(m*(m-1)*(m-2)*(m-3)))*(tg1+tg2+tg3)
-    return auto
+
 
 with bench.show("INIT"):
 
@@ -323,7 +217,7 @@ for task in my_tasks:
         Xdat_3 = get_kmap3((0,0,task))
 
         powfunc = lambda x,y,m,cross,ikalm: split_phi_to_cl(x,y,m,cross,ikalm)
-        phifunc=lambda Xdat_0,Xdat_1,Xdat_2,Xdat_3,qf: four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,qf)
+        phifunc=lambda Xdat_0,Xdat_1,Xdat_2,Xdat_3,qf: four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,q_func1=qf)
     with bench.show("alm2cl and append"):
         uicl = cs.alm2cl(ikalm,ikalm)
         #xy=phifunc(Xdat_0,Xdat_1,Xdat_2,Xdat_3,q_nobh_1,Xdat_0,Xdat_1,Xdat_2,Xdat_3)

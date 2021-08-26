@@ -510,7 +510,58 @@ def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
 
 def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
          verbose=True, skip_rd=False):
-         
+    """    
+    Using Monte Carlo sims, this function calculates
+    the anisotropic Gaussian N0 bias
+    between two quadratic estimators. It returns both the
+    data realization-dependent version (RDN0) and the pure-simulation
+    version (MCN0).
+
+    
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+    skip_rd: bool, optional
+        Whether to skip the RDN0 terms. The first returned component
+    is then None.
+
+    Returns
+    -------
+    rdn0: (N*(N+1)/2,...) array
+        Estimate of the RDN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0. None is returned
+    if skip_rd is True.
+
+    mcn0: (N*(N+1)/2,...) array
+        Estimate of the MCN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0.
+    
+    
+    """
     
     qa = phifunc 
     qf1 = qfunc1
@@ -568,4 +619,3 @@ def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_km
         avgrdn0 = None
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
-
