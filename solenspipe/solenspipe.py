@@ -50,7 +50,7 @@ def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
         phi_xy02 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_0)))
         phi_xy03 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_0)))
         phi_xy10=phi_xy01
-        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2)))
+        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_1)))
         phi_xy13= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_1)))
         phi_xy20=phi_xy02
         phi_xy21=phi_xy12
