@@ -395,7 +395,7 @@ def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
         alm2map = cs.alm2map_healpix
         template = np.zeros([2,12*nside**2])
     else:
-        minfo=cs.match_predefined_minfo(Q)
+        minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
         if lmax is None:
             lmax = np.min(np.pi/(Q.pixshape()))
         map2alm = cs.map2alm
@@ -516,7 +516,8 @@ def get_beamed_signal(s_i,s_set,beam,shape,wcs):
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
     cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
-    cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
+    if beam is  not None:
+        cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
     return cmb_map
 
