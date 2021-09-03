@@ -205,7 +205,6 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=No
         if est2=='SRC':
             qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
         elif est2=='PH':
-            print("PH WUOEONWO")
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,profile,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
