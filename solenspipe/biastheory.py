@@ -1033,7 +1033,51 @@ def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NO
             diff.append(der)
         der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
         derlist.append(der)
-        np.savetxt('../data/n0{}dcltt.txt'.format(keys[k]),der)
+    return derlist
+
+
+def pyn0derivative_cltt(cl_array,noise,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
+    """
+    Compute derivative of N0 wrt cltt
+    Parameters
+    ----------
+    cltt : 1d array
+           Cltt to be perturbed
+    bins : 1d array
+           Multipoles in which derivatives are going to be calculated.
+    n0bins: 1d array
+            Multipoles of the N0 bias used.
+    
+    Returns
+    List of arrays corresponding to the derivatives of the polcomb combinations [TT,EE,EB,TE,TB]
+    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
+    """
+    bins=bins-2
+    array1001=perturbe_clist(cl_array,bins,1.001)
+    array999=perturbe_clist(cl_array,bins,0.999)
+    N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
+    N0999=[[],[],[],[],[]]
+    delta=diff_cl(cl_array,bins)
+
+    for i in range(len(array1001)):
+        print(i)
+        
+        a=compute_n0_py(clpp,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        b=compute_n0_py(clpp,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
+        for j in range(len(N1001)):
+            N1001[j].append(a[j])
+            N0999[j].append(b[j])
+    
+    keys=['TT','EE','EB','TE','TB']
+    
+    derlist=[]
+    for k in range(len(keys)):
+        diff=[n0bins]
+        for i in range(len(N1001[1])):
+            der=((N1001[k][i][:len(n0bins)]-N0999[k][i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
+            diff.append(der)
+        der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
+        derlist.append(der)
     return derlist
     
 def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
