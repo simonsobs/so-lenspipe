@@ -962,7 +962,8 @@ contains
 
     
   
-    subroutine compute_n0(Cphi,lensedcmbfile,Tfile,Efile,Bfile,Xfile,lmin_filter,lmaxout,lmax,lmax_TT,lmaxmax,n0tt,n0ee,n0eb,n0te,n0tb,L_min, Lstep)
+    subroutine compute_n0(Cphi,lensedcmbfile,Tfile,Efile,Bfile,Xfile,lmin_filter,lmaxout,lmax,lmax_TT,lmaxmax,n0tt, &
+         n0ee,n0eb,n0te,n0tb,L_min, Lstep)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N0 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1038,7 +1039,10 @@ contains
 
     end subroutine ReadPowernum
 
-    subroutine compute_n1(C_phi_phi,Lens_norm_phi,C_CMB_fiducial,C_TT_response,C_EE_response,C_BB_response,C_TE_response,C_TT_total_filter,C_EE_total_filter,C_BB_total_filter,lmin_CMB,kappa_Lmax,lmax_CMB,kappa_L_step,kappa_Lmin,n1theta,n1ee,n1eb,n1te,n1tb,lmaxmax)
+    subroutine compute_n1(C_phi_phi,Lens_norm_phi,C_CMB_fiducial,C_TT_response, &
+         C_EE_response,C_BB_response,C_TE_response,C_TT_total_filter,C_EE_total_filter, &
+         C_BB_total_filter,lmin_CMB,kappa_Lmax,lmax_CMB,kappa_L_step,kappa_Lmin,n1theta, &
+         n1ee,n1eb,n1te,n1tb,lmaxmax)
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! Interface to python to compute N1 bias
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1190,7 +1194,8 @@ contains
         real(dp):: Norms(lmaxout,n_est)
         integer file_id_PS
         real(dp) this13, this24
-        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
+        real(dp),  DIMENSION((lmaxout-L_min)/Lstep+1),intent(out) ::  n1ttee,n1tteb,n1ttte, &
+             n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
         character(LEN=10) outtag
         CHARACTER(LEN=13) :: creturn
 
@@ -1376,7 +1381,8 @@ contains
         real(dp) :: CXf(lmaxmax), CEf(lmaxmax),CBf(lmaxmax), CTf(lmaxmax)
         real(dp) :: CEobs(lmaxmax), CTobs(lmaxmax), CBobs(lmaxmax)
         real(dp), intent(in) :: C_EE_total_filter(lmaxmax), C_TT_total_filter(lmaxmax), C_BB_total_filter(lmaxmax)
-        real(dp),dimension((kappa_Lmax-kappa_Lmin)/kappa_L_step+1), intent(out) ::  n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
+        real(dp),dimension((kappa_Lmax-kappa_Lmin)/kappa_L_step+1), intent(out) ::  n1ttee,n1tteb, &
+             n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb
         
 
         call ReadPowernum(C_CMB_fiducial,C_TT_response,C_EE_response,C_BB_response,C_TE_response,&
@@ -1384,7 +1390,8 @@ contains
 
         call GetN1mix(Lens_norm_phi, .true. ,lmin_CMB,lmax_CMB,kappa_Lmax,lmaxmax,n_est, CPhi,&
                             & CT, CE, CX, CB, CTf, CEf, CXf, CBf, C_TT_total_filter, C_EE_total_filter, &
-                            & C_BB_total_filter, n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete,n1eetb,n1ebte,n1ebtb,n1tetb,kappa_L_step,kappa_Lmin)
+                            & C_BB_total_filter, n1ttee,n1tteb,n1ttte,n1tttb,n1eeeb,n1eete, &
+                            n1eetb,n1ebte,n1ebtb,n1tetb,kappa_L_step,kappa_Lmin)
 
     end subroutine compute_n1mix
 
