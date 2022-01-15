@@ -1,6 +1,8 @@
 from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
+from solenspipe import biastheory as nbias
+
 from orphics import maps,io,cosmology,stats,mpi # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing, enplot
 from pixell import curvedsky as cs,utils as putils
@@ -58,11 +60,11 @@ ucls,tcls = utils.get_theory_dicts(nells=noise,lmax=mlmax,grad=True)
 
 est_norm_list = ['TT','TE','EE','EB','TB','MV']
 bh = args.bh
-Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+#Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
 #Als=np.load(f'{args.output_dir}/Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy',allow_pickle='TRUE').item()
 
-np.save(f'{input_path}Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy', Als) 
-
+#np.save(f'{input_path}Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy', Als) 
+Als=np.load(f'{input_path}Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy',allow_pickle='TRUE').item()
 
     
 config = io.config_from_yaml("/home/r/rbond/jiaqu/falafel/input" + "/config.yml")
@@ -79,10 +81,10 @@ def analytic_n1(min,noise,lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
 
     n1fname=opath+"analytic_n1.txt"
     #ls,nells,nells_P=splitnull.get_ACT_noisepower(qids[0],1,0,mlmax,mask,args.noise) #normalization coming from the 150Ghz map
-    NOISE_LEVEL=noise['TT'][:lmax]
-    polnoise=noise['EE'][:lmax]
-    LMAX_TT=Lmaxout
-    TMP_OUTPUT="/home/r/rbond/jiaqu/scratch/DR6/coaddMV/stage_norm/"
+    nells=noise['TT'][:lmax]
+    nellsp=noise['EE'][:lmax]
+    Lmax_TT=Lmaxout
+    tmp_output="/home/r/rbond/jiaqu/scratch/DR6/coaddMV/stage_norm/"
     LCORR_TT=0
     lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
     cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
@@ -103,13 +105,46 @@ def analytic_n1(min,noise,lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
     ntb=Als['TB'][0][2:]
     nbb=np.ones(len(ntb))
     norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
-    #n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,Lmaxout,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-
-    n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,Lmaxout,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
-    n1mv=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,Lmaxout,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out)
+    n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+    #n1mv=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
     n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
 
     return n1bins,n1tt 
 
-N1=analytic_n1(args.lmin,noise,args.lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None)
-np.save(f'{input_path}/N1_lmin{args.lmin}_lmax{args.lmax}.npy',N1)
+#N1=analytic_n1(args.lmin,noise,args.lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None)
+
+
+#DERIVATIVES WRT cls
+Lmin_out=2
+Lmaxout=3000
+Lstep=20
+nells=noise['TT'][:lmax]
+nellsp=noise['EE'][:lmax]
+Lmax_TT=Lmaxout
+tmp_output="/home/r/rbond/jiaqu/scratch/DR6/coaddMV/stage_norm/"
+LCORR_TT=0
+lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
+cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
+ls = np.arange(Als['TT'][0].size)
+#arrays with l starting at l=2"
+#clphiphi array starting at l=2
+clpp=lens[5,:][:8249]
+#cls is an array containing [cltt,clee,clbb,clte] used for the filters
+cltt=cls[1]       
+clee=cls[2]
+clbb=cls[3]
+clte=cls[4]
+bins=np.arange(Als['TT'][0].size)[2:]
+ntt=Als['TT'][0][2:]
+nee=Als['EE'][0][2:]
+neb=Als['EB'][0][2:]
+nte=Als['TE'][0][2:]
+ntb=Als['TB'][0][2:]
+nbb=np.ones(len(ntb))
+norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
+bins=np.array([900, 1700,1800,1900,2000]) #ells where derivatives are taken
+n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
+#n1=nbias.n1derivative_cltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+n1=nbias.n1derivative_clcmb('TT',bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+
+np.save(f'{input_path}/N1derTTmpi_lmin{args.lmin}_lmax{args.lmax}.npy',n1)

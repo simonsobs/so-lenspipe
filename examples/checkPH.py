@@ -65,7 +65,7 @@ with bench.show("INIT"):
     est_norm_list = ['TT','src']
 
     #normalization for TT
-    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    #Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
 
     #tcls_norm["TT"][0:3000] /= (profile**2)[0:3000]
     
@@ -76,7 +76,7 @@ with bench.show("NORM"):
     R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax,profile=profile)
     #R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     #normalization filter for tsz has an extra profile function
-    Als_src = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax,profile=profile)
+    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax,profile=profile)
     ls = np.arange(Als['TT'][0].size)
 
     # Convert to noise per mode on lensing convergence
@@ -84,7 +84,7 @@ with bench.show("NORM"):
     e2=e1
     Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
     Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
-    Nl_g_bh = solenspipe.bias_hardened_n0(Als[e1][0],Als_src['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+    Nl_g_bh = solenspipe.bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
   
     if rank==0:
         np.savetxt(f'{solenspipe.opath}Nlg_{e1}_{e2}.txt',Nl_g)
@@ -106,8 +106,8 @@ cents = binner.cents
 with bench.show("QFUNC"):
     # These are the qfunc lambda functions we will use with RDN0 and MCN1
 
-    q_bh_1 = solenspipe.get_qfunc(px,ucls,mlmax,e1,Al1=Als[e1],est2='SRC',Al2=Als_src['src'],R12=R_src_tt,profile=profile) 
-    q_bh_2 = solenspipe.get_qfunc(px,ucls,mlmax,e2,Al1=Als[e2],est2='SRC',Al2=Als_src['src'],R12=R_src_tt,profile=profile) 
+    q_bh_1 = solenspipe.get_qfunc(px,ucls,mlmax,e1,Al1=Als[e1],est2='SRC',Al2=Als['src'],R12=R_src_tt,profile=profile) 
+    q_bh_2 = solenspipe.get_qfunc(px,ucls,mlmax,e2,Al1=Als[e2],est2='SRC',Al2=Als['src'],R12=R_src_tt,profile=profile) 
 
 
 def get_kmap(seed):
@@ -136,7 +136,7 @@ for task in my_tasks:
         #tsz profile reconstruction
         qfunc_tsz = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
         tsz_reconalm=qfunc_tsz(Xdat,Xdat)
-        tsz_reconalm=cs.almxfl(tsz_reconalm,Als_src['src'])
+        tsz_reconalm=cs.almxfl(tsz_reconalm,Als['src'])
         tsz_cl = cs.alm2cl(tsz_reconalm,tsz_reconalm)
         np.savetxt(f'{solenspipe.opath}tsz_cl',tsz_cl)
         uicl = cs.alm2cl(ikalm,ikalm)
