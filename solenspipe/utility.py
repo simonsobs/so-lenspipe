@@ -239,17 +239,18 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True)
         print(i)
         if a!=b:
             d_a=map_list[i][a]-coadd_a
-            noise_a=d_a*mask
+            #noise_a=d_a*mask
+            noise_a=d_a #noise already masked
             alm_a=cs.map2alm(noise_a,lmax=6000)
             d_b=map_list[i][b]-coadd_b
-            noise_b=d_b*mask
+            noise_b=d_b
             alm_b=cs.map2alm(noise_b,lmax=6000)
             cls = hp.alm2cl(alm_a,alm_b)
             cl_ab.append(cls)
         else:
             d_a=map_list[i][a]-coadd_a
 
-            noise_a=d_a*mask
+            noise_a=d_a
     
             print("generating alms")
             alm_a=cs.map2alm(noise_a,lmax=6000)
@@ -728,7 +729,7 @@ def w_n(mask,n):
     pmap = enmap.pixsizemap(mask.shape,mask.wcs)
     return wfactor(n,mask,sht=True,pmap=pmap)
 
-def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", inv_pixwin_lxly=None):
+def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deconvolve=False):
 
     """Filter the map in Fourier space removing modes in a horizontal and vertical band
     defined by hk_mask and vk_mask. This is a faster version that what is implemented in pspy
@@ -763,8 +764,10 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", inv_
     ft[...,: , id_vk] = 0.
     ft[...,id_hk,:]   = 0.
 
-    if inv_pixwin_lxly is not None:
-        ft  *= inv_pixwin_lxly
+    if deconvolve:
+        pow=-1
+        wy, wx = enmap.calc_window(imap.shape)
+        ft = ft* wy[:,None]**pow * wx[None,:]**pow
         
     imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
     return imap
@@ -1376,7 +1379,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross
         prefactor=1/(1-nlpp*nlss*response**2)**2
         n0TTg=prefactor*(n0TTg+n0TTs+n0TTx)
         #n0TTEE=(n0TTEE)/(1-nlpp*nlss*response**2)
-        n0TTTE=(n0TTTE-AgTT*AsTT*(AxTT0-AxTT1)*nlpp*response)/(1-nlpp*nlss*response**2)
+        n0TTTE=(n0TTTE-AgTT*AsTT*(AxTT0-AxTT1)*nlpp*response)/(1-nlpp*nlss*response**2) #normalization should be AgTE
         #n0TTEE=(n0TTEE)/(1-nlpp*nlss*response**2)
         #n0TTTE=(n0TTTE)/(1-nlpp*nlss*response**2)
 
