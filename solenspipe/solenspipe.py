@@ -1,9 +1,15 @@
 from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
+<<<<<<< Updated upstream
 from orphics import maps,io,cosmology,mpi,stats # msyriac/orphics ; pip install -e . --user
 from pixell import enmap,lensing as plensing,curvedsky, utils, enplot
 
+=======
+from orphics import maps,io,cosmology,mpi
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
+import pytempura
+>>>>>>> Stashed changes
 import numpy as np
 import os,sys
 import healpy as hp

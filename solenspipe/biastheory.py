@@ -834,7 +834,7 @@ def compute_n0mv(
     
 def n0mvderivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
     """
-    Compute derivative of N0 wrt cltt
+    Compute derivative of N0[polN0] wrt Cl^{polcomb}
     Parameters
     ----------
     cltt : 1d array
@@ -848,341 +848,62 @@ def n0mvderivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,
     List of arrays corresponding to the derivatives of the polcomb combinations [TT,EE,EB,TE,TB]
     with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
     """
-
+    est_norm_list=[polN0]
+    ells = np.arange(lmax+1)
+    ucls = {}
+    tcls = {}
     bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    N1001=[] #list of lists containing tt,ee,eb,te,tb
-    N0999=[]
-    delta=diff_cl(cl_array,bins)
+    pol_dict={'TT':clgrad[0],'TE':clte,'EE':clee,'BB':clbb}
+    array1001=perturbe_clist(pol_dict[polcomb],bins,1.001)
+    array999=perturbe_clist(pol_dict[polcomb],bins,0.999)
 
-    for i in range(len(array1001)):
-        a=compute_n0mv(clpp,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0mv(clpp,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        N1001.append(a)
-        N0999.append(b)
+    N1001=[] 
+    N0999=[]
+    delta=diff_clpy(pol_dict[polcomb],bins)
+    ucls['TT'] = clgrad[0][:8000] #otherwise tempura gives error
+    ucls['TE'] = clgrad[1][:8000]
+    ucls['EE'] = clgrad[2][:8000]
+    ucls['BB'] = clgrad[3][:8000]
     
+    tcls['TT'] = cltt[:8000]+maps.interp(np.arange(len(nells)),nells)(np.arange(8000))
+    tcls['TE'] = clte[:8000]
+    tcls['EE'] = clee[:8000]+maps.interp(np.arange(len(nellsp)),nellsp)(np.arange(8000))
+    tcls['BB'] = clbb[:8000]+maps.interp(np.arange(len(nellsp)),nellsp)(np.arange(8000))
+
+    comm,rank,my_tasks = mpi.distribute(len(array1001))
+    print(my_tasks)
+
+    high=[]
+    low=[]
+
+    s = stats.Stats(comm)
+    for i in my_tasks:
+        ucls[polcomb]=array1001[i]
+        a = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
+        ucls[polcomb]=array999[i]
+        b= pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
+        high.append(a)
+        low.append(b)
+
+    h = utils.allgatherv(high,comm)
+    l = utils.allgatherv(low,comm)
+
+    for j in range(len(h)):
+        print(j)
+        N1001.append(h[j])
+        N0999.append(l[j])
 
     derlist=[]
     diff=[n0bins]
+    
     for i in range(len(N1001)):
-            der=((N1001[i][:len(n0bins)]-N0999[i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-    der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
+        der=((N1001[i][:len(n0bins)]-N0999[i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
+        diff.append(der)   
+    der=np.insert(np.transpose(diff),0,np.insert(bins,0,0),axis=0)      
     derlist.append(der)
-    np.savetxt('../data/n0mvdcltt.txt',der)
     return der
 
-def n0mvderivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clee
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clee to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n1bins: 1d array
-            Multipoles of the N1 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
- 
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    N1001=[] #list of lists containing tt,ee,eb,te,tb
-    N0999=[]
-    delta=diff_cl(cl_array,bins)
 
-    for i in range(len(array1001)):
-        a=compute_n0mv(clpp,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0mv(clpp,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        N1001.append(a)
-        N0999.append(b)
-
-    derlist=[]
-    diff=[n0bins]
-    for i in range(len(N1001)):
-            der=((N1001[i][:len(n0bins)]-N0999[i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-    der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-    derlist.append(der)
-    np.savetxt('../data/n0mvdclee.txt',der)
-    return der     
-    
-def n0mvderivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clbb
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clbb to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n0bins: 1d array
-            Multipoles of the N0 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    N1001=[] #list of lists containing tt,ee,eb,te,tb
-    N0999=[]
-    delta=diff_cl(cl_array,bins)
-
-    for i in range(len(array1001)):
-        a=compute_n0mv(clpp,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0mv(clpp,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        N1001.append(a)
-        N0999.append(b)
-    
-
-    derlist=[]
-    diff=[n0bins]
-    for i in range(len(N1001)):
-            der=((N1001[i][:len(n0bins)]-N0999[i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-    der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-    derlist.append(der)
-    np.savetxt('../data/n0mvdclbb.txt',der)
-    return der 
-    
-def n0mvderivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clte
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clte to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n0bins: 1d array
-            Multipoles of the N1 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    N1001=[] #list of lists containing tt,ee,eb,te,tb
-    N0999=[]
-    delta=diff_cl(cl_array,bins)
-
-    for i in range(len(array1001)):
-        a=compute_n0mv(clpp,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0mv(clpp,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        N1001.append(a)
-        N0999.append(b)
-    
-
-    derlist=[]
-    diff=[n0bins]
-    for i in range(len(N1001)):
-            der=((N1001[i][:len(n0bins)]-N0999[i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-    der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-    derlist.append(der)
-    np.savetxt('../data/n0mvdclte.txt',der)
-    return der 
-    
-def n0derivative_cltt(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt cltt
-    Parameters
-    ----------
-    cltt : 1d array
-           Cltt to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n0bins: 1d array
-            Multipoles of the N0 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
-    N0999=[[],[],[],[],[]]
-    delta=diff_cl(cl_array,bins)
-
-    for i in range(len(array1001)):
-        print(i)
-        a=compute_n0_py(clpp,cls,array1001[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,array999[i],clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        for j in range(len(N1001)):
-            N1001[j].append(a[j])
-            N0999[j].append(b[j])
-    
-    keys=['TT','EE','EB','TE','TB']
-    
-    derlist=[]
-    for k in range(len(keys)):
-        diff=[n0bins]
-        for i in range(len(N1001[1])):
-            der=((N1001[k][i][:len(n0bins)]-N0999[k][i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-        der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-        derlist.append(der)
-        np.savetxt('../data/n0{}dcltt.txt'.format(keys[k]),der)
-    return derlist
-    
-def n0derivative_clee(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clee
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clee to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n1bins: 1d array
-            Multipoles of the N1 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
- 
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    
-    N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
-    N0999=[[],[],[],[],[]]
-    
-    for i in range(len(array1001)):
-        print(i)
-        a=compute_n0_py(clpp,cls,cltt,array1001[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,cltt,array999[i],clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        for j in range(len(N1001)):
-            N1001[j].append(a[j])
-            N0999[j].append(b[j])
-
-    delta=diff_cl(cl_array,bins)
-
-    
-    keys=['TT','EE','EB','TE','TB']
-    
-    derlist=[]
-    for k in range(len(keys)):
-        diff=[n0bins]
-        for i in range(len(N1001[1])):
-            der=((N1001[k][i][:len(n0bins)]-N0999[k][i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-        der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-        derlist.append(der)
-        np.savetxt('../data/n0{}dclee.txt'.format(keys[k]),der)
-    print(derlist)
-    return derlist      
-    
-def n0derivative_clbb(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clbb
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clbb to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n0bins: 1d array
-            Multipoles of the N0 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    
-    N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
-    N0999=[[],[],[],[],[]]
-    
-    for i in range(len(array1001)):
-        print(i)
-        a=compute_n0_py(clpp,cls,cltt,clee,array1001[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,cltt,clee,array999[i],clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        for j in range(len(N1001)):
-            N1001[j].append(a[j])
-            N0999[j].append(b[j])
-
-    delta=diff_cl(cl_array,bins)
-    
-    
-    
-    keys=['TT','EE','EB','TE','TB']
-    
-    derlist=[]
-    for k in range(len(keys)):
-        diff=[n0bins]
-        for i in range(len(N1001[1])):
-            der=((N1001[k][i][:len(n0bins)]-N0999[k][i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-        der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-        derlist.append(der)
-        np.savetxt('../data/n0{}dclbb.txt'.format(keys[k]),der)
-    return derlist
-    
-def n0derivative_clte(cl_array,bins,n0bins,clpp,norms,cls,cltt,clee,clbb,clte,NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lstep,Lmin_out):
-    """
-    Compute derivative of N0 wrt clte
-    Parameters
-    ----------
-    cl_array : 1d array
-           Clte to be perturbed
-    bins : 1d array
-           Multipoles in which derivatives are going to be calculated.
-    n0bins: 1d array
-            Multipoles of the N1 bias used.
-    
-    Returns
-    List of arrays corresponding to the derivatives of N1 convergence with the polcomb combinations [TT,EE,EB,TE,TB]
-    with rows of L corresponding to N1 multipoles and columns of l the multipoles of Cl which derivatives are taken.
-    """
-    bins=bins-2
-    array1001=perturbe_clist(cl_array,bins,1.001)
-    array999=perturbe_clist(cl_array,bins,0.999)
-    
-    N1001=[[],[],[],[],[]] #list of lists containing tt,ee,eb,te,tb
-    N0999=[[],[],[],[],[]]
-    
-    for i in range(len(array1001)):
-        print(i)
-
-        a=compute_n0_py(clpp,cls,cltt,clee,clbb,array1001[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        b=compute_n0_py(clpp,cls,cltt,clee,clbb,array999[i],NOISE_LEVEL,polnoise,lmin,LMAXOUT,LMAX_TT,LCORR_TT,TMP_OUTPUT,Lmin_out,Lstep)
-        for j in range(len(N1001)):
-            N1001.append(a[j])
-            N0999.append(b[j])
-
-    delta=diff_cl(cl_array,bins)
-    
-    keys=['TT','EE','EB','TE','TB']
-
-    derlist=[]
-    for k in range(len(keys)):
-        diff=[n0bins]
-        for i in range(len(N1001[1])):
-            der=((N1001[k][i][:len(n0bins)]-N0999[k][i][:len(n0bins)])*(n0bins*(n0bins+1))**2*0.25)/delta[i]
-            diff.append(der)
-        der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)
-        derlist.append(der)
-        np.savetxt('../data/n0{}dclte.txt'.format(keys[k]),der)
-    return derlist
-    
-
-    
 def extend_matrix(sizeL,_matrix):
     """Used to prepare the calculated derivative matrix into form used for the likelihood."""
     #unpacked=true
