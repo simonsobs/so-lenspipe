@@ -330,32 +330,9 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
     return s_i,s_set,noise_seed
 
 
-def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
-    """
-    Approximate correction to an n-point function for the loss of power
-    due to the application of a mask.
-
-    For an n-point function using SHTs, this is the ratio of 
-    area weighted by the nth power of the mask to the full sky area 4 pi.
-    This simplifies to mean(mask**n) for equal area pixelizations like
-    healpix. For SHTs on CAR, it is sum(mask**n * pixel_area_map) / 4pi.
-    When using FFTs, it is the area weighted by the nth power normalized
-    to the area of the map. This also simplifies to mean(mask**n)
-    for equal area pixels. For CAR, it is sum(mask**n * pixel_area_map) 
-    / sum(pixel_area_map).
-
-    If not, it does an expensive calculation of the map of pixel areas. If this has
-    been pre-calculated, it can be provided as the pmap argument.
-    
-    """
-    assert mask.ndim==1 or mask.ndim==2
-    if pmap is None: 
-        if equal_area:
-            npix = mask.size
-            pmap = 4*np.pi / npix if sht else enmap.area(mask.shape,mask.wcs) / npix
-        else:
-            pmap = enmap.pixsizemap(mask.shape,mask.wcs)
-    return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
+def wfactor(**kwargs):
+    warnings.warn("wfactor should be called directly from orphics.maps")
+    return maps.wfactor(**kwargs)
 
 class SOLensInterface(object):
     def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
