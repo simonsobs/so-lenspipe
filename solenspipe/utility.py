@@ -588,6 +588,10 @@ def smooth_rolling_cls(cl,N=10):
     smooth=np.interp(ells,np.arange(len(a)),a)    
     return smooth
 
+def apod(imap,width):
+    # This apodization is for FFTs. We only need it in the dec-direction
+    # since the AdvACT geometry should be periodic in the RA-direction.
+    return enmap.apod(imap,[width,0]) 
 
 def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
     #code by Will Coulton

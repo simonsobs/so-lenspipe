@@ -1,7 +1,7 @@
 from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
-from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
+from orphics import maps,io,cosmology,mpi
 from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
 import pytempura
 import numpy as np
@@ -227,7 +227,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
 
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=None):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
@@ -258,6 +258,9 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=No
     Al2 : ndarray, optional
         A (mlmax,) shape numpy array containing the normalization of the 
         estimator being hardened against.
+    Al3 : ndarray, optional
+        A (mlmax,) shape numpy array containing the normalization of the 
+        TT estimator used when calculating BH estimator.
     R12 : ndarray, optional
         An (mlmax,) or (1,mlmax) or (2,mlmax) shape numpy array containing 
         the unnormalized cross-response of est1 and est2. If two components
@@ -295,8 +298,8 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=No
     else:
         bh = False
 
-    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL','shear'] # TODO: add other
-    if est1=='shear':
+    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL','SHEAR'] # TODO: add other
+    if est1=='SHEAR':
         qfunc1 = lambda X,Y: qe.qe_shear(px,mlmax,
                             Talm=X[0],fTalm=Y[1])
     else:
@@ -316,17 +319,47 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None,profile=No
             qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
-            # Bias harden only gradient e.g. source hardening
-            def retfunc(X,Y):
-                q1 = qfunc1(X,Y)
-                q2 = qfunc2(X,Y)
-                g = cs.almxfl( \
-                               (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
-                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
-                )
-                c = cs.almxfl(q1[1],Al1[1])
-                return np.asarray((g,c))
+
+            if est1=='TT':
+                # Bias harden only gradient e.g. source hardening
+                def retfunc(X,Y):
+                    q1 = qfunc1(X,Y)
+                    q2 = qfunc2(X,Y)
+                    g = cs.almxfl( \
+                                (cs.almxfl(q1[0],Al1[0]) - \
+                                    cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                    )
+                    c = cs.almxfl(q1[1],Al1[1])
+                    return np.asarray((g,c))
+            else:
+                def retfunc(X,Y):
+                    print('test bh MV')
+                    qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                        estimators=['TT'],
+                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['TT']
+                    q1=qfuncTT(X,Y)
+
+                    q2 = qfunc2(X,Y)
+
+                    qfuncmv=lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                        estimators=['MV'],
+                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['MV']
+                    
+                    qmv=qfuncmv(X,Y)
+                    g_bh_TT = cs.almxfl( \
+                                (cs.almxfl(q1[0],Al3[0]) - \
+                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
+                    )
+                    g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
+                    c = cs.almxfl(qmv[1],Al1[1])
+
+
+                    return np.asarray((g,c))
+
         elif R12.shape[0]==2:
             # Bias harden both e.g. mask hardening
             def retfunc(X,Y):
