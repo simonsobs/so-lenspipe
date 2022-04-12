@@ -20,8 +20,8 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None,qfunc2=None):
-    """Return kappa_alms combinations required for the 4cross estimator.
+def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
+    """Return kappa_alms combinations required for the 4cross estimator in Eq. 38 of arXiv:2011.02475v1 .
 
     Args:
         Xdat_0 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 0

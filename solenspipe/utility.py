@@ -816,19 +816,39 @@ def get_Spower(X,U,mask):
     cls = hp.alm2cl(X,U)/w_n(mask,2)
     return cls
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
-    """Curvedsky dumb N0 generic"""
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+    """Generate beloved dumb N0s for both gradient and curl.
+
+    Args:
+        est1 (str): Polcomb used
+        X (list): Array of splits of 'data' TEB unfiltered maps.
+        U (list): Array of splits of 'data' TEB unfiltered maps.
+        coaddX (_type_): Coadded signal sim used for the sim part
+        coaddU (_type_): Coadded signal sim used for the sim part
+        filters (array): List of TEB Cls used for the filter
+        theory (_type_): _description_
+        theory_cross (_type_): _description_
+        mask (array): analysis mask
+        lmin (int): minimum CMB multipole
+        lmax (int): maximum CMB multipole
+        est2 (_type_, optional): _description_. Defaults to None.
+        cross (bool, optional): _description_. Defaults to True.
+        bh (bool, optional): _description_. Defaults to False.
+        nlpp (_type_, optional): _description_. Defaults to None.
+        nlss (_type_, optional): _description_. Defaults to None.
+        response (_type_, optional): _description_. Defaults to None.
+        profile (_type_, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
     rlmax = lmax      # reconstruction multipole range
     ls = np.arange(0,Lmax+1)
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
-    nltt=nltt[:ls.size]
-    nlee=nlee[:ls.size]
-    nlbb=nlbb[:ls.size]
-    nlte=np.zeros(len(nltt))
-    noise=np.array([nltt,nlee,nlbb,nlte])
+
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
@@ -960,10 +980,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theo
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
@@ -1268,7 +1288,7 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MV"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1276,11 +1296,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross
     ls = np.arange(0,Lmax+1)
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
-    nltt=nltt[:ls.size]
-    nlee=nlee[:ls.size]
-    nlbb=nlbb[:ls.size]
-    nlte=np.zeros(len(nltt))
-    noise=np.array([nltt,nlee,nlbb,nlte])
+  
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
@@ -1376,14 +1392,17 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross
         #get the cross term
         cl=ffl**2/(d_ocl*profile)
         AxTT0=pytempura.norm_lens.stt(lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
+        #need see and ste if possible
         #(data-sim) x (data-sim)
         cl=ffl**2/((s_ocl-d_ocl)*profile)
         AxTT1=pytempura.norm_lens.stt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
         n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
         prefactor=1/(1-nlpp*nlss*response**2)**2
         n0TTg=prefactor*(n0TTg+n0TTs+n0TTx)
+        
         #n0TTEE=(n0TTEE)/(1-nlpp*nlss*response**2)
         n0TTTE=(n0TTTE-AgTT*AsTT*(AxTT0-AxTT1)*nlpp*response)/(1-nlpp*nlss*response**2) #normalization should be AgTE
+        #n0TTEE=(n0TTEE-AgTT*AsTT*(AxTT0-AxTT1)*nlpp*response)/(1-nlpp*nlss*response**2)
         #n0TTEE=(n0TTEE)/(1-nlpp*nlss*response**2)
         #n0TTTE=(n0TTTE)/(1-nlpp*nlss*response**2)
 
@@ -1423,7 +1442,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
 
 
-def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MVPOL currently no T"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1431,11 +1450,7 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,nltt,nlee,nlbb,theory,theory_cr
     ls = np.arange(0,Lmax+1)
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
-    nltt=nltt[:ls.size]
-    nlee=nlee[:ls.size]
-    nlbb=nlbb[:ls.size]
-    nlte=np.zeros(len(nltt))
-    noise=np.array([nltt,nlee,nlbb,nlte])
+
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
