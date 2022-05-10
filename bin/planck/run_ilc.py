@@ -14,10 +14,20 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from orphics import maps
 from planck_ilc_tools import get_act_alm, get_planck_Talm, response_fnc_cmb, response_fnc_cib, response_fnc_tsz
-from cmbsky.utils import safe_mkdir
+from cmbsky.utils import safe_mkdir, get_disable_mpi
 from scipy.signal import savgol_filter
 import yaml
 import copy
+
+disable_mpi = get_disable_mpi()
+if not disable_mpi:
+    from mpi4py import MPI
+
+if not disable_mpi:
+    comm = MPI.COMM_WORLD
+    rank,size = comm.Get_rank(), comm.Get_size()
+else:
+    rank,size = 0,1
 
 with open("run_ilc_defaults.yml",'rb') as f:
     DEFAULTS=yaml.load(f)
@@ -184,9 +194,14 @@ def main():
     #Save data ilc
 
     print("running data ilc:")
+    jobs_args = []
+    jobs_args.append((data_hilc, config.output_dir, config.use_debiased_cov, config.lmax),
+                {"planck_alm_dir" : config.planck_alm_dir})
+    """
     save_ilc_alms(data_hilc, config.output_dir, config.use_debiased_cov, config.lmax,
                   act_sim_seed=None, planck_sim_seed=None,
                   act_sim_dir=None, planck_alm_dir=config.planck_alm_dir)
+    """
 
     for sim_set in [0, 1]:
         planck_sim_seed = getattr(config, "planck_sim_start_set%02d"%sim_set)
@@ -195,10 +210,23 @@ def main():
             act_sim_seed = (sim_set, isim)
             output_dir = opj(config.output_dir, "sim_planck%03d_act%02d_%05d"%(planck_sim_seed, sim_set, isim))
             safe_mkdir(output_dir)
+            jobs_args.append((copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov, config.lmax),
+                        {"act_sim_seed" : act_sim_seed, "planck_sim_seed" : planck_sim_seed,
+                         "act_sim_dir" : config.act_sim_dir, "planck_alm_dir" : config.planck_alm_dir})
+            """
             save_ilc_alms(copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov,
                           config.lmax, act_sim_seed=act_sim_seed, planck_sim_seed=planck_sim_seed,
                           act_sim_dir=config.act_sim_dir, planck_alm_dir=config.planck_alm_dir)
+            """
             planck_sim_seed += 1
-        
+
+    for ijob, job_arg in enumerate(job_args):
+        if rank>=njobs:
+            return
+        if i%size != rank:
+            continue
+        print("rank %d running save_alm with args:"%rank,job_arg)
+        save_ilc_alms(*job_arg[0], **job_arg[1])
+            
 if __name__=="__main__":
     main()

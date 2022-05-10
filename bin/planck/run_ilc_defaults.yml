@@ -7,8 +7,8 @@ sg_window_length: 51
 sg_order: 2
 covmat_from_file: sNone
 use_websky_cltot_file: sNone
-nsim_set00: 10
-nsim_set01: 10
+nsim_set00: 9
+nsim_set01: 9
 act_sim_start: 1
 planck_sim_start_set00: 201
 planck_sim_start_set01: 601
