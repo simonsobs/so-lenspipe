@@ -1,0 +1,12 @@
+mask_file: "/global/project/projectdirs/act/data/maccrann/dr6/dr6v2_default_union_mask.fits"
+sim_start: 200
+sim_end: 210
+freqs:
+  - 353
+  - 545
+lmax: 5000
+npipe_version: "6v20"
+alm_version: "0"
+alm_dir: sNone
+output_dir: sNone
+srcfree: True
