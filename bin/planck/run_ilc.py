@@ -155,7 +155,7 @@ def main():
                         alm = get_act_alm(qid,  sim_seed=act_sim_seed, nsplit=4, lmax=lmax,
                                           act_sim_dir=config.act_sim_dir)[isplit][0]
                     else:
-                        alm = get_planck_alm(qid, planck_alm_dir, sim_seed=planck_sim_seed, lmax=lmax,
+                        alm = get_planck_Talm(qid, planck_alm_dir, sim_seed=planck_sim_seed, lmax=lmax,
                                              act_sim_seed=act_sim_seed)
                     assert len(alm)==alm_size
                     hilc.alms_T[qid] = curvedsky.almxfl(alm, target_beam)
@@ -181,23 +181,24 @@ def main():
             print("writing tsz and cib-deprojected alms to %s"%f)
             hp.fitsfunc.write_alm(f, cibandtszd_alms, overwrite=True)
 
-
     #Save data ilc
-    """
+
     print("running data ilc:")
     save_ilc_alms(data_hilc, config.output_dir, config.use_debiased_cov, config.lmax,
                   act_sim_seed=None, planck_sim_seed=None,
                   act_sim_dir=None, planck_alm_dir=config.planck_alm_dir)
-    """
 
     for sim_set in [0, 1]:
-        for isim in range(getattr(config, "nsim_set%02d"%sim_set)):
+        planck_sim_seed = getattr(config, "planck_sim_start_set%02d"%sim_set)
+        for isim in range(config.act_sim_start,
+                          getattr(config, "nsim_set%02d"%sim_set)+config.act_sim_start):
             act_sim_seed = (sim_set, isim)
-            planck_sim_seed = getattr(config, "planck_sim_start_set%02d"%sim_set) + isim
-            save_ilc_alms(copy.deepcopy(data_hilc), config.output_dir, config.use_debiased_cov,
+            output_dir = opj(config.output_dir, "sim_planck%03d_act%02d_%05d"%(planck_sim_seed, sim_set, isim))
+            safe_mkdir(output_dir)
+            save_ilc_alms(copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov,
                           config.lmax, act_sim_seed=act_sim_seed, planck_sim_seed=planck_sim_seed,
                           act_sim_dir=config.act_sim_dir, planck_alm_dir=config.planck_alm_dir)
-        
+            planck_sim_seed += 1
         
 if __name__=="__main__":
     main()

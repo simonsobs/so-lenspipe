@@ -9,8 +9,9 @@ covmat_from_file: sNone
 use_websky_cltot_file: sNone
 nsim_set00: 10
 nsim_set01: 10
-planck_sim_start_set00: 200
-planck_sim_start_set01: 600
+act_sim_start: 1
+planck_sim_start_set00: 201
+planck_sim_start_set01: 601
 use_debiased_cov:  False
 act_sim_dir: "/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3/sim/"
 planck_alm_dir: "/global/cscratch1/sd/maccrann/cmb/planck_npipe6v20_alm_v0_lmax5000"

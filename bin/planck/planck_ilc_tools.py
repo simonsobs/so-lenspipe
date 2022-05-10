@@ -140,12 +140,17 @@ def generate_planck_Talm(freq, survey_mask, lmax, sim_seed=None,
     t_alm_deconvolved = curvedsky.almxfl(t_alm, 1./bl[:lmax+1])
     return t_alm_deconvolved
 
-def get_planck_Talm(freq, alm_dir, sim_seed=None, lmax=None):
+def get_planck_Talm(freq, alm_dir, sim_seed=None, lmax=None,
+                    act_sim_seed=None):
     if sim_seed is None:
         alm_file = opj(alm_dir, "%03d_alm.fits"%freq)
     else:
-        alm_file = opj(alm_dir, "sim%03d_%03d_alm.fits"%(
-            sim_seed, freq))
+        if act_sim_seed is not None:
+            alm_file = opj(alm_dir, "sim%03d_%03d_set%02d_%05d_alm.fits"%(
+                sim_seed, freq, act_sim_seed[0], act_sim_seed[1]))
+        else:
+            alm_file = opj(alm_dir, "sim%03d_%03d_alm.fits"%(
+                sim_seed, freq))
     alm = hp.fitsfunc.read_alm(alm_file)
     if lmax is not None:
         alm = futils.change_alm_lmax(alm, lmax)
@@ -169,27 +174,10 @@ def get_act_alm(freq,  sim_seed=None, nsplit=4, lmax=5000,
 		"kcoadd_hackalms%d_alm_set%02d_%05d_split_%d.fits"%(
                     freq, sim_seed[0], sim_seed[1], isplit)
                 )
-        print(f)
+        print("loading alms from %s"%f)
         alm = hp.fitsfunc.read_alm(f, hdu=(1,2,3))
         alm = futils.change_alm_lmax(
             alm, lmax=lmax)
         split_alms.append(alm)
     return split_alms
-
-                       
-"""            
-#Read in act k-space coadds
-act_freqs = [90, 150]
-act_alms = [read_act_alm(freq) for freq in act_freqs]
-
-#Read in Planck source-subtracted maps
-planck_freqs = [353, 545]
-planck_maps = [get_planck_map(freq) for freq in planck_freqs]
-
-#k-space mask planck maps
-planck_maps = [kspace_mask(m) for m in planck_maps]
-
-#And now convert to alms
-planck_alms = [curvedsky.map2alm(m, lmax=lmax) for m in planck_maps]
-"""
 
