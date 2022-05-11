@@ -282,7 +282,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
     if est2 is not None:
         bh = True
-        assert est2 in pytempura.est_list
+        #assert est2 in pytempura.est_list
         assert Al1 is not None
         assert Al2 is not None
         if Al2.ndim==2:
@@ -310,10 +310,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
 
     if bh:
         assert est2 in ['SRC','PH','MASK'] # TODO: add mask
-        if est2=='SRC' and profile is None:
-            qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
-        elif est2=='SRC':
-            print("profile hardening")
+        if est2 in ['SRC','PH']:
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
         elif est2=='mask':
             qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
