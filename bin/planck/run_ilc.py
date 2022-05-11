@@ -193,10 +193,9 @@ def main():
 
     #Save data ilc
 
-    print("running data ilc:")
-    jobs_args = []
-    jobs_args.append((data_hilc, config.output_dir, config.use_debiased_cov, config.lmax),
-                {"planck_alm_dir" : config.planck_alm_dir})
+    job_args = []
+    job_args.append(((data_hilc, config.output_dir, config.use_debiased_cov, config.lmax),
+                {"planck_alm_dir" : config.planck_alm_dir}))
     """
     save_ilc_alms(data_hilc, config.output_dir, config.use_debiased_cov, config.lmax,
                   act_sim_seed=None, planck_sim_seed=None,
@@ -210,9 +209,9 @@ def main():
             act_sim_seed = (sim_set, isim)
             output_dir = opj(config.output_dir, "sim_planck%03d_act%02d_%05d"%(planck_sim_seed, sim_set, isim))
             safe_mkdir(output_dir)
-            jobs_args.append((copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov, config.lmax),
+            job_args.append(((copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov, config.lmax),
                         {"act_sim_seed" : act_sim_seed, "planck_sim_seed" : planck_sim_seed,
-                         "act_sim_dir" : config.act_sim_dir, "planck_alm_dir" : config.planck_alm_dir})
+                         "act_sim_dir" : config.act_sim_dir, "planck_alm_dir" : config.planck_alm_dir}))
             """
             save_ilc_alms(copy.deepcopy(data_hilc), output_dir, config.use_debiased_cov,
                           config.lmax, act_sim_seed=act_sim_seed, planck_sim_seed=planck_sim_seed,
@@ -220,6 +219,7 @@ def main():
             """
             planck_sim_seed += 1
 
+    njobs = len(job_args)
     for ijob, job_arg in enumerate(job_args):
         if rank>=njobs:
             return
