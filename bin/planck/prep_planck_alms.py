@@ -66,7 +66,7 @@ def get_config(defaults=DEFAULTS):
     else:
         with open(config_file,"rb") as f:
             config_from_file = yaml.load(f)
-        config.update(config_from_file[section])
+        config.update(config_from_file)
         
     config['output_dir'] = output_dir
 
@@ -129,10 +129,14 @@ def main():
         #the real data
         job_args.append((freq, None, None, config.srcfree))
         #and the sims
-        for i,sim in enumerate(range(config.sim_start, config.sim_end+1)):
-            for act_set in [0,1]:
-                job_args.append((freq, sim, (i, act_set)))
+        for i,planck_sim_index in enumerate(range(config.set00_sim_start, config.set00_sim_start+config.set00_nsim)):
+            act_sim_index = i+config.act_sim_start
+            job_args.append((freq, planck_sim_index, (act_sim_index, 0)))
+        for i,planck_sim_index in enumerate(range(config.set01_sim_start, config.set01_sim_start+config.set01_nsim)):
+            act_sim_index = i+config.act_sim_start
+            job_args.append((freq, planck_sim_index, (act_sim_index, 1)))
     njobs=len(job_args)
+    print(job_args)
 
     for i,job_arg in enumerate(job_args):
         if rank>=njobs:

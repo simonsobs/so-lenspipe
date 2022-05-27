@@ -158,12 +158,15 @@ def get_planck_Talm(freq, alm_dir, sim_seed=None, lmax=None,
 
 def get_act_alm(freq,  sim_seed=None, nsplit=4, lmax=5000,
                 act_data_dir=ACT_DATA_DIR,
-                act_sim_dir=ACT_SIM_DIR):
+                act_sim_dir=ACT_SIM_DIR,
+                splits=None):
 
     #If sim_seed is None, return data
-
+    if splits is None:
+        splits=range(nsplit)
+    
     split_alms = []
-    for isplit in range(nsplit):
+    for isplit in splits:
         if sim_seed is None:
             f = opj(
                 act_data_dir,

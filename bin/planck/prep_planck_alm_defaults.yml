@@ -1,7 +1,13 @@
 mask_file: "/global/project/projectdirs/act/data/maccrann/dr6/dr6v2_default_union_mask.fits"
 sim_start: 200
-sim_end: 210
+sim_end: 800
+act_sim_start: 1
+set00_sim_start: 200
+set00_nsim: 100
+set01_sim_start: 600
+set01_nsim: 100
 freqs:
+  - 217
   - 353
   - 545
 lmax: 5000
