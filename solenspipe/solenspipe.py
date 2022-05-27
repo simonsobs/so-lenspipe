@@ -267,6 +267,9 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
         are present, then the curl of est1 is also bias hardened using the
         cross-response of est2 with curl specified through the second
         component.
+    profile : (mlmax) array, default=None
+        An array to use as the profile for profile-hardening, when est2="SRC".
+        If not provided, will just do point-source hardening. 
 
     Returns
     -------
@@ -282,7 +285,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
     if est2 is not None:
         bh = True
-        #assert est2 in pytempura.est_list
+        assert est2 in pytempura.est_list
         assert Al1 is not None
         assert Al2 is not None
         if Al2.ndim==2:
@@ -309,10 +312,10 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
-        assert est2 in ['SRC','PH','MASK'] # TODO: add mask
-        if est2 in ['SRC','PH']:
+        assert est2 in ['SRC','MASK'] # TODO: add mask
+        if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
-        elif est2=='mask':
+        elif est2 == 'mask':
             qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
