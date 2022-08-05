@@ -7,7 +7,6 @@ import numpy as np
 import os,sys
 import healpy as hp
 from enlib import bench
-from mapsims import noise,SOChannel
 from falafel import qe
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
