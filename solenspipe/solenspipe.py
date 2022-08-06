@@ -1487,12 +1487,14 @@ class weighted_bin1D:
         y[x>self.bin_edges_max] = 0
         bin_means=[]
         for i in range(1,len(self.bin_edges)):
-            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]))
+            print(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]]))
+            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1]*iy[self.bin_edges[i-1]:self.bin_edges[i]+1])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1]))
+            print(bin_means)
         bin_means=np.array(bin_means)
         return self.cents,bin_means
         
     def binning_matrix(self,ix,iy,weights):
-        #return the binning matrix used for the data products
+        #return the binning matrix used for the data product ix,iy are length of the array we want to bin
         x = ix.copy()
         y = iy.copy()
         y[x<self.bin_edges_min] = 0
@@ -1504,11 +1506,10 @@ class weighted_bin1D:
         nrows=len(self.bin_edges)
         for i in range(1,nrows):
             col=np.zeros(len(y))
-            col[self.bin_edges[i-1]:self.bin_edges[i]]=weights[self.bin_edges[i-1]:self.bin_edges[i]]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]])
+            col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
             matrix.append(col)
         matrix=np.array(matrix)
         return matrix 
-        
         
         
 def bias_hardened_n0(Nl,Nlbias,Cross):
