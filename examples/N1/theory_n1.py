@@ -25,6 +25,8 @@ import argparse
 
 parser = argparse.ArgumentParser(description='New Reconstruction Code')
 parser.add_argument("est1", type=str,help='Estimator 1, one of TT,TE,EE,EB,TB,MV,MVPOL.')
+parser.add_argument("-der_est", type=str,help='Estimator 1, one of TT,TE,EE,EB,TB,MV,MVPOL.')
+
 parser.add_argument("-N", "--nsims",     type=int,  default=1,help="Number of sims.")
 parser.add_argument( "--healpix", action='store_true',help='Use healpix instead of CAR.')
 parser.add_argument( "--lmax",     type=int,  default=3000,help="Maximum multipole for lensing.")
@@ -41,11 +43,8 @@ path=args.output_dir
 
 lmin = args.lmin; lmax = args.lmax
 
-qids=args.qID
-#get the beam
 
-
-mask=get_mask(args.mask)
+mask=get_mask("/home/r/rbond/jiaqu/scratch/DR6/downgrade/downgrade/act_mask_20220316_GAL060_rms_70.00_d2sk.fits")
 # Geometry specified by the mask, DR6 analysis use CAR maps
 print(f"mask shape,wcs: {mask.shape}, {mask.wcs}")
 shape,wcs = mask.shape,mask.wcs
@@ -55,28 +54,68 @@ px = qe.pixelization(shape=shape,wcs=wcs,nside=nside)
 res_arcmin = np.rad2deg(enmap.pixshape(shape, wcs)[0])*60.
 mlmax=4000
 input_path="/home/r/rbond/jiaqu/scratch/N1test/"
-noise=np.load("/home/r/rbond/jiaqu/so-lenspipe/examples/N1/noise_dict.npy",allow_pickle='TRUE').item() #beam deconvolved noise power
-ucls,tcls = utils.get_theory_dicts(nells=noise,lmax=mlmax,grad=True)
+
+ucls,tcls = utils.get_theory_dicts(lmax=mlmax,grad=True)
+filters=np.loadtxt(f'/gpfs/fs1/home/r/rbond/jiaqu/DR6lensing/DR6lensing/4split_null/output/v3calfinal60newph/stage_filter/filters.txt')
+
 
 est_norm_list = ['TT','TE','EE','EB','TB','MV']
 bh = args.bh
-#Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
-#Als=np.load(f'{args.output_dir}/Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy',allow_pickle='TRUE').item()
 
-#np.save(f'{input_path}Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy', Als) 
-Als=np.load(f'{input_path}Als_n1_lmin{args.lmin}_lmax{args.lmax}.npy',allow_pickle='TRUE').item()
+tcls['TT'] = filters[0][:mlmax+1]
+tcls['TE'] = filters[-1][:mlmax+1]
+tcls['EE'] = filters[1][:mlmax+1]
+tcls['BB'] = filters[2][:mlmax+1]
 
-    
+
+
+Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+print(Als)
 config = io.config_from_yaml("/home/r/rbond/jiaqu/falafel/input" + "/config.yml")
 opath = config['data_path']
 thloc = opath+ config['theory_root']
 theory = cosmology.loadTheorySpectraFromCAMB(thloc,get_dimensionless=False)
 ells,gt = np.loadtxt(f"{thloc}_camb_1.0.12_grads.dat",unpack=True,usecols=[0,1])
 
-def analytic_n1(min,noise,lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
+
+
+
+ntt=Als['TT'][0][2:]
+nee=Als['EE'][0][2:]
+neb=Als['EB'][0][2:]
+nte=Als['TE'][0][2:]
+ntb=Als['TB'][0][2:]
+nbb=np.ones(len(ntb))
+norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
+
+theory = cosmology.loadTheorySpectraFromCAMB(config['data_path']+"cosmo2017_10K_acc3",get_dimensionless=False)
+cltt = theory.lCl('TT',np.arange(8000)) 
+clte= theory.lCl('TE',np.arange(8000))
+clee = theory.lCl('EE',np.arange(8000)) 
+clbb = theory.lCl('BB',np.arange(8000)) 
+
+nells=np.loadtxt('/home/r/rbond/jiaqu/scratch/N1test/noise_n1.txt')
+noise={'TT':nells[0],'EE':nells[1],'BB':nells[2]}
+
+LCORR_TT=0
+Lmax_TT=3000
+Lmin_out=2
+Lmaxout=3000
+Lstep=20
+lens=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lenspotentialCls.dat",unpack=True)
+cls=np.loadtxt(config['data_path']+"cosmo2017_10K_acc3_lensedCls.dat",unpack=True)
+ls = np.arange(Als['TT'][0].size)
+clpp=lens[5,:][:8249]
+tmp_output="/home/r/rbond/jiaqu/scratch/DR6/coaddMV/stage_norm/"
+n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
+
+
+#N1=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+
+
+def analytic_n1(min,noise,lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20):
     
     from solenspipe import biastheory as nbias
-    lstr = "" if label is None else f"{label}_"
     opath = config['data_path']
 
     n1fname=opath+"analytic_n1.txt"
@@ -105,14 +144,15 @@ def analytic_n1(min,noise,lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None):
     ntb=Als['TB'][0][2:]
     nbb=np.ones(len(ntb))
     norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
-    n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
-    #n1mv=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+    #n1tt,n1ee,n1eb,n1te,n1tb=nbias.compute_n1_py(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+    n1mv=nbias.compute_n1mv(clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
     n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
 
-    return n1bins,n1tt 
+    return n1bins,n1mv 
 
-#N1=analytic_n1(args.lmin,noise,args.lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20,label=None)
 
+#N1=analytic_n1(args.lmin,noise,args.lmax,Als,Lmin_out=2,Lmaxout=3000,Lstep=20)
+#np.savetxt(f'{input_path}/n1mv_lmin{args.lmin}_lmax{args.lmax}.txt',N1)
 
 #DERIVATIVES WRT cls
 Lmin_out=2
@@ -142,9 +182,11 @@ nte=Als['TE'][0][2:]
 ntb=Als['TB'][0][2:]
 nbb=np.ones(len(ntb))
 norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
-bins=np.array([900, 1700,1800,1900,2000]) #ells where derivatives are taken
-n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
-#n1=nbias.n1derivative_cltt(cltt,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
-n1=nbias.n1derivative_clcmb('TT',bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
 
-np.save(f'{input_path}/N1derTTmpi_lmin{args.lmin}_lmax{args.lmax}.npy',n1)
+bins=np.arange(20,3000,30) #ells where derivatives are taken
+n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
+
+n1=nbias.n1mvderivative_clcmb(args.der_est,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
+n1=nbias.extend_matrix(3000,np.nan_to_num(n1))
+
+np.savetxt(f'{input_path}/N1der_{args.der_est}_lmin{args.lmin}_lmax{args.lmax}.txt',n1)  
