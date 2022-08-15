@@ -731,7 +731,7 @@ def get_mask(path):
 def w_n(mask,n):
     """wrapper for solenspipe's wfactor function"""
     pmap = enmap.pixsizemap(mask.shape,mask.wcs)
-    return wfactor(n,mask,sht=True,pmap=pmap)
+    return maps.wfactor(n,mask,sht=True,pmap=pmap)
 
 def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deconvolve=False):
 

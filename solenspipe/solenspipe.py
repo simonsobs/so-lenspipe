@@ -474,9 +474,9 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
     return s_i,s_set,noise_seed
 
 
-def wfactor(**kwargs):
+def wfactor(*args, **kwargs):
     warnings.warn("wfactor should be called directly from orphics.maps")
-    return maps.wfactor(**kwargs)
+    return maps.wfactor(*args, **kwargs)
 
 class SOLensInterface(object):
     def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
