@@ -12,7 +12,7 @@ from soapack import interfaces as sints
 from pixell import sharp
 import os
 from falafel.utils import get_cmb_alm
-from solenspipe import SOLensInterface,cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
+from solenspipe import cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
 from orphics import maps,io,cosmology,stats,mpi
 import pytempura
 
@@ -731,7 +731,7 @@ def get_mask(path):
 def w_n(mask,n):
     """wrapper for solenspipe's wfactor function"""
     pmap = enmap.pixsizemap(mask.shape,mask.wcs)
-    return wfactor(n,mask,sht=True,pmap=pmap)
+    return maps.wfactor(n,mask,sht=True,pmap=pmap)
 
 def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deconvolve=False):
 
@@ -753,6 +753,14 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
         the inverse of the pixel window function in fourier space
     """
     if vk_mask is None and hk_mask is None:
+        imap=imap
+        if deconvolve:
+            pow=-1
+            wy, wx = enmap.calc_window(imap.shape)
+            ft = enmap.fft(imap, normalize=normalize)
+            ft = ft* wy[:,None]**pow * wx[None,:]**pow
+            
+        imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
         return imap
     lymap, lxmap = imap.lmap()
     ly, lx = lymap[:,0], lxmap[0,:]

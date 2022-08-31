@@ -475,6 +475,7 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
 
 
 def wfactor(**kwargs):
+    print('solenjo42nroi2nirnsw')
     warnings.warn("wfactor should be called directly from orphics.maps")
     return maps.wfactor(**kwargs)
 

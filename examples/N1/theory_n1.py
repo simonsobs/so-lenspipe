@@ -184,7 +184,7 @@ nbb=np.ones(len(ntb))
 norms=np.array([[ntt],[nee],[neb],[nte],[ntb],[nbb]])
 
 bins=np.arange(20,3000,30) #ells where derivatives are taken
-n1bins=np.arange(Lmin_out,Lmaxout,Lstep)
+n1bins=np.arange(Lmin_out,Lmaxout,Lstep) #Lbins
 
 n1=nbias.n1mvderivative_clcmb(args.der_est,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nellsp,lmin,Lmaxout,Lmax_TT,LCORR_TT,tmp_output,Lstep,Lmin_out)
 n1=nbias.extend_matrix(3000,np.nan_to_num(n1))

@@ -189,7 +189,7 @@ def n1mv_dclkk(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nel
     Parameters
     ----------
     cl_array : 1d array
-           Cltt to be perturbed
+           Cls to be perturbed
     bins : 1d array
            Multipoles in which derivatives are going to be calculated.
     n1bins: 1d array
@@ -214,10 +214,11 @@ def n1mv_dclkk(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nel
     diff=[n1bins]
     for i in range(len(N1001)):
         der=((N1001[i][:len(n1bins)]-N0999[i][:len(n1bins)])*(n1bins*(n1bins+1))**2)/(delta[i]*(bins[i]+2)*(bins[i]+3)) #strip off (l'*(l'+1)) because original lensed file has factor of (l*(l+1))**2/2pi
+        print('derivative')
+        print(der)
         diff.append(der)   
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
     derlist.append(der)
-    np.savetxt('../data/n1mvdclkk.txt',der)
     return der
 
 
@@ -361,22 +362,8 @@ def n1derivative_clcmb(polcomb,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,ne
     return derlist
 
     
-def n1_derclphiphi(
-    x,
-    y,
-    clpp=None,
-    normarray=None,
-    cls=None,
-    nells=None,
-    nellsp=None,
-    lmin=None,
-    Lmaxout=None,
-    lmax_TT=None,
-    lcorr_TT=None,
-    tmp_output=None,
-    Lstep=None,
-    Lmin_out=None
-    ):
+def n1_derclphiphi(x,y,clpp,norms,cls,nells,nellsp,lmin,Lmax_out,Lmax_TT,Lcorr_TT,tmp_output,Lstep,Lmin_out):
+  
 
     
     """Calculation of the N1 lensing field derivative wrt clpp
@@ -412,19 +399,7 @@ def n1_derclphiphi(
     Output:
         save and return a numpy matrix with first row being the L values of the derivative and the first column the L values of the n1
     """
-    lensingbiases_f.compute_n1_derivatives(
-        clpp,
-        normarray,
-        cls,
-        nells,
-        nellsp,
-        lmin,
-        Lmaxout,
-        lmax_TT,
-        lcorr_TT,
-        tmp_output,
-        Lstep,
-        Lmin_out)
+    lensingbiases_f.compute_n1_derivatives(clpp,norms,cls,nells,nellsp,lmin,Lmax_out,Lmax_TT,Lcorr_TT,tmp_output,Lstep,Lmin_out)
     n1 = np.loadtxt(os.path.join(tmp_output,'N1_%s%s_analytical_matrix.dat'% (x, y))).T  
 
     return n1
