@@ -93,6 +93,7 @@ def main():
         print("loading covmat from %s"%config.covmat_from_file)
         covmat_raw = np.load(config.covmat_from_file)
     elif config.use_websky_cltot_file is not None:
+        print("using websky covmat from %s"%config.use_websky_cltot_file)
         covmat_raw = covmat_from_websky_Cltot(
             config.use_websky_cltot_file,
             qids, config.lmax, beam_fwhm=target_fwhm_arcmin)
@@ -117,6 +118,7 @@ def main():
 
         
         #compute covariance from data
+        print("using covmat from data")
         covmat_raw = data_hilc.compute_covMat_noDebias()
         covmat_debiased = data_hilc.compute_covMat_wBiasReduction()
         safe_mkdir(config.output_dir)
@@ -125,6 +127,7 @@ def main():
 
     #if smooth covmat
     if config.smooth_covmat:
+        print("smoothing covmat with savgol params: %d, %d"%(config.sg_window_length, config.sg_order))
         fig,ax = plt.subplots()
         covmat_smooth = np.zeros_like(covmat_raw)
         k=0
@@ -149,6 +152,9 @@ def main():
         fig.savefig(opj(config.output_dir, "cls.png"))
         np.save(opj(config.output_dir, "covmat_smooth.npy"), covmat_smooth)
         data_hilc.covMat = covmat_smooth
+    else:
+        data_hilc.covMat = covmat_raw
+                    
 
     #Now we can run ilc
     #Do i) straight ilc

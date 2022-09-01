@@ -15,8 +15,10 @@ PLANCK_SRCFREE_MAP_DIR="/global/project/projectdirs/act/data/synced_maps/NPIPE/"
 PLANCK_SIM_MAP_DIR="/global/cfs/cdirs/cmb/data/planck2020/npipe/npipe%s_sim"%NPIPE_VERSION
 PLANCK_ALM_DIR="/global/cscratch1/sd/maccrann/cmb/planck_npipe6v20_alm_v0_lmax2000/"
 
-ACT_DATA_DIR="/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3"
-ACT_SIM_DIR="/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3/sim"
+#ACT_DATA_DIR="/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3"
+#ACT_SIM_DIR="/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3/sim"
+ACT_DATA_DIR="/global/homes/j/jia_qu/maps/coadd_data"
+ACT_SIM_DIR="/global/homes/j/jia_qu/maps/null_sims"
 
 ACT_MASK_FILE="/global/project/projectdirs/act/data/maccrann/dr6/dr6v2_default_union_maskd1.fits"
 
@@ -170,11 +172,12 @@ def get_act_alm(freq,  sim_seed=None, nsplit=4, lmax=5000,
         if sim_seed is None:
             f = opj(
                 act_data_dir,
-                "kcoadd_hack%dGHznotsz_split%d.fits"%(freq, isplit))
+                "kcoadd_f_%dnotsz_split%d.fits"%(freq, isplit)
+                )
         else:
             f = opj(
                 act_sim_dir,
-		"kcoadd_hackalms%d_alm_set%02d_%05d_split_%d.fits"%(
+                "kcoadd_vfinal_%d_alm_set%02d_%05d_split_%d.fits"%(
                     freq, sim_seed[0], sim_seed[1], isplit)
                 )
         print("loading alms from %s"%f)
