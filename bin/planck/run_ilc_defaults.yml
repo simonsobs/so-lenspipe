@@ -3,7 +3,7 @@ act_sim_dir: "/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3/sim"
 #outdir: "/global/cscratch1/sd/maccrann/cmb/act_dr6/alm_v3/ilc_test"
 lmax: 5000
 smooth_covmat: True
-sg_window_length: 51
+sg_window_length: 301
 sg_order: 2
 covmat_from_file: sNone
 use_websky_cltot_file: sNone
