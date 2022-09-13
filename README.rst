@@ -43,7 +43,7 @@ and scripts therein:
 * `symlens <https://github.com/simonsobs/symlens/>`__
   (``pip install -e . --user``) 
 * `tempura <https://github.com/simonsobs/tempura>`__ 
-  (Clone the repository then do ``python setup.py build_ext -i`` and then ``python setup.py install``)
+  (Clone the repository then do ``python setup.py build_ext -i`` and then add to your PYTHONPATH)
 * `camb <https://camb.readthedocs.io/en/latest/>`__
   (``pip install camb --user``) 
 * `orphics <https://github.com/msyriac/orphics/>`__
