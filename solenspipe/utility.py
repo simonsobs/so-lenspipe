@@ -1,4 +1,4 @@
-import mapsims
+#import mapsims
 from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
 from orphics import maps,io,cosmology,stats,pixcov
 import numpy as np
