@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 #import mapsims
+=======
+>>>>>>> 32c678427ee43b227da57ad95afd52f133d7d543
 from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
 from orphics import maps,io,cosmology,stats,pixcov
 import numpy as np
@@ -22,6 +25,14 @@ def eshow(x,fname):
     #plots = enplot.get_plots(x, downgrade = 4,color="gray")
     plots = enplot.get_plots(x, downgrade = 4)
     enplot.write(fname,plots)
+
+def stamp_plot(imap,ra,dec,boxwidth=10):
+    dec,ra = np.deg2rad(np.array((dec, ra)))
+    width = np.deg2rad(boxwidth)
+    box = np.array([[dec-width/2.,ra-width/2.],[dec+width/2.,ra+width/2.]])
+    stamp = imap.submap(box)
+    return stamp
+
 
 
 def project_mask(mask,shape,wcs,fname=None):
@@ -123,6 +134,20 @@ def coadd_mapnew(map_list,ivar_list,a):
     coadd_map = enmap.ndmap(coadd_map,wcs)
     return coadd_map    
 
+def coadd_mapnewTT(map_list,ivar_list):
+    """return coadded map from splits, the map in maplist contains I,Q,U 
+    a=0,1,2 selects one of I Q U """
+    wcs=map_list[0].wcs
+    map_list=np.array(map_list)
+    ivar_list=np.array(ivar_list)
+    coadd_map= np.sum(map_list * ivar_list, axis = 0)
+    #coadd_map/=((np.sum(ivar_list*mask, axis = 0)))
+    coadd_map/=((np.sum(ivar_list, axis = 0)))
+    #coadd_map/=((np.sum(ivar_list, axis = 0)))
+    coadd_map[~np.isfinite(coadd_map)] = 0
+    coadd_map = enmap.ndmap(coadd_map,wcs)
+    return coadd_map    
+
 def ivar_eff(split,ivar_list):
     """return effective invers variance map for split i and a list of inverse variance maps.
     Inputs
@@ -208,7 +233,7 @@ def get_w(n,maps,mask):
 
 
     
-def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True):
+def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
     """
     Calculate the noise power of a coadded map given a list of maps and list of ivars.
     Inputs:
@@ -241,10 +266,10 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True)
             d_a=map_list[i][a]-coadd_a
             #noise_a=d_a*mask
             noise_a=d_a #noise already masked
-            alm_a=cs.map2alm(noise_a,lmax=6000)
+            alm_a=cs.map2alm(noise_a,lmax=lmax)
             d_b=map_list[i][b]-coadd_b
             noise_b=d_b
-            alm_b=cs.map2alm(noise_b,lmax=6000)
+            alm_b=cs.map2alm(noise_b,lmax=lmax)
             cls = hp.alm2cl(alm_a,alm_b)
             cl_ab.append(cls)
         else:
@@ -253,7 +278,7 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True)
             noise_a=d_a
     
             print("generating alms")
-            alm_a=cs.map2alm(noise_a,lmax=6000)
+            alm_a=cs.map2alm(noise_a,lmax=lmax)
             alm_a=alm_a.astype(np.complex128)
             if beam_deconvolve:
                 alm_a = cs.almxfl(alm_a,lambda x: 1/beam(x)) 
@@ -275,6 +300,62 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True)
 
     return power / w2
 
+def get_datanoise_fullresTT(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
+    """
+    Calculate the noise power of a coadded map given a list of maps and list of ivars. Used for high resolution TT
+    Inputs:
+    map_list: list of source free splits
+    ivar_list: list of the inverse variance maps splits
+    a: 0,1,2 for I,Q,U respectively
+    b:0,1,2 for I,Q,U, respectively
+    N: window to smooth the power spectrum by in the rolling average.
+    mask: apodizing mask
+
+    Output:
+    1D power spectrum accounted for w2 from 0 to 10000
+    """
+    
+    pmap=enmap.pixsizemap(map_list[0].shape,map_list[0].wcs)
+
+
+    cl_ab=[]
+    n = len(map_list)
+    print('shape of maplength')
+    print(n)
+    #calculate the coadd maps
+  
+    coadd_a=coadd_mapnewTT(map_list,ivar_list)
+    #enmap.write_map('/home/r/rbond/jiaqu/scratch/DR6/maps/sims/ksz_4pt/coadd_a.fits',coadd_a)
+    print(coadd_a)
+    print(coadd_a.shape)
+
+    for i in range(n):
+   
+        noise_a=map_list[i]-coadd_a
+
+        alm_a=cs.map2alm(noise_a,spin=0,lmax=lmax)
+        #cls=cs.alm2cl(alm_a)
+        #np.savetxt('/home/r/rbond/jiaqu/scratch/DR6/maps/sims/ksz_4pt/cls.txt',cls)
+        alm_a=alm_a.astype(np.complex128)
+        if beam_deconvolve:
+            alm_a = cs.almxfl(alm_a,lambda x: 1/beam(x)) 
+        cls = hp.alm2cl(alm_a)
+        cl_ab.append(cls)
+    cl_ab=np.array(cl_ab)
+    #sqrt_ivar=np.sqrt(ivar_eff(0,ivar_list))
+
+    mask=mask
+    mask[mask<=0]=0
+    w2=np.sum((mask**2)*pmap) /np.pi / 4.
+    print(w2)
+    power = 1/n/(n-1) * np.sum(cl_ab, axis=0)
+    ls=np.arange(len(power))
+    power[~np.isfinite(power)] = 0
+    power=rolling_average(power, N)
+    bins=np.arange(len(power))
+    power=maps.interp(bins,power)(ls)
+
+    return power / w2
 
 def generate_sim(ivar_list,cls,lmax):
     """
@@ -878,17 +959,17 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         if est1=='TT':
             print("use TT")
             #get norm
-            AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
+            AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],ocl[0,:])
 
             #dxd
             cl=ocl**2/(d_ocl)
-            AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+            AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
             AgTT0[np.where(AgTT0==0)] = 1e30
             AcTT0[np.where(AcTT0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])
+            AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
             AgTT1[np.where(AgTT1==0)] = 1e30
             AcTT1[np.where(AcTT1==0)] = 1e30
             ng = AgTT**2*(1./AgTT0-1/AgTT1)
@@ -1319,11 +1400,11 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     #ocl= noise+fcl
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
-    AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],ocl[0,:])
+    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     ocl=ffl
 
@@ -1336,11 +1417,11 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     #dataxdata
 
     cl=ocl**2/(d_ocl)
-    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] )
-    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:] )
-    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
-    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:] )
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
+    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
 
     AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
     AgTTEE0,AcTTEE0=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], d_ocl[3,:])
@@ -1350,11 +1431,11 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
 
 
     cl=ocl**2/(s_ocl-d_ocl)
-    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:] )
-    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
-    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
-    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
+    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
     AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
     AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
     AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
@@ -1419,11 +1500,11 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     dumbn0g=[n0TTg,n0TEg,n0TBg,n0EBg,n0EEg,n0TTTE,n0TTEE,n0TEEE,n0TBEB]
     dumbn0c=[n0TTc,n0TEc,n0TBc,n0EBc,n0EEc,n0TTTEc,n0TTEEc,n0TEEEc,n0TBEBc]
 
-    AgTTf,AcTTf=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTEf,AcTEf=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTBf,AcTBf=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTTf,AcTTf=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],ocl[0,:])
+    AgTEf,AcTEf=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTBf,AcTBf=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     weights_NUMg=[1/AgTTf**2,1/AgTEf**2,1/AgTBf**2,1/AgEBf**2,1/AgEEf**2,2/(AgTTf*AgTEf),2/(AgTTf*AgEEf),2/(AgTEf*AgEEf),2/(AgTBf*AgEBf)]
     weights_NUMc=[1/AcTTf**2,1/AcTEf**2,1/AcTBf**2,1/AcEBf**2,1/AcEEf**2,2/(AcTTf*AcTEf),2/(AcTTf*AcEEf),2/(AcTEf*AcEEf),2/(AcTBf*AcEBf)]
@@ -1470,8 +1551,8 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
 
-    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:],ocl[2,:])
 
     ocl=ffl
 
@@ -1484,12 +1565,12 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     #dataxdata
 
     cl=ocl**2/(d_ocl)
-    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
-    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:] )
+    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
 
     cl=ocl**2/(s_ocl-d_ocl)
-    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
 
 
     nlist=[AgEE0,AgEE1,AgEB0,AgEB1]
@@ -1507,8 +1588,8 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     dumbn0g=[n0EBg,n0EEg]
     dumbn0c=[n0EBc,n0EEc]
 
-    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
-    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     weights_NUMg=[1/AgEBf**2,1/AgEEf**2]
     weights_NUMc=[1/AcEBf**2,1/AcEEf**2]
