@@ -1,7 +1,4 @@
-<<<<<<< HEAD
 #import mapsims
-=======
->>>>>>> 32c678427ee43b227da57ad95afd52f133d7d543
 from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
 from orphics import maps,io,cosmology,stats,pixcov
 import numpy as np
