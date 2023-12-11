@@ -1,7 +1,7 @@
 from __future__ import print_function
 import matplotlib
 matplotlib.use("Agg")
-from orphics import maps,io,cosmology,mpi # msyriac/orphics ; pip install -e . --user
+from orphics import maps,io,cosmology,mpi
 from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
 import pytempura
 import numpy as np
@@ -19,6 +19,105 @@ from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+
+def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
+    """Return kappa_alms combinations required for the 4cross estimator in Eq. 38 of arXiv:2011.02475v1 .
+
+    Args:
+        Xdat_0 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 0
+        Xdat_1 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 1
+        Xdat_2 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 2
+        Xdat_3 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 3
+        q_func1 (function): function for quadratic estimator
+        Xdatp_0 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 0 used for RDN0 for different sim data combination
+        Xdatp_1 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 1 used for RDN0 for different sim data combination
+        Xdatp_2 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 2 used for RDN0 for different sim data combination
+        Xdatp_3 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 3 used for RDN0 for different sim data combination
+        qfunc2 ([type], optional): [description]. Defaults to None.
+
+    Returns:
+        array: Combination of reconstructed kappa alms
+    """
+    q_bh_1=q_func1
+    if Xdatp_0 is None:
+        print("none")
+        
+        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_0))
+        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_1))
+        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_2))
+        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_3))
+        phi_xy01 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_1))+plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_0)))
+        phi_xy02 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_0)))
+        phi_xy03 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_0)))
+        phi_xy10=phi_xy01
+        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_1)))
+        phi_xy13= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_1)))
+        phi_xy20=phi_xy02
+        phi_xy21=phi_xy12
+        phi_xy23=0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_2)))
+        phi_xy30=phi_xy03
+        phi_xy31=phi_xy13
+        phi_xy32=phi_xy23
+        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
+        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
+        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
+        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
+        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
+        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
+        phi_xy_x0=phi_xy0-phi_xy00/4
+        phi_xy_x1=phi_xy1-phi_xy11/4
+        phi_xy_x2=phi_xy2-phi_xy22/4
+        phi_xy_x3=phi_xy3-phi_xy33/4
+    
+    else:
+       
+        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_0))
+        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_1))
+        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_2))
+        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_3))
+        phi_xy01 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_1))+plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_0)))
+        phi_xy02 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_0)))
+        phi_xy03 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_0)))
+        phi_xy10=phi_xy01
+        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_1)))
+        phi_xy13= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_1)))
+        phi_xy20=phi_xy02
+        phi_xy21=phi_xy12
+        phi_xy23=0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_2)))
+        phi_xy30=phi_xy03
+        phi_xy31=phi_xy13
+        phi_xy32=phi_xy23
+        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
+        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
+        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
+        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
+        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
+        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
+        phi_xy_x0=phi_xy0-phi_xy00/4
+        phi_xy_x1=phi_xy1-phi_xy11/4
+        phi_xy_x2=phi_xy2-phi_xy22/4
+        phi_xy_x3=phi_xy3-phi_xy33/4
+
+    phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
+    
+
+    return phi_xy
+
+def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
+    phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
+    phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
+    if cross is False:
+        tg1=m**4*cs.alm2cl(phi_x,phi_xp)
+        tg2=-4*m**2*(cs.alm2cl(phi_x0,phi_x0p)+cs.alm2cl(phi_x1,phi_x1p)+cs.alm2cl(phi_x2,phi_x2p)+cs.alm2cl(phi_x3,phi_x3p))
+        tg3=4*(cs.alm2cl(phi01,phi01p)+cs.alm2cl(phi02,phi02p)+cs.alm2cl(phi03,phi03p)+cs.alm2cl(phi12,phi12p)+cs.alm2cl(phi13,phi13p)+cs.alm2cl(phi23,phi23p))
+    else:
+        tg1=m**4*cs.alm2cl(phi_x,ikalm)
+        tg2=-4*m**2*(cs.alm2cl(phi_x0,ikalm)+cs.alm2cl(phi_x1,ikalm)+cs.alm2cl(phi_x2,ikalm)+cs.alm2cl(phi_x3,ikalm))
+        tg3=4*(cs.alm2cl(phi01,ikalm)+cs.alm2cl(phi02,ikalm)+cs.alm2cl(phi03,ikalm)+cs.alm2cl(phi12,ikalm)+cs.alm2cl(phi13,ikalm)+cs.alm2cl(phi23,ikalm))
+
+    auto =(1/(m*(m-1)*(m-2)*(m-3)))*(tg1+tg2+tg3)
+    return auto
+
 
 def get_sim_pixelization(lmax,is_healpix,verbose=False):
     # Geometry
@@ -95,7 +194,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     for e in est_norm_list:
         if e.upper()=='TT' or e.upper()=='MV':
             bh = True
-    if bh:
+    if bh and est2=='SRC':
         est_norm_list.append('src')
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     else:
@@ -110,7 +209,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     if diag:
         Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
         Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
-        if bh:
+        if bh and est2=='SRC':
             Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
         else:
             Nl_g_bh = None
@@ -121,18 +220,18 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
         Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
         Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
         Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
-        if bh:
+        if bh and est2=='SRC':
             Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
         else:
             Nl_g_bh = None
     return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
 
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
-    results in a normalized estimator) against est1 with
+    results in a normalized estimator) against est2 with
     normalization Al2 and unnormalized cross-response R12.
 
 
@@ -159,12 +258,18 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     Al2 : ndarray, optional
         A (mlmax,) shape numpy array containing the normalization of the 
         estimator being hardened against.
+    Al3 : ndarray, optional
+        A (mlmax,) shape numpy array containing the normalization of the 
+        TT estimator used when calculating BH estimator.
     R12 : ndarray, optional
         An (mlmax,) or (1,mlmax) or (2,mlmax) shape numpy array containing 
         the unnormalized cross-response of est1 and est2. If two components
         are present, then the curl of est1 is also bias hardened using the
         cross-response of est2 with curl specified through the second
         component.
+    profile : (mlmax) array, default=None
+        An array to use as the profile for profile-hardening, when est2="SRC".
+        If not provided, will just do point-source hardening. 
 
     Returns
     -------
@@ -173,6 +278,8 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     
     """
     est1 = est1.upper()
+    print(pytempura.est_list)
+    print(est1)
     assert est1 in pytempura.est_list
     if Al1 is not None:
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
@@ -194,28 +301,65 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,R12=None):
     else:
         bh = False
 
-    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL'] # TODO: add other
-    qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
-                                   fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
-                                   estimators=[est1],
-                                   xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
+    assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL','SHEAR'] # TODO: add other
+    if est1=='SHEAR':
+        qfunc1 = lambda X,Y: qe.qe_shear(px,mlmax,
+                            Talm=X[0],fTalm=Y[1])
+    else:
+        qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                    fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                    estimators=[est1],
+                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
-        assert est2 in ['SRC'] # TODO: add mask
-        qfunc2 = lambda X,Y: qe.qe_pointsources(px,mlmax,fTalm=Y[0],xfTalm=X[0])
+        assert est2 in ['SRC','MASK'] # TODO: add mask
+        if est2 == 'SRC':
+            qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
+        elif est2 == 'mask':
+            qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
         # The bias-hardened estimator Eq 27 of arxiv:1209.0091
         if R12.shape[0]==1:
-            # Bias harden only gradient e.g. source hardening
-            def retfunc(X,Y):
-                q1 = qfunc1(X,Y)
-                q2 = qfunc2(X,Y)
-                g = cs.almxfl( \
-                               (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
-                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
-                )
-                c = cs.almxfl(q1[1],Al1[1])
-                return np.asarray((g,c))
+
+            if est1=='TT':
+                # Bias harden only gradient e.g. source hardening
+                def retfunc(X,Y):
+                    q1 = qfunc1(X,Y)
+                    q2 = qfunc2(X,Y)
+                    g = cs.almxfl( \
+                                (cs.almxfl(q1[0],Al1[0]) - \
+                                    cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                    )
+                    c = cs.almxfl(q1[1],Al1[1])
+                    return np.asarray((g,c))
+            else:
+                def retfunc(X,Y):
+                    print('test bh MV')
+                    qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                        estimators=['TT'],
+                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['TT']
+                    q1=qfuncTT(X,Y)
+
+                    q2 = qfunc2(X,Y)
+
+                    qfuncmv=lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                        estimators=['MV'],
+                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['MV']
+                    
+                    qmv=qfuncmv(X,Y)
+                    g_bh_TT = cs.almxfl( \
+                                (cs.almxfl(q1[0],Al3[0]) - \
+                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
+                    )
+                    g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
+                    c = cs.almxfl(qmv[1],Al1[1])
+
+
+                    return np.asarray((g,c))
+
         elif R12.shape[0]==2:
             # Bias harden both e.g. mask hardening
             def retfunc(X,Y):
@@ -330,9 +474,10 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
     return s_i,s_set,noise_seed
 
 
-def wfactor(**kwargs):
+
+def wfactor(*args, **kwargs):
     warnings.warn("wfactor should be called directly from orphics.maps")
-    return maps.wfactor(**kwargs)
+    return maps.wfactor(*args, **kwargs)
 
 class SOLensInterface(object):
     def __init__(self,mask,data_mode=None,scanning_strategy="isotropic",fsky=0.4,white_noise=None,beam_fwhm=None,disable_noise=False,atmosphere=True,rolloff_ell=50,zero_sim=False):
@@ -1320,12 +1465,14 @@ class weighted_bin1D:
         y[x>self.bin_edges_max] = 0
         bin_means=[]
         for i in range(1,len(self.bin_edges)):
-            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]))
+            print(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]]*iy[self.bin_edges[i-1]:self.bin_edges[i]]))
+            bin_means.append(np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1]*iy[self.bin_edges[i-1]:self.bin_edges[i]+1])/np.nansum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1]))
+            print(bin_means)
         bin_means=np.array(bin_means)
         return self.cents,bin_means
         
     def binning_matrix(self,ix,iy,weights):
-        #return the binning matrix used for the data products
+        #return the binning matrix used for the data product ix,iy are length of the array we want to bin
         x = ix.copy()
         y = iy.copy()
         y[x<self.bin_edges_min] = 0
@@ -1337,11 +1484,10 @@ class weighted_bin1D:
         nrows=len(self.bin_edges)
         for i in range(1,nrows):
             col=np.zeros(len(y))
-            col[self.bin_edges[i-1]:self.bin_edges[i]]=weights[self.bin_edges[i-1]:self.bin_edges[i]]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]])
+            col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
             matrix.append(col)
         matrix=np.array(matrix)
         return matrix 
-        
         
         
 def bias_hardened_n0(Nl,Nlbias,Cross):

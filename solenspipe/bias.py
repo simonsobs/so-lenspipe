@@ -4,6 +4,7 @@ from pixell import utils # These are needed for MPI. Relevant functions can be c
 import healpy as hp
 from enlib import bench
 from pixell.mpi import FakeCommunicator
+from pixell import lensing as plensing
 
 """
 Extremely general functions for lensing power spectrum bias subtraction
@@ -43,7 +44,7 @@ elif set==2 or set==3:
 =================
 """
 
-def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi=True, 
+def mcrdn0(icov, get_kmap, power, nsims, qfunc1,get_kmap1=None, qfunc2=None, Xdat=None,Xdat1=None, use_mpi=True, 
          verbose=True, skip_rd=False):
          
     """
@@ -98,12 +99,14 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
     curl RDN0 and the gradient x curl RDN0.
     
     """
-    qa = qfunc1
+    qa = qfunc1 
     qb = qfunc2
 
     mcn0evals = []
     if not(skip_rd): 
         assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
         rdn0evals = []
 
     if use_mpi:
@@ -113,19 +116,140 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, Xdat=None, use_mpi
         
 
     for i in my_tasks:
+        i=i+2
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((icov,0,i))
+        if get_kmap1 is None:
+            Xs1=Xs
+        else:
+            Xs1=get_kmap1((icov,0,i))
         if not(skip_rd): 
-            qaXXs = qa(Xdat,Xs)
-            qbXXs = qb(Xdat,Xs) if qb is not None else qaXXs
-            qaXsX = qa(Xs,Xdat)
-            qbXsX = qb(Xs,Xdat) if qb is not None else qaXsX
+            qaXXs = qa(Xdat,Xs) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+            qbXXs = qb(Xdat1,Xs1) if qb is not None else qaXXs #this is split 2
+            qaXsX = qa(Xs,Xdat)  #split 1
+            qbXsX = qb(Xs1,Xdat1) if qb is not None else qaXsX #this is split 2
             rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
                     + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
-        Xsp = get_kmap((icov,1,i))
-        qaXsXsp = qa(Xs,Xsp)
-        qbXsXsp = qb(Xs,Xsp) if qb is not None else qaXsXsp
-        qbXspXs = qb(Xsp,Xs) if qb is not None else qa(Xsp,Xs)
+        Xsp = get_kmap((icov,1,i)) 
+        if get_kmap1 is None:
+            Xsp1=Xsp
+        else:
+            Xsp1=get_kmap1((icov,1,i))
+
+        qaXsXsp = qa(Xs,Xsp) #split1 
+        qbXsXsp = qb(Xs1,Xsp1) if qb is not None else qaXsXsp #split2
+
+        qbXspXs = qb(Xsp1,Xs1) if qb is not None else qa(Xsp,Xs) #this is not present
+
+        mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_reuse(icov, get_kmap, power, nsims, qfunc1,get_kmap1=None, qfunc2=None, Xdat=None,Xdat1=None, use_mpi=True, 
+         verbose=True, skip_rd=False):
+         
+    """
+    Using Monte Carlo sims, this function calculates
+    the anisotropic Gaussian N0 bias
+    between two quadratic estimators. It returns both the
+    data realization-dependent version (RDN0) and the pure-simulation
+    version (MCN0).
+    e.g. 
+    >> mcrdn0(0,qfunc,get_kmap,comm,power)
+    
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple.
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    RDN0.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+    skip_rd: bool, optional
+        Whether to skip the RDN0 terms. The first returned component
+    is then None.
+
+    Returns
+    -------
+    rdn0: (N*(N+1)/2,...) array
+        Estimate of the RDN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0. None is returned
+    if skip_rd is True.
+
+    mcn0: (N*(N+1)/2,...) array
+        Estimate of the MCN0 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient RDN0, the
+    curl RDN0 and the gradient x curl RDN0.
+    
+    """
+    qa = qfunc1 
+    qb = qfunc2
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+2
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,1,i))
+        if get_kmap1 is None:
+            Xs1=Xs
+        else:
+            Xs1=get_kmap1((icov,1,i))
+        if not(skip_rd): 
+            qaXXs = qa(Xdat,Xs) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+            qbXXs = qb(Xdat1,Xs1) if qb is not None else qaXXs #this is split 2
+            qaXsX = qa(Xs,Xdat)  #split 1
+            qbXsX = qb(Xs1,Xdat1) if qb is not None else qaXsX #this is split 2
+            rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
+                    + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
+        Xsp = get_kmap((icov,0,i)) 
+        if get_kmap1 is None:
+            Xsp1=Xsp
+        else:
+            Xsp1=get_kmap1((icov,0,i))
+
+        qaXsXsp = qa(Xs,Xsp) #split1 
+        qbXsXsp = qb(Xs1,Xsp1) if qb is not None else qaXsXsp #split2
+
+        qbXspXs = qb(Xsp1,Xs1) if qb is not None else qa(Xsp,Xs) #this is not present
+
         mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
@@ -232,7 +356,7 @@ def mcn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None,
                   verbose=verbose, skip_rd=True)[1]
 
 
-def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True):
+def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,shear=False):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
@@ -279,18 +403,28 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True):
     comm,rank,my_tasks = mpi.distribute(nsims)
     n1evals = []
     for i in my_tasks:
+        i=i+1
         if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
         Xs    = get_kmap((icov,0,i)) # S
         Ysp   = get_kmap((icov,1,i)) # S'
         Xsk   = get_kmap((icov,2,i)) # Sphi
         Yskp  = get_kmap((icov,3,i)) # Sphi'
-        qa_Xsk_Yskp = qa(Xsk,Yskp)
-        qb_Xsk_Yskp = qb(Xsk,Yskp) if qb is not None else qa_Xsk_Yskp
-        qb_Yskp_Xsk = qb(Yskp,Xsk) if qb is not None else qa(Yskp,Xsk)
-        qa_Xs_Ysp = qa(Xs,Ysp)
-        qb_Xs_Ysp = qb(Xs,Ysp) if qb is not None else qa_Xs_Ysp
-        qb_Ysp_Xs = qb(Ysp,Xs) if qb is not None else qa(Ysp,Xs)
-        qb_Yskp_Xsk = qb(Yskp,Xsk) if qb is not None else qa(Yskp,Xsk)
+        if shear:
+            qa_Xsk_Yskp = 0.5*(qa(Xsk[0],Yskp[1])+qa(Yskp[0],Xsk[1]))
+            qb_Xsk_Yskp = 0.5*(qb(Xsk[0],Yskp[1])+qb(Yskp[0],Xsk[1])) if qb is not None else qa_Xsk_Yskp
+            qb_Yskp_Xsk = 0.5*(qb(Yskp[0],Xsk[1])+qb(Xsk[0],Yskp[1])) if qb is not None else 0.5*(qa(Yskp[0],Xsk[1])+qa(Xsk[0],Yskp[1]))
+            qa_Xs_Ysp = 0.5*(qa(Xs[0],Ysp[1])+qa(Ysp[0],Xs[1]))
+            qb_Xs_Ysp = 0.5*(qb(Xs[0],Ysp[1])+qb(Ysp[0],Xs[1])) if qb is not None else qa_Xs_Ysp
+            qb_Ysp_Xs = 0.5*(qb(Ysp[0],Xs[1])+qb(Xs[0],Ysp[1])) if qb is not None else 0.5*(qa(Ysp[0],Xs[1])+qa(Xs[0],Ysp[1]))
+            qb_Yskp_Xsk = 0.5*(qb(Yskp[0],Xsk[1])+qb(Xsk[0],Yskp[1])) if qb is not None else 0.5*(qa(Yskp[0],Xsk[1])+qa(Xsk[0],Yskp[1]))
+        else:
+            qa_Xsk_Yskp = 0.5*(qa(Xsk,Yskp)+qa(Yskp,Xsk))
+            qb_Xsk_Yskp = 0.5*(qb(Xsk,Yskp)+qb(Yskp,Xsk)) if qb is not None else qa_Xsk_Yskp
+            qb_Yskp_Xsk = 0.5*(qb(Yskp,Xsk)+qb(Xsk,Yskp)) if qb is not None else qa(Yskp,Xsk)
+            qa_Xs_Ysp = 0.5*(qa(Xs,Ysp)+qa(Ysp,Xs))
+            qb_Xs_Ysp = 0.5*(qb(Xs,Ysp)+qb(Ysp,Xs)) if qb is not None else qa_Xs_Ysp
+            qb_Ysp_Xs = 0.5*(qb(Ysp,Xs)+qb(Xs,Ysp)) if qb is not None else 0.5*(qa(Ysp,Xs)+qa(Xs,Ysp))
+            qb_Yskp_Xsk = 0.5*(qb(Yskp,Xsk)+qb(Xsk,Yskp)) if qb is not None else 0.5*(qa(Yskp,Xsk)+qa(Xsk,Yskp))
         term = power(qa_Xsk_Yskp,qb_Xsk_Yskp) + power(qa_Xsk_Yskp,qb_Yskp_Xsk) \
             - power(qa_Xs_Ysp,qb_Xs_Ysp) - power(qa_Xs_Ysp,qb_Ysp_Xs)
         n1evals.append(term.copy())
@@ -376,6 +510,9 @@ def cross_estimator(xyuv,qe_func,pow_func,xsplits,ysplits,usplits,vsplits,
         feed_dict[f'us{i}'] = us[i]
         feed_dict[f'vs{i}'] = vs[i]
     return cross_estimator_symbolic(xyuv,m,qe_func,pow_func,eval_feed_dict=feed_dict)
+
+
+
 
 def cross_estimator_symbolic(xyuv,nsplits,qe_func,pow_func,
                              coadd_name_func = lambda x: f'{x}c',field_names=['x','y','u','v'],
@@ -488,3 +625,388 @@ def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
                                  Aalpha=AXY,Abeta=AUV,xmask=xmask,ymask=ymask,kmask=kmask,
                                  field_names_alpha=None,field_names_beta=None,skip_filter_field_names=False,
                                  split_estimator=split_estimator)
+
+def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         
+    
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+2
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,0,i))
+        Xs1= get_kmap1((icov,0,i))
+        Xs2= get_kmap2((icov,0,i))
+        Xs3= get_kmap3((icov,0,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+
+        Xsp = get_kmap((icov,0,i+1)) 
+        Xsp1 = get_kmap1((icov,0,i+1)) 
+        Xsp2 = get_kmap2((icov,0,i+1)) 
+        Xsp3 = get_kmap3((icov,0,i+1)) 
+
+        if shear:
+            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+        else:
+            if power_mcn0 is None:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+            else:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_s41(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         
+    
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+122
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,0,i))
+        Xs1= get_kmap1((icov,0,i))
+        Xs2= get_kmap2((icov,0,i))
+        Xs3= get_kmap3((icov,0,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+
+        Xsp = get_kmap((icov,0,i+1)) 
+        Xsp1 = get_kmap1((icov,0,i+1)) 
+        Xsp2 = get_kmap2((icov,0,i+1)) 
+        Xsp3 = get_kmap3((icov,0,i+1)) 
+
+        if shear:
+            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+        else:
+            if power_mcn0 is None:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+            else:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_s42(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         
+    
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+242
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,0,i))
+        Xs1= get_kmap1((icov,0,i))
+        Xs2= get_kmap2((icov,0,i))
+        Xs3= get_kmap3((icov,0,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+
+        Xsp = get_kmap((icov,0,i+1)) 
+        Xsp1 = get_kmap1((icov,0,i+1)) 
+        Xsp2 = get_kmap2((icov,0,i+1)) 
+        Xsp3 = get_kmap3((icov,0,i+1)) 
+
+        if shear:
+            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+        else:
+            if power_mcn0 is None:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+            else:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_s43(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         
+    
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+2
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,1,i))
+        Xs1= get_kmap1((icov,1,i))
+        Xs2= get_kmap2((icov,1,i))
+        Xs3= get_kmap3((icov,1,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1)
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+
+        Xsp = get_kmap((icov,1,i+1)) 
+        Xsp1 = get_kmap1((icov,1,i+1)) 
+        Xsp2 = get_kmap2((icov,1,i+1)) 
+        Xsp3 = get_kmap3((icov,1,i+1)) 
+
+        if shear:
+            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+        else:
+            if power_mcn0 is None:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+            else:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False):
+         
+    #boost another 400 mcn0 for final run i,i+2
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+2
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,0,i))
+        Xs1= get_kmap1((icov,0,i))
+        Xs2= get_kmap2((icov,0,i))
+        Xs3= get_kmap3((icov,0,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+
+        Xsp = get_kmap((icov,0,i+2)) 
+        Xsp1 = get_kmap1((icov,0,i+2)) 
+        Xsp2 = get_kmap2((icov,0,i+2)) 
+        Xsp3 = get_kmap3((icov,0,i+2)) 
+
+        if shear:
+            qaXsXsp = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xsp[1],Xsp1[1],Xsp2[1],Xsp3[1],qf1) #split1 
+            qbXsXsp = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xsp[1],Xsp1[1],Xsp2[1],Xsp3[1],qf2) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = qa(Xsp[0],Xsp1[0],Xsp2[0],Xsp3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qa(Xsp[0],Xsp1[0],Xsp2[0],Xsp3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #this is not present
+        else:
+            qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+            qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+
+        mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
