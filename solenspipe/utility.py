@@ -8,7 +8,7 @@ from scipy.optimize import curve_fit
 import pixell.powspec
 from orphics import maps
 from soapack import interfaces as sints
-from pixell import sharp
+# from pixell import sharp # NO MORE SHARP
 import os
 from falafel.utils import get_cmb_alm
 from solenspipe import cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
