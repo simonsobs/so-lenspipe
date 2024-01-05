@@ -103,9 +103,96 @@ def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
 
     return phi_xy
 
+
+def four_split_tau(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
+    """Return tau_alms combinations required for the 4cross estimator in Eq. 38 of arXiv:2011.02475v1.
+    No phi_to_kappa conversion, only TT alms passed in.
+
+    Args:
+        Xdat_0 (array): fTalm filtered alms from split 0
+        Xdat_1 (array): fTalm filtered alms from split 1
+        Xdat_2 (array): fTalm filtered alms from split 2
+        Xdat_3 (array): fTalm filtered alms from split 3
+        q_func1 (function): function for quadratic estimator
+        Xdatp_0 (array): fTalm filtered alms from split 0 used for RDN0 for different sim data combination
+        Xdatp_1 (array): fTalm filtered alms from split 1 used for RDN0 for different sim data combination
+        Xdatp_2 (array): fTalm filtered alms from split 2 used for RDN0 for different sim data combination
+        Xdatp_3 (array): fTalm filtered alms from split 3 used for RDN0 for different sim data combination
+        qfunc2 ([type], optional): [description]. Defaults to None.
+
+    Returns:
+        array: Combination of reconstructed kappa alms
+    """
+    q_bh_1=q_func1
+    if Xdatp_0 is None:
+        print("none")
+        
+        tau_xy00 = q_bh_1(Xdat_0,Xdat_0)
+        tau_xy11 = q_bh_1(Xdat_1,Xdat_1)
+        tau_xy22 = q_bh_1(Xdat_2,Xdat_2)
+        tau_xy33 = q_bh_1(Xdat_3,Xdat_3)
+        tau_xy01 = 0.5*(q_bh_1(Xdat_0,Xdat_1)+q_bh_1(Xdat_1,Xdat_0))
+        tau_xy02 = 0.5*(q_bh_1(Xdat_0,Xdat_2)+q_bh_1(Xdat_2,Xdat_0))
+        tau_xy03 = 0.5*(q_bh_1(Xdat_0,Xdat_3)+q_bh_1(Xdat_3,Xdat_0))
+        tau_xy10=tau_xy01
+        tau_xy12= 0.5*(q_bh_1(Xdat_1,Xdat_2)+q_bh_1(Xdat_2,Xdat_1))
+        tau_xy13= 0.5*(q_bh_1(Xdat_1,Xdat_3)+q_bh_1(Xdat_3,Xdat_1))
+        tau_xy20=tau_xy02
+        tau_xy21=tau_xy12
+        tau_xy23=0.5*(q_bh_1(Xdat_2,Xdat_3)+q_bh_1(Xdat_3,Xdat_2))
+        tau_xy30=tau_xy03
+        tau_xy31=tau_xy13
+        tau_xy32=tau_xy23
+        tau_xy_hat=(tau_xy00+tau_xy11+tau_xy22+tau_xy33+tau_xy01+tau_xy02+tau_xy03+tau_xy10+tau_xy12+tau_xy13+tau_xy20+tau_xy21+tau_xy23+tau_xy30+tau_xy31+tau_xy32)/4**2
+        tau_xy_X=tau_xy_hat-(tau_xy00+tau_xy11+tau_xy22+tau_xy33)/4**2                        
+        tau_xy0=(tau_xy00+tau_xy01+tau_xy02+tau_xy03)/4
+        tau_xy1=(tau_xy10+tau_xy11+tau_xy12+tau_xy13)/4
+        tau_xy2=(tau_xy20+tau_xy21+tau_xy22+tau_xy23)/4
+        tau_xy3=(tau_xy30+tau_xy31+tau_xy32+tau_xy33)/4
+        tau_xy_x0=tau_xy0-tau_xy00/4
+        tau_xy_x1=tau_xy1-tau_xy11/4
+        tau_xy_x2=tau_xy2-tau_xy22/4
+        tau_xy_x3=tau_xy3-tau_xy33/4
+    
+    else:
+       
+        tau_xy00 = q_bh_1(Xdat_0,Xdatp_0)
+        tau_xy11 = q_bh_1(Xdat_1,Xdatp_1)
+        tau_xy22 = q_bh_1(Xdat_2,Xdatp_2)
+        tau_xy33 = q_bh_1(Xdat_3,Xdatp_3)
+        tau_xy01 = 0.5*(q_bh_1(Xdat_0,Xdatp_1)+q_bh_1(Xdat_1,Xdatp_0))
+        tau_xy02 = 0.5*(q_bh_1(Xdat_0,Xdatp_2)+q_bh_1(Xdat_2,Xdatp_0))
+        tau_xy03 = 0.5*(q_bh_1(Xdat_0,Xdatp_3)+q_bh_1(Xdat_3,Xdatp_0))        
+        tau_xy10=tau_xy01
+        tau_xy12= 0.5*(q_bh_1(Xdat_1,Xdatp_2)+q_bh_1(Xdat_2,Xdatp_1))
+        tau_xy13= 0.5*(q_bh_1(Xdat_1,Xdatp_3)+q_bh_1(Xdat_3,Xdatp_1))
+        tau_xy20=tau_xy02
+        tau_xy21=tau_xy12
+        tau_xy23=0.5*(q_bh_1(Xdat_2,Xdatp_3)+q_bh_1(Xdat_3,Xdatp_2))
+        tau_xy30=tau_xy03
+        tau_xy31=tau_xy13
+        tau_xy32=tau_xy23
+        tau_xy_hat=(tau_xy00+tau_xy11+tau_xy22+tau_xy33+tau_xy01+tau_xy02+tau_xy03+tau_xy10+tau_xy12+tau_xy13+tau_xy20+tau_xy21+tau_xy23+tau_xy30+tau_xy31+tau_xy32)/4**2
+        tau_xy_X=tau_xy_hat-(tau_xy00+tau_xy11+tau_xy22+tau_xy33)/4**2                        
+        tau_xy0=(tau_xy00+tau_xy01+tau_xy02+tau_xy03)/4
+        tau_xy1=(tau_xy10+tau_xy11+tau_xy12+tau_xy13)/4
+        tau_xy2=(tau_xy20+tau_xy21+tau_xy22+tau_xy23)/4
+        tau_xy3=(tau_xy30+tau_xy31+tau_xy32+tau_xy33)/4
+        tau_xy_x0=tau_xy0-tau_xy00/4
+        tau_xy_x1=tau_xy1-tau_xy11/4
+        tau_xy_x2=tau_xy2-tau_xy22/4
+        tau_xy_x3=tau_xy3-tau_xy33/4
+
+    tau_xy=np.array([tau_xy_X,tau_xy01,tau_xy02,tau_xy03,tau_xy12,tau_xy13,tau_xy23,tau_xy_x0,tau_xy_x1,tau_xy_x2,tau_xy_x3])
+    
+
+    return tau_xy
+
+
 def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
     phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
     phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
+    print(np.shape(xy[0]), np.shape(phi_x))
     if cross is False:
         tg1=m**4*cs.alm2cl(phi_x,phi_xp)
         tg2=-4*m**2*(cs.alm2cl(phi_x0,phi_x0p)+cs.alm2cl(phi_x1,phi_x1p)+cs.alm2cl(phi_x2,phi_x2p)+cs.alm2cl(phi_x3,phi_x3p))
@@ -117,7 +204,6 @@ def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
 
     auto =(1/(m*(m-1)*(m-2)*(m-3)))*(tg1+tg2+tg3)
     return auto
-
 
 def get_sim_pixelization(lmax,is_healpix,verbose=False):
     # Geometry
@@ -133,7 +219,7 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
     return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
 
 
-def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
+def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
     """
     Get norms for lensing potential, sources and cross
 
@@ -188,46 +274,58 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     
     """
     est_norm_list = [est1]
+    coup = [c.upper() for c in coup]
+    
+    e1 = est1.upper()
+    e2 = est2.upper()
+    
     if est2!=est1:
         est_norm_list.append(est2)
     bh = False
-    for e in est_norm_list:
-        if e.upper()=='TT' or e.upper()=='MV':
-            bh = True
+    if 'LENS' in coup:
+        for e in est_norm_list:
+            if e.upper()=='TT' or e.upper()=='MV':
+                bh = True
     if bh and est2=='SRC':
         est_norm_list.append('src')
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     else:
         R_src_tt = None
-    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
-    ls = np.arange(Als[est1][0].size)
+    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax,coupling=coup)
 
-    # Convert to noise per mode on lensing convergence
-    diag = est1==est2 
-    e1 = est1.upper()
-    e2 = est2.upper()
-    if diag:
-        Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
-        Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
-        if bh and est2=='SRC':
-            Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+    if 'LENS' in coup:
+        ls = np.arange(Als[est1][0].size)
+        # Convert to noise per mode on lensing convergence
+        diag = est1==est2 
+        if diag:
+            Nl_g = Als[e1][0] * (ls*(ls+1.)/2.)**2.
+            Nl_c = Als[e1][1] * (ls*(ls+1.)/2.)**2.
+            if bh and est2=='SRC':
+                Nl_g_bh = bias_hardened_n0(Als[e1][0],Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+            else:
+                Nl_g_bh = None
         else:
-            Nl_g_bh = None
-    else:
-        assert ('MV' not in [e1,e2]) and ('MVPOL' not in [e1,e2])
-        R_e1_e2 = pytempura.get_cross(e1,e2,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
-        Nl_phi_g = Als[e1][0]*Als[e2][0]*R_e1_e2[0]
-        Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
-        Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
-        Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
-        if bh and est2=='SRC':
-            Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
-        else:
-            Nl_g_bh = None
-    return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
+            assert ('MV' not in [e1,e2]) and ('MVPOL' not in [e1,e2])
+            R_e1_e2 = pytempura.get_cross(e1,e2,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+            Nl_phi_g = Als[e1][0]*Als[e2][0]*R_e1_e2[0]
+            Nl_phi_c = Als[e1][1]*Als[e2][1]*R_e1_e2[1]
+            Nl_g = Nl_phi_g * (ls*(ls+1.)/2.)**2.
+            Nl_c = Nl_phi_c * (ls*(ls+1.)/2.)**2.
+            if bh and est2=='SRC':
+                Nl_g_bh = bias_hardened_n0(Nl_phi_g,Als['src'],R_src_tt) * (ls*(ls+1.)/2.)**2.
+            else:
+                Nl_g_bh = None
+        return bh,ls,Als,R_src_tt,Nl_g,Nl_c,Nl_g_bh
+    
+    elif 'TAU' in coup:
+        # fill this in more when cross estimators and BH for tau are implemented #
+        ls = np.arange(Als[e1].size)
+        Nl = Als[e1]
+        return ls,Als,Nl #R_lens_tt, R_src_tt, etc.
+        
 
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None, coup=["lens"]):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
@@ -251,8 +349,8 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
         The name of a pre-defined falafel estimator. e.g. MV,MVPOL,TT,
         EB,TE,EE,TB.
     Al1 : ndarray
-        A (2,mlmax) shape numpy array containing the gradient-like (e.g. lensing
-        potential) and curl-like normalization.
+        A (2,mlmax) OR (1,mlmax) shape numpy array containing the gradient-like (e.g. lensing
+        potential) and curl-like, or just the tau normalization.
     est2 : str, optional
         The name of a pre-defined falafel estimator to bias harden against
     Al2 : ndarray, optional
@@ -270,6 +368,9 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     profile : (mlmax) array, default=None
         An array to use as the profile for profile-hardening, when est2="SRC".
         If not provided, will just do point-source hardening. 
+    coup : str, default="lens"
+        An array to use as the profile for profile-hardening, when est2="SRC".
+        If not provided, will just do point-source hardening. 
 
     Returns
     -------
@@ -278,11 +379,15 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     
     """
     est1 = est1.upper()
+    coup = [c.upper() for c in coup]
+    
+    print(coup)
     print(pytempura.est_list)
     print(est1)
     assert est1 in pytempura.est_list
-    if Al1 is not None:
+    if Al1 is not None and "lens" in coup:
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
+
     if est2 is not None:
         bh = True
         assert est2 in pytempura.est_list
@@ -305,13 +410,19 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     if est1=='SHEAR':
         qfunc1 = lambda X,Y: qe.qe_shear(px,mlmax,
                             Talm=X[0],fTalm=Y[1])
-    else:
+    elif "LENS" in coup:
         qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
                                     fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
                                     estimators=[est1],
                                     xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
+        
+    elif "TAU" in coup:
+        if est1=="TT":
+            qfunc1 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y,xfTalm=X)
+        else:
+            print("Not implemented for tau yet.")
 
-    if bh:
+    if bh:# haven't done for tau yet
         assert est2 in ['SRC','MASK'] # TODO: add mask
         if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
@@ -381,11 +492,18 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                 
     else:
         if Al1 is not None: 
-            # TODO: Improve this construct by building a multi-dimensional almxfl
-            def retfunc(X,Y):
-                recon = qfunc1(X,Y)
-                return np.asarray((cs.almxfl(recon[0],Al1[0]),cs.almxfl(recon[1],Al1[1])))
-            return retfunc
+            if "LENS" in coup:
+                # TODO: Improve this construct by building a multi-dimensional almxfl
+                def retfunc(X,Y):
+                    recon = qfunc1(X,Y)
+                    return np.asarray((cs.almxfl(recon[0],Al1[0]),cs.almxfl(recon[1],Al1[1])))
+                return retfunc
+            elif "TAU" in coup:
+                def retfunc(X,Y):
+                    recon = qfunc1(X,Y)
+#                     print("shape of Al1 = "+str(np.shape(Al1)))
+                    return np.asarray((cs.almxfl(recon,Al1)))
+                return retfunc
         else: return qfunc1
 
 
