@@ -189,7 +189,7 @@ def four_split_tau(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
     return tau_xy
 
 
-def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
+def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None): #compute the power spectrum from four splits! Doesn't have to be phi
     phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
     phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
     print(np.shape(xy[0]), np.shape(phi_x))
