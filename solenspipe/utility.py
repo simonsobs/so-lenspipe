@@ -3,12 +3,12 @@ from orphics import maps,io,cosmology,stats,pixcov
 import numpy as np
 import healpy as hp
 import matplotlib.pyplot as plt
-from soapack import interfaces
+# from soapack import interfaces
 from scipy.optimize import curve_fit
 import pixell.powspec
 from orphics import maps
-from soapack import interfaces as sints
-from pixell import sharp
+# from soapack import interfaces as sints
+# from pixell import sharp
 import os
 from falafel.utils import get_cmb_alm
 from solenspipe import cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
@@ -28,8 +28,6 @@ def stamp_plot(imap,ra,dec,boxwidth=10):
     box = np.array([[dec-width/2.,ra-width/2.],[dec+width/2.,ra+width/2.]])
     stamp = imap.submap(box)
     return stamp
-
-
 
 def project_mask(mask,shape,wcs,fname=None):
     sim_mask = enmap.project(mask,shape,wcs,order=1)
@@ -230,7 +228,7 @@ def get_w(n,maps,mask):
 
 
     
-def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
+def get_datanoise(map_list,ivar_list, a, b, w2_mask,beam=None,N=20,beam_deconvolve=True,lmax=6000):
     """
     Calculate the noise power of a coadded map given a list of maps and list of ivars.
     Inputs:
@@ -245,9 +243,6 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,
     1D power spectrum accounted for w2 from 0 to 10000
     """
     
-    pmap=enmap.pixsizemap(map_list[0].shape,map_list[0].wcs)
-
-
     cl_ab=[]
     n = len(map_list)
     #calculate the coadd maps
@@ -284,10 +279,6 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,
     cl_ab=np.array(cl_ab)
     #sqrt_ivar=np.sqrt(ivar_eff(0,ivar_list))
 
-    mask=mask
-    mask[mask<=0]=0
-    w2=np.sum((mask**2)*pmap) /np.pi / 4.
-    print(w2)
     power = 1/n/(n-1) * np.sum(cl_ab, axis=0)
     ls=np.arange(len(power))
     power[~np.isfinite(power)] = 0
@@ -295,7 +286,7 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,
     bins=np.arange(len(power))
     power=maps.interp(bins,power)(ls)
 
-    return power / w2
+    return power / w2_mask
 
 def get_datanoise_fullresTT(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
     """
@@ -463,11 +454,11 @@ def pixellWrapperSpinS(alm2map,alm,mp12,spin):
 
 def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
     #code by Will Coulton
-    from pixell import sharp
+    # from pixellvlib import sharp
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
-        minfo=sharp.map_info_healpix(nside)
+        # minfo=sharp.map_info_healpix(nside)
         nside=int((len(mask_0)/12.)**.5)   
         if lmax is None:
             lmax=int(3*nside-1)
@@ -475,13 +466,13 @@ def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
         alm2map = cs.alm2map_healpix
         template = np.zeros([2,12*nside**2])
     else:
-        minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
+        # minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
         if lmax is None:
             lmax = np.min(np.pi/(Q.pixshape()))
         map2alm = cs.map2alm
         alm2map = cs.alm2map
         template =enmap.enmap(np.zeros(np.shape([Q,U])),wcs=Q.wcs)
-    ainfo = sharp.alm_info(int(lmax))
+    ainfo = cs.alm_info(int(lmax))
     ells = np.arange(0., 10000.)
     fnc1 = np.ones(len(ells))
     wAlm_0=map2alm(mask_0,ainfo=ainfo,spin=0)
@@ -581,23 +572,6 @@ def reconvolve_maps(maps,mask,beamdec,beamconv,lmax=6000):
     convolved_alm=cs.almxfl(alm_a,lambda x: beamconv(x)) 
     reconvolved_map=cs.alm2map(convolved_alm,enmap.empty(shape,wcs))
     return reconvolved_map
-
-
-def convert_seeds(seed,nsims=2000,ndiv=4):
-    # Convert the solenspipe convention to the Alex convention
-    icov,cmb_set,i = seed
-    assert icov==0, "Covariance from sims not yet supported."
-    nstep = nsims//ndiv #changed this to access roght files
-    if cmb_set==0 or cmb_set==1:
-        s_i = i + cmb_set*nstep
-        s_set = 0
-        noise_seed = (icov,cmb_set,i)+(2,)
-    elif cmb_set==2 or cmb_set==3:
-        s_i = i + nstep*2
-        s_set = cmb_set - 2
-        noise_seed = (icov,cmb_set,i)+(2,)
-
-    return s_i,s_set,noise_seed
 
 def get_beamed_signal(s_i,s_set,beam,shape,wcs):
     print(s_i,s_set)
