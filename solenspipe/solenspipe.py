@@ -109,15 +109,15 @@ def four_split_tau(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
     No phi_to_kappa conversion, only TT alms passed in.
 
     Args:
-        Xdat_0 (array): fTalm filtered alms from split 0
-        Xdat_1 (array): fTalm filtered alms from split 1
-        Xdat_2 (array): fTalm filtered alms from split 2
-        Xdat_3 (array): fTalm filtered alms from split 3
+        Xdat_0 (array): filtered alms from split 0
+        Xdat_1 (array): filtered alms from split 1
+        Xdat_2 (array): filtered alms from split 2
+        Xdat_3 (array): filtered alms from split 3
         q_func1 (function): function for quadratic estimator
-        Xdatp_0 (array): fTalm filtered alms from split 0 used for RDN0 for different sim data combination
-        Xdatp_1 (array): fTalm filtered alms from split 1 used for RDN0 for different sim data combination
-        Xdatp_2 (array): fTalm filtered alms from split 2 used for RDN0 for different sim data combination
-        Xdatp_3 (array): fTalm filtered alms from split 3 used for RDN0 for different sim data combination
+        Xdatp_0 (array): filtered alms from split 0 used for RDN0 for different sim data combination
+        Xdatp_1 (array): filtered alms from split 1 used for RDN0 for different sim data combination
+        Xdatp_2 (array): filtered alms from split 2 used for RDN0 for different sim data combination
+        Xdatp_3 (array): filtered alms from split 3 used for RDN0 for different sim data combination
         qfunc2 ([type], optional): [description]. Defaults to None.
 
     Returns:
@@ -255,7 +255,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
     Returns
     -------
     bh: bool
-        Specify whether Bias hardened norm is calculated
+        Specify whether  hardened norm is calculated
     ls: ndarray
         A (mlmax+1,) shape numpy array for the ell range of the normalization
     Als: dict
@@ -291,6 +291,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     else:
         R_src_tt = None
+    
     Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax,coupling=coup)
 
     if 'LENS' in coup:
@@ -322,6 +323,13 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
         ls = np.arange(Als[e1].size)
         Nl = Als[e1]
         return ls,Als,Nl #R_lens_tt, R_src_tt, etc.
+
+    elif 'ROT' in coup:
+        # fill this in more when cross estimators and BH for tau are implemented #
+        ls = np.arange(Als[e1].size)
+        Nl = Als[e1]
+        return ls,Als,Nl #R_lens_tt, R_src_tt, etc.
+
         
 
 
@@ -419,8 +427,17 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     elif "TAU" in coup:
         if est1=="TT":
             qfunc1 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y,xfTalm=X)
+        elif est1=="EB":
+            qfunc1 = lambda X,Y: qe.qe_tau_pol(px,ucls,mlmax,fEalms=X, fBalms=Y)
         else:
             print("Not implemented for tau yet.")
+
+
+    elif "ROT" in coup:
+        if est1=="EB":
+            qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y,fBalms=X)
+        else:
+            print("Not implemented for rot.")
 
     if bh:# haven't done for tau yet
         assert est2 in ['SRC','MASK'] # TODO: add mask
