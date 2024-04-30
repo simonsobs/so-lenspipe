@@ -678,21 +678,29 @@ def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_km
         Xsp2 = get_kmap2((icov,0,i+1)) 
         Xsp3 = get_kmap3((icov,0,i+1)) 
 
-        if shear:
-            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
-            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
-        else:
-            if power_mcn0 is None:
+
+        if power_mcn0 is None:
+
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
-                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+            mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+        else:
+
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
             else:
                 qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
                 qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
-                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+            mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
 
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
@@ -704,6 +712,78 @@ def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_km
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
 
+def mcrdn0_s4_test(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         
+    
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+2
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+        Xs  = get_kmap((icov,0,i))
+        Xs1= get_kmap1((icov,0,i))
+        Xs2= get_kmap2((icov,0,i))
+        Xs3= get_kmap3((icov,0,i))
+
+
+        if not(skip_rd): 
+
+            qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1) #for the two split case, one would need two get_kmaps?, or instead returns an array of maps, [i] for split i
+            qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+
+            rdn0_only_term = power(qaXXs,qbXXs)
+
+        Xsp = get_kmap((icov,0,i+1)) 
+        Xsp1 = get_kmap1((icov,0,i+1)) 
+        Xsp2 = get_kmap2((icov,0,i+1)) 
+        Xsp3 = get_kmap3((icov,0,i+1)) 
+
+
+        if power_mcn0 is None:
+
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+            mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+        else:
+
+            qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+            qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+            qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+            #mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+            mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+
+        mcn0evals.append(mcn0_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
 
 def mcrdn0_s41(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
          verbose=True, skip_rd=False,shear=False,power_mcn0=None):

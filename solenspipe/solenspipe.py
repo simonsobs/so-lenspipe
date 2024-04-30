@@ -1,6 +1,5 @@
 from __future__ import print_function
 import matplotlib
-matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi
 from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
 import pytempura
@@ -1127,7 +1126,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
-    ocl= fcl+noise
+    ocl= fcl+noise #fiducial spectra
     ocl[np.where(ocl==0)] = 1e30
     AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
     AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
@@ -1471,7 +1470,7 @@ class weighted_bin1D:
         bin_means=np.array(bin_means)
         return self.cents,bin_means
         
-    def binning_matrix(self,ix,iy,weights):
+    def binning_matrix(self,ix,iy,weights,planck=False):
         #return the binning matrix used for the data product ix,iy are length of the array we want to bin
         x = ix.copy()
         y = iy.copy()
@@ -1484,7 +1483,11 @@ class weighted_bin1D:
         nrows=len(self.bin_edges)
         for i in range(1,nrows):
             col=np.zeros(len(y))
-            col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
+            if planck:
+                col[self.bin_edges[i-1]+1:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]+1:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]+1:self.bin_edges[i]+1])
+
+            else:
+                col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
             matrix.append(col)
         matrix=np.array(matrix)
         return matrix 

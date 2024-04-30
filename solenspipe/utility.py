@@ -1,5 +1,5 @@
 from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
-from orphics import maps,io,cosmology,stats,pixcov
+from orphics import maps,io,cosmology,stats,pixcov,mpi
 import numpy as np
 import healpy as hp
 import matplotlib.pyplot as plt
@@ -8,11 +8,9 @@ from scipy.optimize import curve_fit
 import pixell.powspec
 from orphics import maps
 from soapack import interfaces as sints
-from pixell import sharp
+#from pixell import sharp
 import os
-from falafel.utils import get_cmb_alm
-from solenspipe import cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
-from orphics import maps,io,cosmology,stats,mpi
+from falafel.utils import get_cmb_alm,test_cmb_alm
 import pytempura
 
 
@@ -281,7 +279,6 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,
             cls = hp.alm2cl(alm_a)
             cl_ab.append(cls)
     cl_ab=np.array(cl_ab)
-    #sqrt_ivar=np.sqrt(ivar_eff(0,ivar_list))
 
     mask=mask
     mask[mask<=0]=0
@@ -598,12 +595,13 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_beamed_signal(s_i,s_set,beam,shape,wcs):
+def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False,fixed_amp=False):
     print(s_i,s_set)
     s_i,s_set,_ = convert_seeds((0,s_set,s_i))
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
-    cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
+    #cmb_alm = test_cmb_alm(s_i,s_set,unlensed=unlensed,fixed_amp=fixed_amp).astype(np.complex128)
+    cmb_alm=get_cmb_alm(s_i,s_set,unlensed=unlensed).astype(np.complex128)
     if beam is  not None:
         cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
@@ -839,6 +837,7 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
             
         imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
         return imap
+    print('performing FFT')
     lymap, lxmap = imap.lmap()
     ly, lx = lymap[:,0], lxmap[0,:]
 
@@ -861,15 +860,7 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
     imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
     return imap
 
-def kspace_mask1(imap):
-    """
-    returns a real space map in which the kspace stripes of |lx|<90 and |ly|<50 are masked
-    """
-    k_mask=maps.mask_kspace(imap.shape,imap.wcs,lxcut=90,lycut=50)
-    plt.figure()
-    plt.imshow(np.fft.fftshift(k_mask))
-    plt.savefig(f"/home/r/rbond/jiaqu/scratch/DR6/maps/sims/korphics.png")
-    return maps.filter_map(imap,k_mask)
+
 
 
 def get_Dpower(X,U,mask,m=4):
@@ -946,7 +937,8 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         response=response[:Lmax+1]
 
     D_l=get_Dpower(X,U,mask,m=4)
-    S_l=get_Spower(coaddX,coaddU,mask)
+    #S_l=get_Spower(coaddX,coaddU,mask)
+    S_l=coaddX
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
     ocl=ffl
@@ -1097,7 +1089,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
             AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
             ng=AgTT*AgEE*(AgTTEE0+AgTTEE1)
             nc=AcTT*AcEE*(AcTTEE0+AcTTEE1)
-        elif est1 is 'TB' and est2 is 'EB':
+        elif est1=='TB' and est2 =='EB':
             AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
             AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
             cl=ocl**2/(d_ocl)
