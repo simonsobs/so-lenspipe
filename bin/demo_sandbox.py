@@ -11,7 +11,7 @@ import solenspipe
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 
-debug = False
+debug = True
 save_map_plots = False
 
 # Specify instrument
@@ -35,7 +35,7 @@ mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,lmin,lma
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
-if save_map_plots: io.hplot(data_map,'data_map',downgrade=4)
+if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims,comm)[0]
 mcn1 = mg.get_mcn1(est,nsims,comm)[0]
 mcmf_alm = mg.get_mcmf(est,nsims,comm)[0]
@@ -45,7 +45,7 @@ if comm.Get_rank()==0:
     galm = plensing.phi_to_kappa(galm - mcmf_alm)
     # Get the input kappa
     kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
-    if save_map_plots: io.hplot(cs.alm2map(galm,enmap.empty(mg.shape,mg.wcs,dtype=np.float32)),'kappa_map',downgrade=4)
+    if save_map_plots: io.hplot(cs.alm2map(galm,enmap.empty(mg.shape,mg.wcs,dtype=np.float32)),f'{outname}_kappa_map',downgrade=4)
     clkk_xx = cs.alm2cl(galm,galm) # Raw auto-spectrum (mean-field subtracted)
     clkk_ix = cs.alm2cl(kalm,galm) # Input x Recon
     clkk_ii = cs.alm2cl(kalm,kalm) # Input x Input
@@ -87,7 +87,7 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(0.8,1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'rclkk_ix_{xscale}.png')
+        pl.done(f'{outname}_rclkk_ix_{xscale}.png')
 
     # Plot all spectra and components
     for xscale in ['log','lin']:
@@ -103,5 +103,5 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(1e-9,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'clkk_ix_{xscale}.png')
+        pl.done(f'{outname}_clkk_ix_{xscale}.png')
 

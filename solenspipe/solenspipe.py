@@ -12,6 +12,7 @@ from falafel import qe
 import os
 import glob
 import traceback,warnings
+from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm, \
     get_theory_dicts, get_theory_dicts_white_noise, \
     change_alm_lmax, get_theory_dicts_white_noise

@@ -1040,6 +1040,6 @@ def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=
             + power(iqadys,iqbdys) + power(qadys,iqbdys) \
             - power(qaxsysp,qbxsysp) - power(qaxsysp,qbyspxs)
         if comm.rank==0: print("RDN0 step ", i, " done")
-    totrdn0 = u.allreduce(rdn0,comm)
+    totrdn0 = utils.allreduce(rdn0,comm)
     print("RDN0 done")
     return totrdn0/nsims
