@@ -447,7 +447,7 @@ def mcmf(icov,qfunc,get_kmap,comm,nsims):
             mf += qe(kx,ky)
             ntot += 1.
     mftot = utils.allreduce(mf,comm) 
-    totnot = utils.allreduce(ntot,comm) 
+    totntot = utils.allreduce(ntot,comm) 
     return mftot/totntot
         
 
@@ -1010,3 +1010,36 @@ def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
         avgrdn0 = None
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
+
+
+def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=False):
+    """
+    Original RDN0 function.
+    RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
+    get_kmap("T",(0,0,1)
+
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,get_kmap,comm,power)
+    """
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    # Sims
+    rdn0 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):
+        if comm.rank==0: print("RDN0 step ", i)
+        Xs  = get_kmap((icov,0,i))
+        Ysp = get_kmap((icov,1,i))
+        qadys = qa(Xdata,Xs)
+        qbdys = qb(Xdata,Xs) if alpha!=beta else qadys
+        iqadys = qa(Xs,Xdata) if not(symmetric) else qadys
+        iqbdys = qb(Xs,Xdata) if not(symmetric) else qbdys
+        qaxsysp = qa(Xs,Ysp)
+        qbxsysp = qb(Xs,Ysp) if alpha!=beta else qaxsysp
+        qbyspxs = qb(Ysp,Xs) if not(symmetric) else qbxsysp
+        rdn0 += power(qadys,qbdys) + power(iqadys,qbdys) \
+            + power(iqadys,iqbdys) + power(qadys,iqbdys) \
+            - power(qaxsysp,qbxsysp) - power(qaxsysp,qbyspxs)
+        if comm.rank==0: print("RDN0 step ", i, " done")
+    totrdn0 = u.allreduce(rdn0,comm)
+    print("RDN0 done")
+    return totrdn0/nsims
