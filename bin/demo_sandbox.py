@@ -12,6 +12,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 
 debug = True
+outname = 'test'
 save_map_plots = False
 
 # Specify instrument
