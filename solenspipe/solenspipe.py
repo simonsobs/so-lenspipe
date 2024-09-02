@@ -1511,3 +1511,90 @@ def get_labels():
     labs.xcl = r'$C_L^{\hat{\kappa} \kappa}$'
     labs.acl = r'$C_L^{\hat{\kappa} \hat{\kappa}}$'
     return labs
+
+
+# Load signal map, apply beam and add noise
+class LensingSandbox(object):
+    def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
+                 lmin,lmax,mlmax,ests, # reconstruction
+                 add_noise = False):  # whether to add noise (it will still be in the filters)
+        self.fwhm = fwhm_arcmin
+        self.noise = noise_uk
+        # Specify geometry
+        if (dec_min is None) and (dec_max is None):
+            self.shape,self.wcs = enmap.fullsky_geometry(res=res * utils.arcmin,variant='fejer1')
+        else:
+            if dec_min is None: dec_min = -90.
+            if dec_max is None: dec_max = 90. 
+            self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin)
+
+        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
+        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
+        ls = np.arange(self.Als[ests[0]][0].size)
+        self.Nls = {}
+        px = qe.pixelization(self.shape,self.wcs)
+        self.qfuncs = {}
+        for est in ests:
+            self.qfuncs[est] =  get_qfunc(px,self.ucls,mlmax,est,Al1=self.Als[est])
+            self.Nls[est] = self.Als[est][0] * (ls*(ls+1.)/2.)**2.
+
+
+        self.mlmax = mlmax
+        self.lmin = lmin
+        self.lmax = lmax
+        self.add_noise = add_noise
+
+
+    def get_observed_map(self,index,iset=0):
+        shape,wcs = self.shape,self.wcs
+        calm = futils.get_cmb_alm(index,iset)
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
+        # ignoring pixel window function here
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
+        if self.add_noise:
+            nmap = maps.white_noise((3,)+shape,wcs,self.noise)
+            nmap[1:] *= np.sqrt(2.)
+        else:
+            nmap = 0.
+        return omap + nmap
+
+    def kmap(self,stuple):
+        icov,ip,i = stuple
+        nstep = 500
+        if i>nstep: raise ValueError
+        if ip==0 or ip==1:
+            iset = 0
+            index = nstep*ip + i
+        elif ip==2 or ip==3:
+            iset = ip - 2
+            index = 1000 + i
+        dmap = self.get_observed_map(index,iset)
+        X = self.prepare(dmap)
+        return X
+
+    def prepare(self,omap):
+        alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
+        with np.errstate(divide='ignore', invalid='ignore'):
+            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
+        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
+        return [ftalm,fealm,fbalm]
+        
+    def reconstruct(self,omap,est):
+        # You can derive from this class and overload this function with your own
+        
+        # e.g. do map-level pre-processing here
+        # do coadding here
+        # do optimal filtering here
+        X = self.prepare(omap)
+        return self.qfuncs[est](X,X)
+
+    
+    def get_rdn0(self,prepared_data_alms,est,nsims,comm):
+        Xdata = prepared_data_alms
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
+
+    def get_mcn1(self,est,nsims,comm):
+        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
+
+    def get_mcmf(self,est,nsims,comm):
+        return bias.mcmf(0,self.qfuncs[est],self.kmap,comm,nsims)
