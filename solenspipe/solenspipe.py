@@ -1518,16 +1518,30 @@ def get_labels():
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
-                 add_noise = False):  # whether to add noise (it will still be in the filters)
+                 add_noise = False, mask = None,
+                 verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
         # Specify geometry
-        if (dec_min is None) and (dec_max is None):
-            self.shape,self.wcs = enmap.fullsky_geometry(res=res * utils.arcmin,variant='fejer1')
+        if mask is None:
+            if (dec_min is None) and (dec_max is None):
+                self.shape,self.wcs = enmap.fullsky_geometry(res=res * utils.arcmin,variant='fejer1')
+            else:
+                if dec_min is None: dec_min = -90.
+                if dec_max is None: dec_max = 90. 
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin, variant='fejer1')
+            mask = enmap.ones(self.shape,self.wcs)
         else:
-            if dec_min is None: dec_min = -90.
-            if dec_max is None: dec_max = 90. 
-            self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin)
+            self.shape = mask.shape
+            self.wcs = mask.wcs
+
+        self.w2 = maps.wfactor(2,mask)
+        self.w3 = maps.wfactor(3,mask)
+        self.w4 = maps.wfactor(4,mask)
+        if verbose:
+            print(f"W2 factor: {self.w2:.5f}")
+            print(f"W3 factor: {self.w3:.5f}")
+            print(f"W4 factor: {self.w4:.5f}")
 
         self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
         self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
