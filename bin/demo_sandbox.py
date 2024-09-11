@@ -8,6 +8,8 @@ import pytempura
 import pyfisher
 from enlib import bench
 import solenspipe
+from solenspipe import sandbox_extensions
+
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 
@@ -29,7 +31,6 @@ parser.add_argument("--add-noise", action='store_true',help='Whether to add nois
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
-
 
 debug = args.debug
 outname = args.outname
@@ -54,7 +55,13 @@ nsims_rdn0 = args.nsims if not(debug) else 8
 nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 
-mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,lmin,lmax,mlmax,ests,add_noise=add_noise,verbose=True)
+# default mask, ivar, mcg lmax is set to 
+# fullsky mask, white noise uniform ivar, and lmax - 1000
+mg = sandbox_extensions.LensingSandboxOF(None, None, None,
+                                         fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                                         lmin,lmax,mlmax,ests,add_noise=add_noise,verbose=True)
+#mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+#                               lmin,lmax,mlmax,ests,add_noise=add_noise,verbose=True)
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
@@ -131,9 +138,9 @@ if comm.Get_rank()==0:
         pl.add(cents,bclkk_ix,label=r'$C_L^{\kappa\hat{\kappa}}$')
         pl.add(cents,bclkk_ii,label=r'$C_L^{\kappa\kappa}$')
         pl.add(cents,bclkk_xx,label=r'$C_L^{\hat{\kappa}\hat{\kappa}}$')
-        pl.add(cents,brdn0,label=r'$N_L^{0,\rm RD}$')
-        pl.add(cents,bmcn1,label=r'$N_L^{1,\rm MC}$')
-        if nsims_mf>0: pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$')
+        pl.add(cents,brdn0,label=r'$N_L^{0,\rm RD}$' + f' ({nsims_rdn0} sims)')
+        pl.add(cents,bmcn1,label=r'$N_L^{1,\rm MC}$' + f' ({nsims_n1} sims)')
+        if nsims_mf>0: pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$' + f' ({nsims_mf} sims)')
         pl.add(lns,nls,label=r'$N_L$ opt. theory',ls='--')
         pl.add_err(cents,bclkk_final,yerr=errs,label=r'Debiased $C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} $' )
         pl._ax.set_ylim(1e-9,3e-7)
