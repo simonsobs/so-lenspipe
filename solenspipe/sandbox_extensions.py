@@ -38,6 +38,17 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
 
         self.lmax_prec_cg = self.lmax - 1000 if lmax_prec_cg is None \
                             else lmax_prec_cg
+        
+        # for optimal filtering
+        self.icov_pix = enmap.enmap(
+                            [self.ivar,
+                             maps.ivar(self.shape, self.wcs, self.noise * np.sqrt(2)),
+                             maps.ivar(self.shape, self.wcs, self.noise * np.sqrt(2))]
+                        )
+        
+        self.mask_bool = enmap.enmap(
+                            np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
+                         ).astype(bool)
 
     def prepare(self, omap):
         # run optimal filtering
@@ -45,23 +56,12 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                                                          grad=False, lmax=self.mlmax)
         b_ell = maps.gauss_beam(self.fwhm, np.arange(self.mlmax))
 
-        #icov_pix = np.expand_dims(self.ivar.copy(), axis=0)
-        icov_pix  = enmap.enmap(
-                        [self.ivar,
-                         maps.ivar(self.shape, self.wcs, self.noise * np.sqrt(2)),
-                         maps.ivar(self.shape, self.wcs, self.noise * np.sqrt(2))]
-                    )
-
-        mask_bool = enmap.enmap(
-                        np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
-                    ).astype(bool)
-
-        filt = optfilt.CGPixFilter(ucls, b_ell, icov_pix=icov_pix,
-                                   mask_bool=mask_bool, lmax=self.lmax, swap_bm=True,
+        filt = optfilt.CGPixFilter(ucls, b_ell, icov_pix=self.icov_pix,
+                                   mask_bool=self.mask_bool, lmax=self.lmax, swap_bm=True,
                                    lmax_prec_cg=self.lmax_prec_cg, mlmax=self.mlmax)
 
         # zero out input map at masked locations
-        omap[~mask_bool] = 0.
+        omap[~self.mask_bool] = 0.
 
         alm_dict = filt.filter(omap, niter=NITER,
                                niter_masked_cg=NITER_MASKED_CG, 
