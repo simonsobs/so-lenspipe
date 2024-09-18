@@ -107,8 +107,8 @@ Documentation
 This section describes how to provide documentation for the pipeline. You should pip install ``sphinx`` and ``sphinx_rtd_theme`` before proceeding.
 
 * Switch to the `docs` directory and edit the RST files using `reStructured markup <https://sublime-and-sphinx-guide.readthedocs.io/en/latest/index.html>`_.
-* Run `make html` to build the HTML.
-* Open with a browser to view the HTML, e.g. `firefox _build/html/index.html`
+* Run ``make html`` to build the HTML.
+* Open with a browser to view the HTML, e.g. ``firefox _build/html/index.html``
 
 
 
