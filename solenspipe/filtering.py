@@ -10,6 +10,44 @@ from orphics import maps, stats
 from pixell import enmap, reproject, lensing as plensing, curvedsky as cs
 from optweight import map_utils, mat_utils, solvers, preconditioners
 
+### optional function
+# performs isotropic Wiener filtering with / without TE mode mixing
+def isotropic_wfilter(alm,ucls,tcls,lmin,lmax,ignore_te=True):
+    ucltt, tcltt = ucls['TT'], tcls['TT']
+    uclte, tclte = ucls['TE'], tcls['TE']
+    uclee, tclee = ucls['EE'], tcls['EE']
+    uclbb, tclbb = ucls['BB'], tcls['BB']
+
+    if ignore_te:
+        filt_T, filt_E, filt_B = tcltt*0, tclee*0, tclbb*0
+        with np.errstate(divide='ignore', invalid='ignore'):
+            filt_T[2:] = ucltt[2:]/tcltt[2:]
+            filt_E[2:] = uclee[2:]/tclee[2:]
+            filt_B[2:] = uclbb[2:]/tclbb[2:]
+        talm = qe.filter_alms(alm[0],filt_T,lmin=lmin,lmax=lmax)
+        ealm = qe.filter_alms(alm[1],filt_E,lmin=lmin,lmax=lmax)
+        balm = qe.filter_alms(alm[2],filt_B,lmin=lmin,lmax=lmax)
+
+    else:
+        filt_TT, filt_TE, filt_ET, filt_EE = tcltt*0, tclte*0, tclte*0, tclee*0
+        filt_BB = tclbb*0
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            te_det = tcltt[2:]*tclee[2:] - tclte[2:]**2.
+            filt_TT[2:] = (ucltt[2:]*tclee[2:] - uclte[2:]*tcltt[2:]) / te_det
+            filt_TE[2:] = (uclte[2:]*tcltt[2:] - ucltt[2:]*tclte[2:]) / te_det
+            # these two are no longer symmetric 
+            filt_ET[2:] = (uclte[2:]*tclee[2:] - uclee[2:]*tclte[2:]) / te_det
+            filt_EE[2:] = (uclee[2:]*tcltt[2:] - uclte[2:]*tclte[2:]) / te_det
+            filt_B[2:] = uclbb[2:]/tclbb[2:]
+        talm = qe.filter_alms(alm[0],filt_TT,lmin=lmin,lmax=lmax) + \
+               qe.filter_alms(alm[1],filt_TE,lmin=lmin,lmax=lmax)
+        ealm = qe.filter_alms(alm[0],filt_ET,lmin=lmin,lmax=lmax) + \
+               qe.filter_alms(alm[1],filt_EE,lmin=lmin,lmax=lmax)
+        balm = qe.filter_alms(alm[2],filt_BB,lmin=lmin,lmax=lmax)
+        
+    return [talm,ealm,balm]
+
 ### helper functions
 
 # calculate worst agreement between cl_new vs cl_old
@@ -34,11 +72,7 @@ def worst_agreement(cl_new, cl_old, lmin=600, lmax=3000,
 # return normalized, (likely biased) full-sky reconstruction
 def reconstruct(falm, px, ests, ucls, lmax, Als=None):
     ialm = [falm, falm*0., falm*0.] if len(falm.shape) == 1 else falm
-    #print("px.shape: ", px.shape)
-    #print("falm shape: ", ialm.shape)
-    #print("ests: ", ests)
-    #print("ucls: ", ucls)
-    #print("lmax: ", lmax)
+
     phis = qe.qe_all(px, ucls, lmax,
                      fTalm=ialm[0], fEalm=ialm[1], fBalm=ialm[2],
                      estimators=ests,
@@ -273,7 +307,7 @@ class CGPixFilter(object):
         if compute_qe is not None:
             kappas = {}
             kappa_errors = {}
-            ests = ['TT', 'EE', 'EB', 'TE', 'TB', 'mvpol', 'mv']
+            ests = ['TT', 'mvpol', 'mv']
             for est in ests:
                 kappas[est] = {}
                 kappa_errors[est] = []
@@ -287,7 +321,7 @@ class CGPixFilter(object):
         for idx in range(niter_masked_cg + niter):
             if idx == niter_masked_cg:
                 solver.reset_preconditioner()
-                solver.add_preconditioner(self.prec_pinv)
+                solver.add_preconditioner(self.prec_harm)
 
                 solver.b_vec = solver.b0
                 solver.init_solver(x0=solver.x)
@@ -326,7 +360,7 @@ class CGPixFilter(object):
                         except KeyError:
                             kappa_errors[est].append(1.)
                         
-                        if verbose: print(f"| {est}: {kappa_errors[est][-1]: 0.4f} ", end="")
+                        if verbose: print(f"| {est}: {kappa_errors[est][-1]: 0.5f} ", end="")
 
                     del kappa_dict
                     if verbose: print(f" |")

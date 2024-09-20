@@ -15,7 +15,8 @@ import traceback,warnings
 from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm, \
     get_theory_dicts, get_theory_dicts_white_noise, \
-    change_alm_lmax, get_theory_dicts_white_noise
+    change_alm_lmax
+
 from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -1518,10 +1519,12 @@ def get_labels():
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
+                 include_te = False, # whether to include TE correlations
                  add_noise = False, mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
+        self.no_te_corr = not include_te
         # Specify geometry
         if mask is None:
             if (dec_min is None) and (dec_max is None):
@@ -1543,8 +1546,10 @@ class LensingSandbox(object):
             print(f"W3 factor: {self.w3:.5f}")
             print(f"W4 factor: {self.w4:.5f}")
 
-        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
-        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
+        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,
+                                                                  grad=True,lmax=mlmax)
+        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax,
+                                       no_corr=self.no_te_corr)
         ls = np.arange(self.Als[ests[0]][0].size)
         self.Nls = {}
         px = qe.pixelization(self.shape,self.wcs)
@@ -1553,17 +1558,16 @@ class LensingSandbox(object):
             self.qfuncs[est] =  get_qfunc(px,self.ucls,mlmax,est,Al1=self.Als[est])
             self.Nls[est] = self.Als[est][0] * (ls*(ls+1.)/2.)**2.
 
-
+        self.ests = ests
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
         self.add_noise = add_noise
 
-
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
         calm = futils.get_cmb_alm(index,iset)
-        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(x,self.fwhm))
         # ignoring pixel window function here
         omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
         if self.add_noise:
@@ -1590,8 +1594,9 @@ class LensingSandbox(object):
     def prepare(self,omap):
         alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
         with np.errstate(divide='ignore', invalid='ignore'):
-            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
-        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
+            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(x,self.fwhm))
+        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,
+                                                    self.lmax,ignore_te=self.no_te_corr)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):

@@ -20,7 +20,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Run the lensing sandbox.')
 parser.add_argument("outname", type=str,help='Name of outputs. Could include a path.')
 parser.add_argument("--estimator",     type=str,  default='MV',help="Estimator.")
-parser.add_argument("--nsims",     type=int,  default=8, help="No. of RDN0 sims. Defaults to 8.")
+parser.add_argument("--nsims",     type=int,  default=8,help="No. of RDN0 sims. Defaults to 8.")
 parser.add_argument("--nsims-n1",     type=int,  default=None,help="No. of MCN1 sims. Same as nsims if not specified.")
 parser.add_argument("--nsims-mf",     type=int,  default=None,help="No. of MCMF sims. Same as nsims if not specified.")
 parser.add_argument("--decmin",     type=float,  default=None,help="Min. declination in deg.")
@@ -46,7 +46,7 @@ res = 2.0 if not(debug) else 2.0
 add_noise = args.add_noise
 
 # Specify analysis
-lmin = 600
+lmin = 2
 lmax = 3000 if not(debug) else 3000
 mlmax = 4000 if not(debug) else 4000
 Lmax = 2000 if not(debug) else 2000
@@ -72,10 +72,10 @@ if comm.Get_rank() == 0:
 
 # default mask, ivar, mcg lmax is set to 
 # fullsky mask, white noise uniform ivar, and lmax - 1000
-mg = sandbox_extensions.LensingSandboxOF(None, None, None,
-                                         fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                                         lmin,lmax,mlmax,ests,include_te=include_te,
-                                         add_noise=add_noise,verbose=True)
+mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                               lmin,lmax,mlmax,ests,include_te=include_te,
+                               add_noise=True,verbose=True)
+
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
@@ -139,7 +139,6 @@ if comm.Get_rank()==0:
 
     if not(args.no_save): io.save_cols(f"{outname}_{te_str}_output_clkk.txt",
                 (ls,clkk_ii,clkk_xx,clkk_ix,rdn0,mcn1,mcmf,clkk_xx-rdn0-mcn1))
-
 
     # Plot relative difference from input
     for xscale in ['log','lin']:

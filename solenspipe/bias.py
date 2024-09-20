@@ -443,8 +443,8 @@ def mcmf(icov,qfunc,get_kmap,comm,nsims):
     for i in range(comm.rank+1, nsims+1, comm.size):        
         for j in range(2):
             kx   = get_kmap((icov,j,i))
-            ky   = get_kmap((icov,j,i))
-            mf += qe(kx,ky)
+            #ky   = get_kmap((icov,j,i))
+            mf += qe(kx,kx)
             ntot += 1.
     mftot = utils.allreduce(mf,comm) 
     totntot = utils.allreduce(ntot,comm) 
