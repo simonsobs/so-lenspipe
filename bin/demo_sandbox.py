@@ -26,6 +26,7 @@ parser.add_argument("--nsims-mf",     type=int,  default=None,help="No. of MCMF 
 parser.add_argument("--decmin",     type=float,  default=None,help="Min. declination in deg.")
 parser.add_argument("--decmax",     type=float,  default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
+parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
@@ -42,7 +43,7 @@ fwhm_arcmin = 1.5
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 2.0 if not(debug) else 2.0
+res = 3.0 if not(debug) else 2.0
 add_noise = args.add_noise
 
 # Specify analysis
@@ -55,8 +56,14 @@ ests = [est]
 nsims_rdn0 = args.nsims if not(debug) else 8
 nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
+if args.mask is not None:
+    mask = enmap.read_map(args.mask)
+    mask = enmap.downgrade(mask, int(res / (10800 / mask.shape[0])))
+else:
+    mask = args.mask
 include_te = args.te
 te_str = 'TE' if include_te else 'noTE'
+mask_str = '' if not args.mask else '_masked'
 
 if comm.Get_rank() == 0:
     print("FWHM (arcmin): ", fwhm_arcmin)
@@ -68,41 +75,50 @@ if comm.Get_rank() == 0:
     print("RDN0 sims: ", nsims_rdn0)
     print("N1 sims: ", nsims_n1)
     print("MF sims: ", nsims_mf)
+    print("Mask path: ", args.mask)
+    try:
+        print("Mask shape: ", mask.shape)
+    except AttributeError: # mask is none
+        pass
     print("Include TE: ", include_te)
 
-# default mask, ivar, mcg lmax is set to 
-# fullsky mask, white noise uniform ivar, and lmax - 1000
-mg = sandbox_extensions.LensingSandboxOF(None, None, None,
+# ivar, mcg lmax
+mg = sandbox_extensions.LensingSandboxOF(None, None,
                                          fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                                          lmin,lmax,mlmax,ests,include_te=include_te,
-                                         add_noise=add_noise,verbose=True)
+                                         mask=mask,add_noise=add_noise,verbose=True)
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if comm.Get_rank() == 0:
-    enmap.write_map(f'{outname}_{te_str}_data_map_debug.fits', data_map)
-    hp.write_alm(f'{outname}_{te_str}_falms_debug.fits', Xdata, overwrite=True)
-    hp.write_alm(f'{outname}_{te_str}_galms_debug.fits', galm, overwrite=True)
+    enmap.write_map(f'{outname}_{te_str}{mask_str}_data_map_debug.fits', data_map)
+    hp.write_alm(f'{outname}_{te_str}{mask_str}_falms_debug.fits', Xdata, overwrite=True)
+    hp.write_alm(f'{outname}_{te_str}{mask_str}_galms_debug.fits', galm, overwrite=True)
 
-if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}_data_map',downgrade=4)
+if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
 mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+
 if nsims_mf==0:
     print("Skipping meanfield...")
-    mcmf_alm = 0.
+    mcmf_alm_1 = 0.
+    mcmf_alm_2 = 0.
 else:
     print("Meanfield...")
-    mcmf_alm = mg.get_mcmf(est,nsims_mf,comm)[0]
+    mcmf_alm_1_obj, mcmf_alm_2_obj = mg.get_mcmf_twosets(est,nsims_mf,comm)
+    mcmf_alm_1, mcmf_alm_2 = mcmf_alm_1_obj[0], mcmf_alm_2_obj[0]
 
 if comm.Get_rank()==0:
     # Subtract mean-field alms and convert from phi to kappa
-    galm = plensing.phi_to_kappa(galm - mcmf_alm)
+    galm_1 = plensing.phi_to_kappa(galm - mcmf_alm_1)
+    galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)
+
     # Get the input kappa
     kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
     if save_map_plots: io.hplot(cs.alm2map(galm,enmap.empty(mg.shape,mg.wcs,dtype=np.float32)),
-                                f'{outname}_{te_str}_kappa_map',downgrade=4)
-    clkk_xx = cs.alm2cl(galm,galm)/mg.w4 # Raw auto-spectrum (mean-field subtracted)
-    clkk_ix = cs.alm2cl(kalm,galm)/mg.w2 # Input x Recon
+                                f'{outname}_{te_str}{mask_str}_kappa_map',downgrade=4)
+    clkk_xx = cs.alm2cl(galm_1,galm_2)/mg.w4 # Raw auto-spectrum (mean-field subtracted)
+    clkk_ix = cs.alm2cl(kalm,galm_1)/mg.w2 # Input x Recon
     clkk_ii = cs.alm2cl(kalm,kalm) # Input x Input
     ls = np.arange(clkk_ii.size)
 
@@ -127,18 +143,24 @@ if comm.Get_rank()==0:
     # Collect biases and convert from phi to kappa
     rdn0 = rdn0 * (ls*(ls+1))**2./4. / mg.w4
     mcn1 = mcn1 * (ls*(ls+1))**2./4. / mg.w4
+    cents,brdn0 = binner.bin(ls,rdn0)
+    cents,bmcn1 = binner.bin(ls,mcn1)
+
     if nsims_mf>0:
-        mcmf = cs.alm2cl(mcmf_alm) * (ls*(ls+1))**2./4. / mg.w4 # Just for diagnostics; already subtracted
+        mcmf = cs.alm2cl(mcmf_alm_1, mcmf_alm_2) * (ls*(ls+1))**2./4. / mg.w4
+        # Just for diagnostics; already subtracted
         cents,bmcmf = binner.bin(ls,mcmf)
     else:
         mcmf = clkk_xx * 0.
-        bmcmf = 0.
-    cents,brdn0 = binner.bin(ls,rdn0)
-    cents,bmcn1 = binner.bin(ls,mcn1)
+        bmcmf = brdn0 * 0.
+
     bclkk_final = bclkk_xx-brdn0-bmcn1 # Final debiased power spectrum
 
-    if not(args.no_save): io.save_cols(f"{outname}_{te_str}_output_clkk.txt",
+    if not(args.no_save):
+        io.save_cols(f"{outname}_{te_str}{mask_str}_output_clkk.txt",
                 (ls,clkk_ii,clkk_xx,clkk_ix,rdn0,mcn1,mcmf,clkk_xx-rdn0-mcn1))
+        io.save_cols(f"{outname}_{te_str}{mask_str}_output_bandpowers.txt",
+                (cents,bclkk_ii,bclkk_xx,bclkk_ix,brdn0,bmcn1,bmcmf,errs))
 
 
     # Plot relative difference from input
@@ -151,7 +173,7 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(0.8,1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{te_str}_rclkk_ix_{xscale}.png')
+        pl.done(f'{outname}_{te_str}{mask_str}_rclkk_ix_{xscale}.png')
 
     # Plot all spectra and components
     for xscale in ['log','lin']:
@@ -167,5 +189,5 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(1e-9,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{te_str}_clkk_ix_{xscale}.png')
+        pl.done(f'{outname}_{te_str}{mask_str}_clkk_ix_{xscale}.png')
 

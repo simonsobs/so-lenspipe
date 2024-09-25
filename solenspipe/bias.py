@@ -449,7 +449,22 @@ def mcmf(icov,qfunc,get_kmap,comm,nsims):
     mftot = utils.allreduce(mf,comm) 
     totntot = utils.allreduce(ntot,comm) 
     return mftot/totntot
-        
+
+def mcmf_twosets(icov,qfunc,get_kmap,comm,nsims):
+    qe = lambda x,y: qfunc(x,y)
+    mf = {0: 0., 1: 0.}
+    ntot = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        for j in range(2):
+            kx   = get_kmap((icov,j,i))
+            #ky   = get_kmap((icov,j,i))
+            mf[j] += qe(kx,kx)
+            ntot += 1.
+    mftot_0 = utils.allreduce(mf[0], comm) 
+    mftot_1 = utils.allreduce(mf[1], comm)
+    # counts over both sets
+    totntot = utils.allreduce(ntot, comm) 
+    return 2. * mftot_0/totntot, 2. * mftot_1/totntot
 
 def _validate_splits(xyuv,x,y,u,v):
     xn,yn,un,vn = xyuv

@@ -21,19 +21,17 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-NITER = 4
-NITER_MASKED_CG = 1
+NITER = 100
+NITER_MASKED_CG = 10
 ERR_TOL = 1e-4
 COMPUTE_QE = None
-EVAL_EVERY_NITERS = 2
+EVAL_EVERY_NITERS = 5
 
 class LensingSandboxOF(solenspipe.LensingSandbox):
-    def __init__(self, mask=None, ivar=None, lmax_prec_cg=None,
+    def __init__(self, ivar=None, lmax_prec_cg=None,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.mask = mask if mask is not None else \
-                    enmap.ones(self.shape, self.wcs)
         self.ivar = ivar if ivar is not None else \
                     maps.ivar(self.shape, self.wcs, self.noise)
 
@@ -45,10 +43,10 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         # for pol, sqrt(2) times noise level is 1/2 times ivar 
         self.icov_pix = enmap.enmap([self.ivar, self.ivar*0.5, self.ivar*0.5])
 
-        #self.mask_bool = enmap.enmap(
-        #                    np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
-        #                 ).astype(bool)
-        self.mask_bool = enmap.ones((3,)+self.shape, self.wcs, dtype=bool)
+        self.mask_bool = enmap.enmap(
+                            np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
+                         ).astype(bool)
+        #self.mask_bool = enmap.ones((3,)+self.shape, self.wcs, dtype=bool)
 
     def prepare(self, omap):
         # run optimal filtering
@@ -59,7 +57,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         filt = optfilt.CGPixFilter(ucls, b_ell, icov_pix=self.icov_pix,
                                    mask_bool=self.mask_bool,
                                    include_te=(not self.no_te_corr),
-                                   lmax=self.lmax, swap_bm=True,
+                                   lmax=None, swap_bm=True,
                                    lmax_prec_cg=self.lmax_prec_cg, mlmax=self.mlmax)
 
         # zero out input map at masked locations

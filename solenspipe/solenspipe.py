@@ -1532,7 +1532,7 @@ class LensingSandbox(object):
             else:
                 if dec_min is None: dec_min = -90.
                 if dec_max is None: dec_max = 90. 
-                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin, variant='fejer1')
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max * utils.degree),res=res * utils.arcmin, variant='fejer1')
             mask = enmap.ones(self.shape,self.wcs)
         else:
             self.shape = mask.shape
@@ -1562,6 +1562,7 @@ class LensingSandbox(object):
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
+        self.mask = mask
         self.add_noise = add_noise
 
     def get_observed_map(self,index,iset=0):
@@ -1575,7 +1576,7 @@ class LensingSandbox(object):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return omap + nmap
+        return (omap + nmap) * self.mask
 
     def kmap(self,stuple):
         icov,ip,i = stuple
@@ -1616,5 +1617,8 @@ class LensingSandbox(object):
     def get_mcn1(self,est,nsims,comm):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
+    def get_mcmf_twosets(self,est,nsims,comm):
+        return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
+    
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
