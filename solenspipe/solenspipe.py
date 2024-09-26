@@ -1558,14 +1558,15 @@ class LensingSandbox(object):
         self.lmin = lmin
         self.lmax = lmax
         self.add_noise = add_noise
+        self.mask = mask
 
     def _apply_mask(self,imap,mask,eps=1e-8):
         if len(imap.shape) == 3:
-            return np.array([
+            return enmap.enmap(np.array([
                 self._apply_mask(imap[0],mask,eps),
                 self._apply_mask(imap[1],mask,eps),
                 self._apply_mask(imap[2],mask,eps)
-            ])
+            ]), imap.wcs)
         
         # should now be 2d
         omap = imap * mask
