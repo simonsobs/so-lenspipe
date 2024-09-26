@@ -1559,6 +1559,20 @@ class LensingSandbox(object):
         self.lmax = lmax
         self.add_noise = add_noise
 
+    def _apply_mask(self,imap,mask,eps=1e-8):
+        if len(imap.shape) == 3:
+            return np.array([
+                self._apply_mask(imap[0],mask,eps),
+                self._apply_mask(imap[1],mask,eps),
+                self._apply_mask(imap[2],mask,eps)
+            ])
+        
+        # should now be 2d
+        omap = imap * mask
+        # handle edge cases
+        omap[mask < eps] = 0.
+        omap[mask >= (1-eps)] = imap[mask >= (1-eps)]
+        return omap
 
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
@@ -1571,7 +1585,7 @@ class LensingSandbox(object):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return omap + nmap
+        return self._apply_mask(omap + nmap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
