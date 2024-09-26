@@ -1,5 +1,5 @@
 from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
-from orphics import maps,io,cosmology,stats,pixcov
+from orphics import maps,io,cosmology,stats,pixcov,mpi
 import numpy as np
 import healpy as hp
 import matplotlib.pyplot as plt
@@ -8,11 +8,8 @@ from scipy.optimize import curve_fit
 import pixell.powspec
 from orphics import maps
 from soapack import interfaces as sints
-from pixell import sharp
 import os
-from falafel.utils import get_cmb_alm
-from solenspipe import cmblensplus_norm,convert_seeds,get_kappa_alm,wfactor
-from orphics import maps,io,cosmology,stats,mpi
+from falafel.utils import get_cmb_alm,test_cmb_alm
 import pytempura
 
 
@@ -106,30 +103,21 @@ def rolling_average(x, N):
     cumsum = np.cumsum(np.insert(x, 0, 0)) 
     return (cumsum[N:] - cumsum[:-N]) / float(N)
 
-def coadd_map(map_list,ivar_list):
-    """return coadded map from splits, input list of maps, where each map only contains one of I,Q or U"""
-    map_list=np.array(map_list)
-    ivar_list=np.array(ivar_list)
-    coadd_map= np.sum(map_list * ivar_list, axis = 0)
-    coadd_map/=np.sum(ivar_list, axis = 0)
-    coadd_map[~np.isfinite(coadd_map)] = 0
 
-    return enmap.samewcs(coadd_map,map_list[0])
     
-def coadd_mapnew(map_list,ivar_list,a):
-    """return coadded map from splits, the map in maplist contains I,Q,U 
-    a=0,1,2 selects one of I Q U """
-    wcs=map_list[0].wcs
-    map_list=np.array(map_list)
-    ivar_list=np.array(ivar_list)
-    coadd_map= np.sum(map_list[:,a] * ivar_list, axis = 0)
-    #coadd_map/=((np.sum(ivar_list*mask, axis = 0)))
-    coadd_map/=((np.sum(ivar_list, axis = 0)))
-    print('ignore warning: some ivars are 0 but we are taking this into account ')
-    #coadd_map/=((np.sum(ivar_list, axis = 0)))
-    coadd_map[~np.isfinite(coadd_map)] = 0
-    coadd_map = enmap.ndmap(coadd_map,wcs)
-    return coadd_map    
+# def coadd_map(map_list,ivar_list,a):
+#     """return coadded map from splits, the map in maplist contains I,Q,U 
+#     a=0,1,2 selects one of I Q U """
+#     wcs=map_list[0].wcs
+#     map_list=np.array(map_list)
+#     ivar_list=np.array(ivar_list)
+#     coadd_map= np.sum(map_list[:,a] * ivar_list, axis = 0)
+#     coadd_map/=((np.sum(ivar_list, axis = 0)))
+#     coadd_map[~np.isfinite(coadd_map)] = 0
+#     coadd_map = enmap.ndmap(coadd_map,wcs)
+#     return coadd_map    
+
+
 
 def coadd_mapnewTT(map_list,ivar_list):
     """return coadded map from splits, the map in maplist contains I,Q,U 
@@ -160,7 +148,19 @@ def ivar_eff(split,ivar_list):
     weight[~np.isfinite(weight)] = 0
     weight[weight<0] = 0
     return enmap.samewcs(weight,ivar_list[0])
+
     
+def coadd_map(map_list,ivar_list):
+    """return coadded map from splits, the map in maplist contains I,Q,U """
+    wcs=map_list[0].wcs
+    map_list=np.array(map_list)
+    ivar_list=np.array(ivar_list)
+    ivar_list = ivar_list[:, np.newaxis, :, :]
+    coadd_map= np.sum(map_list[:,] * ivar_list, axis = 0)
+    coadd_map/=((np.sum(ivar_list, axis = 0)))
+    coadd_map[~np.isfinite(coadd_map)] = 0
+    coadd_map = enmap.ndmap(coadd_map,wcs)
+    return coadd_map    
 
 
 def get_power(map_list,ivar_list, a, b, mask,N=20):
@@ -183,10 +183,10 @@ def get_power(map_list,ivar_list, a, b, mask,N=20):
     n = len(map_list)
     #calculate the coadd maps
     if a!=b:
-        coadd_a=coadd_mapnew(map_list,ivar_list,a)
-        coadd_b=coadd_mapnew(map_list,ivar_list,b)
+        coadd_a=coadd_map(map_list,ivar_list,a)
+        coadd_b=coadd_map(map_list,ivar_list,b)
     else:
-        coadd_a=coadd_mapnew(map_list,ivar_list,a)
+        coadd_a=coadd_map(map_list,ivar_list,a)
 
     for i in range(n):
         print(i)
@@ -222,17 +222,10 @@ def get_power(map_list,ivar_list, a, b, mask,N=20):
     power=maps.interp(bins,power)(ls)
     return power / w2
 
-def get_w(n,maps,mask):
-    """compute w(n) due to the presence of mask"""
-    pmap=enmap.pixsizemap(maps.shape,maps.wcs)
-    wn=np.sum((mask**n)*pmap) /np.pi / 4.
-    return wn
 
-
-    
-def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
+def get_power_EB(map_list,ivar_list, a, b, mask,N=20):
     """
-    Calculate the noise power of a coadded map given a list of maps and list of ivars.
+    Calculate the average coadded flattened power spectrum P_{ab} used to generate simulation for the splits.
     Inputs:
     map_list: list of source free splits
     ivar_list: list of the inverse variance maps splits
@@ -244,58 +237,91 @@ def get_datanoise(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,
     Output:
     1D power spectrum accounted for w2 from 0 to 10000
     """
-    
     pmap=enmap.pixsizemap(map_list[0].shape,map_list[0].wcs)
-
 
     cl_ab=[]
     n = len(map_list)
     #calculate the coadd maps
     if a!=b:
-        coadd_a=coadd_mapnew(map_list,ivar_list,a)
-        coadd_b=coadd_mapnew(map_list,ivar_list,b)
+        coadd_a=coadd_map(map_list,ivar_list,a)
+        coadd_b=coadd_map(map_list,ivar_list,b)
     else:
-        coadd_a=coadd_mapnew(map_list,ivar_list,a)
+        coadd_a=coadd_map(map_list,ivar_list,a)
 
     for i in range(n):
         print(i)
         if a!=b:
             d_a=map_list[i][a]-coadd_a
-            #noise_a=d_a*mask
-            noise_a=d_a #noise already masked
-            alm_a=cs.map2alm(noise_a,lmax=lmax)
+            noise_a=d_a*np.sqrt(ivar_eff(i,ivar_list))*mask
+            alm_a=cs.map2alm(noise_a,lmax=8000, spin=2 if a in [1, 2] else None)
             d_b=map_list[i][b]-coadd_b
-            noise_b=d_b
-            alm_b=cs.map2alm(noise_b,lmax=lmax)
-            cls = hp.alm2cl(alm_a,alm_b)
+            noise_b=d_b*np.sqrt(ivar_eff(i,ivar_list))*mask
+            alm_b=cs.map2alm(noise_b,lmax=8000, spin=2 if b in [1, 2] else None)
+            cls = cs.alm2cl(alm_a,alm_b)
             cl_ab.append(cls)
         else:
             d_a=map_list[i][a]-coadd_a
-
-            noise_a=d_a
-    
-            print("generating alms")
-            alm_a=cs.map2alm(noise_a,lmax=lmax)
-            alm_a=alm_a.astype(np.complex128)
-            if beam_deconvolve:
-                alm_a = cs.almxfl(alm_a,lambda x: 1/beam(x)) 
-            cls = hp.alm2cl(alm_a)
+            noise_a=d_a*np.sqrt(ivar_eff(i,ivar_list))*mask
+            print("generating noise alms with EB")
+            alm_a=cs.map2alm(noise_a,lmax=8000, spin=2 if b in [1, 2] else None)
+            alm_a=alm_a.astype(np.complex128) 
+            cls = cs.alm2cl(alm_a)
             cl_ab.append(cls)
     cl_ab=np.array(cl_ab)
-    #sqrt_ivar=np.sqrt(ivar_eff(0,ivar_list))
-
-    mask=mask
+    sqrt_ivar=np.sqrt(ivar_eff(0,ivar_list))
+    mask_ivar = sqrt_ivar*0 + 1
+    mask_ivar[sqrt_ivar<=0] = 0
+    mask=mask*mask_ivar
     mask[mask<=0]=0
     w2=np.sum((mask**2)*pmap) /np.pi / 4.
-    print(w2)
     power = 1/n/(n-1) * np.sum(cl_ab, axis=0)
     ls=np.arange(len(power))
     power[~np.isfinite(power)] = 0
     power=rolling_average(power, N)
     bins=np.arange(len(power))
     power=maps.interp(bins,power)(ls)
-
     return power / w2
+
+
+def get_w(n,maps,mask):
+    """compute w(n) due to the presence of mask"""
+    pmap=enmap.pixsizemap(maps.shape,maps.wcs)
+    wn=np.sum((mask**n)*pmap) /np.pi / 4.
+    return wn
+
+
+
+def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
+    """
+    Calculate the noise power of a coadded map given a list of maps and list of ivars.
+    Inputs:
+    map_list: list of source free splits
+    ivar_list: list of the inverse variance maps splits
+    mask: apodizing mask
+    Output:
+    1D power spectrum accounted for w2 in T,E,B (TODO add pureEB here as well)
+    """
+    
+    cl_ab=[]
+    n_splits = len(map_list)
+    coadd=coadd_map(map_list,ivar_list)
+    for i in range(n_splits):
+        noise_a=map_list[i]-coadd
+        noise_a=np.nan_to_num(noise_a)
+        alm_a=cs.map2alm(noise_a,lmax=lmax) 
+        alm_a=alm_a.astype(np.complex128)
+        cls = cs.alm2cl(alm_a)
+        cl_ab.append(cls)
+    cl_ab=np.array(cl_ab)
+    w2=w_n(mask,2)
+    cl_sum = np.sum(cl_ab, axis=0)
+    power = 1/n_splits/(n_splits-1) * cl_sum
+    ls=np.arange(len(power[0]))
+    power[~np.isfinite(power)] = 0
+    power/=w2
+    return power
+
+
 
 def get_datanoise_fullresTT(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
     """
@@ -463,11 +489,11 @@ def pixellWrapperSpinS(alm2map,alm,mp12,spin):
 
 def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
     #code by Will Coulton
-    from pixell import sharp
+    #from pixell import sharp
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
-        minfo=sharp.map_info_healpix(nside)
+        #minfo=sharp.map_info_healpix(nside)
         nside=int((len(mask_0)/12.)**.5)   
         if lmax is None:
             lmax=int(3*nside-1)
@@ -475,13 +501,13 @@ def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
         alm2map = cs.alm2map_healpix
         template = np.zeros([2,12*nside**2])
     else:
-        minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
+        #minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
         if lmax is None:
             lmax = np.min(np.pi/(Q.pixshape()))
         map2alm = cs.map2alm
         alm2map = cs.alm2map
         template =enmap.enmap(np.zeros(np.shape([Q,U])),wcs=Q.wcs)
-    ainfo = sharp.alm_info(int(lmax))
+    ainfo = cs.alm_info(int(lmax))
     ells = np.arange(0., 10000.)
     fnc1 = np.ones(len(ells))
     wAlm_0=map2alm(mask_0,ainfo=ainfo,spin=0)
@@ -537,7 +563,7 @@ def check_simulation(a,b,map_list,sim_list,ivar_list,mask):
         sim_coadd.append(testcl)
     if a==b:
         for i in range(len(map_list)):
-            dataco=map_list[i][a]-coadd_mapnew(map_list,ivar_list,a)
+            dataco=map_list[i][a]-coadd_map(map_list,ivar_list,a)
             dataco=dataco*mask*ivar_eff(i,ivar_list)
             testalm=cs.map2alm(dataco,lmax=10000)
             testalm=testalm.astype(np.complex128) 
@@ -545,9 +571,9 @@ def check_simulation(a,b,map_list,sim_list,ivar_list,mask):
             data_coadd.append(testcl)
     else:
             for i in range(len(map_list)):
-                data_a=map_list[i][a]-coadd_mapnew(map_list,ivar_list,a)
+                data_a=map_list[i][a]-coadd_map(map_list,ivar_list,a)
                 data_a=data_a*mask*ivar_eff(i,ivar_list)
-                data_b=map_list[i][b]-coadd_mapnew(map_list,ivar_list,b)
+                data_b=map_list[i][b]-coadd_map(map_list,ivar_list,b)
                 data_b=data_b*mask*ivar_eff(i,ivar_list)
                 testalm_a=cs.map2alm(data_a,lmax=10000)
                 testalm_a=testalm_a.astype(np.complex128)
@@ -599,12 +625,13 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_beamed_signal(s_i,s_set,beam,shape,wcs):
+def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False,fixed_amp=False):
     print(s_i,s_set)
     s_i,s_set,_ = convert_seeds((0,s_set,s_i))
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
-    cmb_alm = get_cmb_alm(s_i,s_set).astype(np.complex128)
+    #cmb_alm = test_cmb_alm(s_i,s_set,unlensed=unlensed,fixed_amp=fixed_amp).astype(np.complex128)
+    cmb_alm=get_cmb_alm(s_i,s_set,unlensed=unlensed).astype(np.complex128)
     if beam is  not None:
         cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
@@ -840,6 +867,7 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
             
         imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
         return imap
+    print('performing FFT')
     lymap, lxmap = imap.lmap()
     ly, lx = lymap[:,0], lxmap[0,:]
 
@@ -862,15 +890,7 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
     imap[:,:] = np.real(enmap.ifft(ft, normalize=normalize))
     return imap
 
-def kspace_mask1(imap):
-    """
-    returns a real space map in which the kspace stripes of |lx|<90 and |ly|<50 are masked
-    """
-    k_mask=maps.mask_kspace(imap.shape,imap.wcs,lxcut=90,lycut=50)
-    plt.figure()
-    plt.imshow(np.fft.fftshift(k_mask))
-    plt.savefig(f"/home/r/rbond/jiaqu/scratch/DR6/maps/sims/korphics.png")
-    return maps.filter_map(imap,k_mask)
+
 
 
 def get_Dpower(X,U,mask,m=4):
@@ -947,7 +967,8 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         response=response[:Lmax+1]
 
     D_l=get_Dpower(X,U,mask,m=4)
-    S_l=get_Spower(coaddX,coaddU,mask)
+    #S_l=get_Spower(coaddX,coaddU,mask)
+    S_l=coaddX
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
     ocl=ffl
