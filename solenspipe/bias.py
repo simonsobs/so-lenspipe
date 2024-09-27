@@ -457,7 +457,7 @@ def mcmf_pair(icov,qfunc,get_kmap,comm,nsims):
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
     """
     qe = lambda x,y: qfunc(x,y)
-    mf1, mf2 = 0.
+    mf1, mf2 = 0., 0.
     ntot = 0.
     for i in range(comm.rank+1, nsims+1, comm.size):        
         kx   = get_kmap((icov,0,i))
