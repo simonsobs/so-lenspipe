@@ -1627,4 +1627,4 @@ class LensingSandbox(object):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
