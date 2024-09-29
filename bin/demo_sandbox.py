@@ -28,6 +28,7 @@ parser.add_argument("--decmax", type=float, default=None,help="Max. declination 
 parser.add_argument("-d", "--debug", action='store_true',
                     help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
 parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
+parser.add_argument("--apodize", type=float, help='Apodize the mask with input width in degrees. Only applies if a mask is passed in.')
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
@@ -57,11 +58,13 @@ nsims_rdn0 = args.nsims if not(debug) else 8
 nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 
-# Maybe a better way of implementing the downgrade feature?
+# Placeholder until better way of inferring downgrade resolution
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
-    mask = enmap.downgrade(mask, int(res / (10800 / mask.shape[0])),
+    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])),
                            op=np.mean)
+    if args.apodize is not None:
+        mask = maps.cosine_apodize(mask, args.apodize)
 else:
     mask = args.mask
 
