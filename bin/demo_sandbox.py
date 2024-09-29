@@ -105,8 +105,11 @@ if nsims_mf==0:
     mcmf_alm_2 = 0.
 else:
     print("Meanfield...")
-    mcmf_alm_1_obj, mcmf_alm_2_obj = mg.get_mcmf_twosets(est,nsims_mf,comm)
-    mcmf_alm_1, mcmf_alm_2 = mcmf_alm_1_obj[0], mcmf_alm_2_obj[0]
+    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,nsims_mf,comm)
+    # Get only gradient components of mcmf
+    mcmf_alm_1 = mcmf_alm_1[0]
+    mcmf_alm_2 = mcmf_alm_2[0]
+
 
 if comm.Get_rank()==0:
     # Subtract mean-field alms and convert from phi to kappa
@@ -115,10 +118,14 @@ if comm.Get_rank()==0:
 
     # Get the input kappa
     kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
-    if save_map_plots: io.hplot(cs.alm2map(galm,enmap.empty(mg.shape,mg.wcs,dtype=np.float32)),
+    if save_map_plots: io.hplot(cs.alm2map(galm,
+                                           enmap.empty(mg.shape,
+                                                       mg.wcs,
+                                                       dtype=np.float32)),
                                 f'{outname}_{te_str}{mask_str}_kappa_map',downgrade=4)
     clkk_xx = cs.alm2cl(galm_1,galm_2)/mg.w4 # Raw auto-spectrum (mean-field subtracted)
-    clkk_ix = cs.alm2cl(kalm,galm_1)/mg.w2 # Input x Recon
+    # Cross-correlate input with the averaged MF-subtracted alms
+    clkk_ix = cs.alm2cl(kalm,0.5*(galm_1+galm_2))/mg.w2 # Input x Recon
     clkk_ii = cs.alm2cl(kalm,kalm) # Input x Input
     ls = np.arange(clkk_ii.size)
 
@@ -147,7 +154,7 @@ if comm.Get_rank()==0:
     cents,bmcn1 = binner.bin(ls,mcn1)
 
     if nsims_mf>0:
-        mcmf = cs.alm2cl(mcmf_alm_1, mcmf_alm_2) * (ls*(ls+1))**2./4. / mg.w4
+        mcmf = cs.alm2cl(mcmf_alm_1,mcmf_alm_2) * (ls*(ls+1))**2./4. / mg.w4
         # Just for diagnostics; already subtracted
         cents,bmcmf = binner.bin(ls,mcmf)
     else:

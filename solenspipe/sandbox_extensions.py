@@ -22,10 +22,10 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 
 NITER = 100
-NITER_MASKED_CG = 10
+NITER_MASKED_CG = 1
 ERR_TOL = 1e-4
 COMPUTE_QE = None
-EVAL_EVERY_NITERS = 5
+EVAL_EVERY_NITERS = 10
 
 class LensingSandboxOF(solenspipe.LensingSandbox):
     def __init__(self, ivar=None, lmax_prec_cg=None,

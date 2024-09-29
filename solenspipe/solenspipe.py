@@ -1621,4 +1621,4 @@ class LensingSandbox(object):
         return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
     
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
