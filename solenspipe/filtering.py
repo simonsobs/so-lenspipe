@@ -8,7 +8,7 @@ import pytempura
 import healpy as hp
 from orphics import maps, stats
 from pixell import enmap, reproject, lensing as plensing, curvedsky as cs
-from optweight import map_utils, mat_utils, solvers, preconditioners
+from optweight import map_utils, mat_utils, solvers, preconditioners, sht
 
 ### optional function
 # performs isotropic Wiener filtering with / without TE mode mixing
@@ -318,6 +318,8 @@ class CGPixFilter(object):
                                           (tcls if tcls is not None else self.theory_cls),
                                           2,self.lmax,k_ellmax=self.mlmax)
 
+        if verbose:
+            print(f"Running optimal filtering using {sht.get_nthreads()} threads per process.")
         for idx in range(niter_masked_cg + niter):
             if idx == niter_masked_cg:
                 solver.reset_preconditioner()
