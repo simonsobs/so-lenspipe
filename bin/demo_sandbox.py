@@ -21,6 +21,8 @@ parser.add_argument("--estimator", type=str, default='MV',help="Estimator.")
 parser.add_argument("--nsims", type=int, default=8,help="No. of RDN0 sims. Defaults to 8.")
 parser.add_argument("--nsims-n1", type=int, default=None,
                     help="No. of MCN1 sims. Same as nsims if not specified.")
+parser.add_argument("--n1-file", type=str, default=None,
+                    help="Read N1 bias from provided output debug .txt file.")
 parser.add_argument("--nsims-mf", type=int, default=None,
                     help="No. of MCMF sims. Same as nsims if not specified.")
 parser.add_argument("--decmin", type=float, default=None,help="Min. declination in deg.")
@@ -40,7 +42,7 @@ outname = args.outname
 save_map_plots = args.map_plots
 
 # Specify instrument
-fwhm_arcmin = 1.5
+fwhm_arcmin = 1.6
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
@@ -76,7 +78,16 @@ Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
-mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+
+if args.n1_file is not None:
+    try:
+        mcn1 = np.loadtxt(args.n1_file, usecols=[5])
+        print(f"Loaded MCN1 from {args.n1_file}, skipping N1 calculation.")
+    except FileNotFoundError:
+        mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+else:
+    mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+    
 if nsims_mf==0:
     print("Skipping meanfield...")
     mcmf_alm_1 = 0.
