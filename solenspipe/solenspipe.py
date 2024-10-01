@@ -1560,6 +1560,10 @@ class LensingSandbox(object):
         self.add_noise = add_noise
         self.mask = mask
 
+        self.res = res
+        self.nilc_sims_per_set = 300
+        self.nilc_sims_path = "/data5/depot/needlets/proto/"
+
     def _apply_mask(self,imap,mask,eps=1e-8):
         if len(imap.shape) == 3:
             return enmap.enmap(np.array([
@@ -1576,28 +1580,17 @@ class LensingSandbox(object):
         return omap
 
     def get_observed_map(self,index,iset=0):
-        shape,wcs = self.shape,self.wcs
-        calm = futils.get_cmb_alm(index,iset)
-        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
-        # ignoring pixel window function here
-        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
-        if self.add_noise:
-            nmap = maps.white_noise((3,)+shape,wcs,self.noise)
-            nmap[1:] *= np.sqrt(2.)
-        else:
-            nmap = 0.
-        return self._apply_mask(omap + nmap, self.mask)
+        sim_idx = index % self.nilc_sims_per_set + iset * self.nilc_sims_per_set
+        imap = enmap.read_map(self.nilc_sims_path + \
+                              f"sim_{sim_idx}_lensmode_coadd_covsmooth_64.fits")
+        imap = enmap.downgrade(imap, int(self.res / (21600 / self.shape[1])),
+                               op=np.mean)
+        return self._apply_mask(imap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
-        nstep = 500
-        if i>nstep: raise ValueError
-        if ip==0 or ip==1:
-            iset = 0
-            index = nstep*ip + i
-        elif ip==2 or ip==3:
-            iset = ip - 2
-            index = 1000 + i
+        if i > self.nilc_sims_per_set: raise ValueError
+        index, iset = i % self.nilc_sims_per_set, ip // 2
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
