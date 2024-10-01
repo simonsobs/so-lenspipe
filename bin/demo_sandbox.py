@@ -70,10 +70,13 @@ if args.mask is not None:
 else:
     mask = args.mask
 
+# data sim index
+DATA_SIM_INDEX = 1
+
 mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                                lmin,lmax,mlmax,ests,add_noise=add_noise,
                                mask=mask,verbose=True)
-data_map = mg.get_observed_map(0)
+data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
@@ -87,7 +90,7 @@ if args.n1_file is not None:
         mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
 else:
     mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
-    
+
 if nsims_mf==0:
     print("Skipping meanfield...")
     mcmf_alm_1 = 0.
@@ -104,7 +107,7 @@ if comm.Get_rank()==0:
     galm_1 = plensing.phi_to_kappa(galm - mcmf_alm_1)
     galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)
     # Get the input kappa
-    kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
+    kalm = maps.change_alm_lmax(futils.get_kappa_alm(DATA_SIM_INDEX),mlmax)
     if save_map_plots: io.hplot(cs.alm2map(galm,
                                            enmap.empty(mg.shape,
                                                        mg.wcs,
@@ -136,7 +139,9 @@ if comm.Get_rank()==0:
 
     # Collect biases and convert from phi to kappa
     rdn0 = rdn0 * (ls*(ls+1))**2./4. / mg.w4
-    mcn1 = mcn1 * (ls*(ls+1))**2./4. / mg.w4
+    if args.n1_file is None:
+        mcn1 = mcn1 * (ls*(ls+1))**2./4. / mg.w4
+
     if nsims_mf>0:
         # Just for diagnostics; already subtracted
         mcmf = cs.alm2cl(mcmf_alm_1, mcmf_alm_2) * (ls*(ls+1))**2./4. / mg.w4 

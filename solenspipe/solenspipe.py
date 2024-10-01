@@ -1583,7 +1583,7 @@ class LensingSandbox(object):
         sim_idx = index % self.nilc_sims_per_set + iset * self.nilc_sims_per_set
         imap = enmap.read_map(self.nilc_sims_path + \
                               f"sim_{sim_idx}_lensmode_coadd_covsmooth_64.fits")
-        imap = enmap.downgrade(imap, int(self.res / (21600 / self.shape[1])),
+        imap = enmap.downgrade(imap, int(self.res / (21600 / imap.shape[1])),
                                op=np.mean)
         return self._apply_mask(imap, self.mask)
 
@@ -1596,10 +1596,11 @@ class LensingSandbox(object):
         return X
 
     def prepare(self,omap):
-        alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
+        # temperature only
+        alm = cs.map2alm(omap,lmax=self.mlmax)
         with np.errstate(divide='ignore', invalid='ignore'):
             alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
-        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
+        ftalm,fealm,fbalm = futils.isotropic_filter([alm,alm*0.,alm*0.],self.tcls,self.lmin,self.lmax)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
