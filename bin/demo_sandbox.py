@@ -32,6 +32,7 @@ parser.add_argument("--apodize", type=float, help='Apodize the mask with input w
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
+parser.add_argument("--downgrade", type='float',default=None,help='Downgrade map/mask to specified resolution.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
 
@@ -44,7 +45,10 @@ fwhm_arcmin = 1.5
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 2.0 if not(debug) else 8.0
+if args.downgrade is None:
+    res = 2.0 if not(debug) else 8.0
+else:
+    res = args.downgrade
 add_noise = args.add_noise
 
 # Specify analysis
@@ -58,11 +62,12 @@ nsims_rdn0 = args.nsims if not(debug) else 8
 nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 
-# Placeholder until better way of inferring downgrade resolution
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
-    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])),
-                           op=np.mean)
+    if args.downgrade is not None:
+        # Placeholder until better way of inferring downgrade resolution
+        mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])),
+                            op=np.mean)
     if args.apodize is not None:
         mask = maps.cosine_apodize(mask, args.apodize)
 else:
@@ -74,7 +79,9 @@ mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
-if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
+if save_map_plots:
+    io.hplot(data_map,f'{outname}_data_map',downgrade=4)
+    io.hplot(mask,f'{outname}_mask',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
 mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
 if nsims_mf==0:
