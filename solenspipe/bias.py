@@ -450,7 +450,7 @@ def mcmf(icov,qfunc,get_kmap,comm,nsims):
     totntot = utils.allreduce(ntot,comm) 
     return mftot/totntot
 
-def mcmf_pair(icov,qfunc,get_kmap,comm,nsims):
+def mcmf_pair(icov,qfunc,get_kmap,comm,nsims,start=0):
     """
     MCMF for alpha=XY
     Computes a pair of mean-fields from two independent sets of sims.
@@ -459,7 +459,7 @@ def mcmf_pair(icov,qfunc,get_kmap,comm,nsims):
     qe = lambda x,y: qfunc(x,y)
     mf1, mf2 = 0., 0.
     ntot = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):        
+    for i in range(start+comm.rank+1, start+nsims+1, comm.size):        
         kx   = get_kmap((icov,0,i))
         ky   = get_kmap((icov,1,i))
         mf1 += qe(kx,kx)
@@ -1032,7 +1032,7 @@ def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
     return avgrdn0, avgmcn0
 
 
-def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=False):
+def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=False,start=0):
     """
     Original RDN0 function.
     RDN0 for alpha=XY cross beta=AB
@@ -1045,7 +1045,7 @@ def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=
     qb = lambda x,y: qfunc(beta,x,y)
     # Sims
     rdn0 = 0.
-    for i in range(comm.rank+1, nsims+1, comm.size):
+    for i in range(start+comm.rank+1, start+nsims+1, comm.size):
         if comm.rank==0: print("RDN0 step ", i)
         Xs  = get_kmap((icov,0,i))
         Ysp = get_kmap((icov,1,i))

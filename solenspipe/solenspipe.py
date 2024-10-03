@@ -1518,6 +1518,7 @@ def get_labels():
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
+                 start_index = 0,
                  add_noise = False, mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
@@ -1542,6 +1543,8 @@ class LensingSandbox(object):
             print(f"W2 factor: {self.w2:.5f}")
             print(f"W3 factor: {self.w3:.5f}")
             print(f"W4 factor: {self.w4:.5f}")
+            if start_index != 0:
+                print(f"Starting at sim index {start_index}.")
 
         self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
         self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
@@ -1561,8 +1564,9 @@ class LensingSandbox(object):
         self.mask = mask
 
         self.res = res
-        self.nilc_sims_per_set = 300
+        self.nilc_sims_per_set = 250
         self.nilc_sims_path = "/data5/depot/needlets/proto/"
+        self.start_index = start_index
 
     def _apply_mask(self,imap,mask,eps=1e-8):
         if len(imap.shape) == 3:
@@ -1589,8 +1593,8 @@ class LensingSandbox(object):
 
     def kmap(self,stuple):
         icov,ip,i = stuple
-        if i > self.nilc_sims_per_set: raise ValueError
-        index, iset = i % self.nilc_sims_per_set, ip // 2
+        # if i > self.nilc_sims_per_set: raise ValueError
+        index, iset = i % self.nilc_sims_per_set, ip
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
@@ -1615,10 +1619,12 @@ class LensingSandbox(object):
     
     def get_rdn0(self,prepared_data_alms,est,nsims,comm):
         Xdata = prepared_data_alms
-        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),
+                                self.kmap,comm,cs.alm2cl,nsims,Xdata,start=self.start_index)
 
     def get_mcn1(self,est,nsims,comm):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,
+                              nsims,start=self.start_index)

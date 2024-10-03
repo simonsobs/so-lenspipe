@@ -71,10 +71,12 @@ else:
     mask = args.mask
 
 # data sim index
-DATA_SIM_INDEX = 1
+DATA_SIM_INDEX = 50
+START_INDEX = DATA_SIM_INDEX
 
 mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                               lmin,lmax,mlmax,ests,add_noise=add_noise,
+                               lmin,lmax,mlmax,ests,start_index=START_INDEX,
+                               add_noise=add_noise,
                                mask=mask,verbose=True)
 data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
@@ -178,9 +180,10 @@ if comm.Get_rank()==0:
         pl.add(cents,bclkk_ix,label=r'$C_L^{\kappa\hat{\kappa}}$')
         pl.add(cents,bclkk_ii,label=r'$C_L^{\kappa\kappa}$')
         pl.add(cents,bclkk_xx,label=r'$C_L^{\hat{\kappa}\hat{\kappa}}$')
-        pl.add(cents,brdn0,label=r'$N_L^{0,\rm RD}$')
-        pl.add(cents,bmcn1,label=r'$N_L^{1,\rm MC}$')
-        if nsims_mf>0: pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$')
+        pl.add(cents,brdn0,label=r'$N_L^{0,\rm RD}$ ' + f'({nsims_rdn0} sims)')
+        pl.add(cents,bmcn1,label=r'$N_L^{1,\rm MC}$ ' + (f'({nsims_n1} sims)' if args.n1_file is None
+                                                                             else '(from file)'))
+        if nsims_mf>0: pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$ ' + f'({nsims_mf} sims)')
         pl.add(lns,nls,label=r'$N_L$ opt. theory',ls='--')
         pl.add_err(cents,bclkk_final,yerr=errs,
                    label=r'Debiased $C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} $')
