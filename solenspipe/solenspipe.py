@@ -1561,7 +1561,22 @@ class LensingSandbox(object):
         self.lmin = lmin
         self.lmax = lmax
         self.add_noise = add_noise
+        self.mask = mask
 
+    def _apply_mask(self,imap,mask,eps=1e-8):
+        if len(imap.shape) == 3:
+            return enmap.enmap(np.array([
+                self._apply_mask(imap[0],mask,eps),
+                self._apply_mask(imap[1],mask,eps),
+                self._apply_mask(imap[2],mask,eps)
+            ]), imap.wcs)
+        
+        # should now be 2d
+        omap = imap * mask
+        # handle edge cases
+        omap[mask < eps] = 0.
+        omap[mask >= (1-eps)] = imap[mask >= (1-eps)]
+        return omap
 
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
@@ -1574,7 +1589,7 @@ class LensingSandbox(object):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return omap + nmap
+        return self._apply_mask(omap + nmap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
@@ -1615,4 +1630,4 @@ class LensingSandbox(object):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
