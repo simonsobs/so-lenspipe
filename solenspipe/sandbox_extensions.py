@@ -21,8 +21,8 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-NITER = 200
-NITER_MASKED_CG = 15
+NITER = 300
+NITER_MASKED_CG = 20
 ERR_TOL = 1e-5
 COMPUTE_QE = None
 EVAL_EVERY_NITERS = 10
