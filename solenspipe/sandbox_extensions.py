@@ -22,8 +22,8 @@ config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../i
 opath = config['data_path']
 
 class LensingSandboxILC(solenspipe.LensingSandbox):
-    def __init__(self, *args, start_index=0, nilc_sims_per_set=250,
-                 nilc_sims_path="/data5/depot/needlets/proto/",
+    def __init__(self, *args, start_index=0, nilc_sims_per_set=400,
+                 nilc_sims_path="/data5/depot/needlets/needproto/",
                  downgrade_res = None, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -56,16 +56,16 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
         return omap
 
     def get_observed_map(self,index,iset=0):
-        sim_idx = index % self.nilc_sims_per_set + iset * self.nilc_sims_per_set
         imap = enmap.read_map(self.nilc_sims_path + \
-                              f"sim_{sim_idx}_lensmode_coadd_covsmooth_64.fits")
+                              f"sim_{index}_iset_{iset}_simple2_coadd_covsmooth_64.fits")
         # (optionally) downgrade before applying mask
         return self._apply_mask(self._downgrade_res(imap), self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
         # if i > self.nilc_sims_per_set: raise ValueError
-        index, iset = i % self.nilc_sims_per_set, ip
+        iset = ip // 2
+        index = self.nilc_sims_per_set * iset + i
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X

@@ -72,13 +72,13 @@ else:
     mask = args.mask
 
 # data sim index
-DATA_SIM_INDEX = 50
+DATA_SIM_INDEX = 0
 START_INDEX = DATA_SIM_INDEX
 
 mg = sb_ext.LensingSandboxILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                               lmin,lmax,mlmax,ests,start_index=START_INDEX,
                               downgrade_res=res,add_noise=add_noise,
-                              mask=mask,verbose=True)
+                              nilc_sims_per_set=150,mask=mask,verbose=True)
 data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
@@ -103,6 +103,8 @@ if nsims_mf==0:
     mcmf_alm_2 = 0.
 else:
     print("Meanfield...")
+    # specific for the case only where # of mf sims > # of n1 sims
+    mg.nilc_sims_per_set = 400
     mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,nsims_mf,comm)
     # Get only gradient components of mcmf
     mcmf_alm_1 = mcmf_alm_1[0]
