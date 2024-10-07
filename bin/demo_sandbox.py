@@ -8,6 +8,7 @@ import pytempura
 import pyfisher
 from enlib import bench
 import solenspipe
+from solenspipe import sandbox_extensions as sb_ext
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 
@@ -74,10 +75,10 @@ else:
 DATA_SIM_INDEX = 50
 START_INDEX = DATA_SIM_INDEX
 
-mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                               lmin,lmax,mlmax,ests,start_index=START_INDEX,
-                               add_noise=add_noise,
-                               mask=mask,verbose=True)
+mg = sb_ext.LensingSandboxILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                              lmin,lmax,mlmax,ests,start_index=START_INDEX,
+                              downgrade_res=res,add_noise=add_noise,
+                              mask=mask,verbose=True)
 data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
@@ -91,7 +92,10 @@ if args.n1_file is not None:
     except FileNotFoundError:
         mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
 else:
-    mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+    if nsims_n1 > 0:
+        mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+    else:
+        mcn1 = rdn0 * 0.
 
 if nsims_mf==0:
     print("Skipping meanfield...")
@@ -168,8 +172,8 @@ if comm.Get_rank()==0:
         # this is the additive bias
         pl.add_err(cents,bclkk_final/bclkk_ii,yerr=errs/bclkk_ii,
                    label=r'$(C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} ) / C_L^{\kappa\kappa}$ Add. bias')
-        pl.hline(y=1)
-        pl._ax.set_ylim(0.8,1.5)
+        pl.hline(y=0)
+        pl._ax.set_ylim(-0.3,0.3)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
         pl.done(f'{outname}_rclkk_ix_{xscale}.png')
@@ -187,7 +191,7 @@ if comm.Get_rank()==0:
         pl.add(lns,nls,label=r'$N_L$ opt. theory',ls='--')
         pl.add_err(cents,bclkk_final,yerr=errs,
                    label=r'Debiased $C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} $')
-        pl._ax.set_ylim(1e-9,3e-7)
+        pl._ax.set_ylim(1e-11,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
         pl.done(f'{outname}_clkk_ix_{xscale}.png')

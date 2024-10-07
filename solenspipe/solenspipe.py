@@ -1604,7 +1604,8 @@ class LensingSandbox(object):
         alm = cs.map2alm(omap,lmax=self.mlmax)
         with np.errstate(divide='ignore', invalid='ignore'):
             alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
-        ftalm,fealm,fbalm = futils.isotropic_filter([alm,alm*0.,alm*0.],self.tcls,self.lmin,self.lmax)
+        ftalm,fealm,fbalm = futils.isotropic_filter([alm,alm*0.,alm*0.],
+                                                    self.tcls,self.lmin,self.lmax)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
