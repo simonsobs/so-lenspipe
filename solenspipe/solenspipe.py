@@ -1532,7 +1532,8 @@ class LensingSandbox(object):
             else:
                 if dec_min is None: dec_min = -90.
                 if dec_max is None: dec_max = 90. 
-                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max * utils.degree),res=res * utils.arcmin, variant='fejer1')
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max * utils.degree),
+                                                          res=res * utils.arcmin, variant='fejer1')
             mask = enmap.ones(self.shape,self.wcs)
         else:
             self.shape = mask.shape

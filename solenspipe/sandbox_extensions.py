@@ -21,9 +21,9 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-NITER = 300
-NITER_MASKED_CG = 20
-ERR_TOL = 1e-5
+NITER = 150
+NITER_MASKED_CG = 10
+ERR_TOL = 1e-4
 COMPUTE_QE = None
 EVAL_EVERY_NITERS = 10
 
@@ -46,7 +46,6 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         self.mask_bool = enmap.enmap(
                             np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
                          ).astype(bool)
-        #self.mask_bool = enmap.ones((3,)+self.shape, self.wcs, dtype=bool)
 
     def prepare(self, omap):
         # run optimal filtering
