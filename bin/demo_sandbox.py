@@ -105,7 +105,7 @@ else:
     print("Meanfield...")
     # specific for the case only where # of mf sims > # of n1 sims
     mg.nilc_sims_per_set = 400
-    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,nsims_mf,comm)
+    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf_ilc(est,nsims_mf,comm)
     # Get only gradient components of mcmf
     mcmf_alm_1 = mcmf_alm_1[0]
     mcmf_alm_2 = mcmf_alm_2[0]
@@ -175,7 +175,7 @@ if comm.Get_rank()==0:
         pl.add_err(cents,bclkk_final/bclkk_ii,yerr=errs/bclkk_ii,
                    label=r'$(C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} ) / C_L^{\kappa\kappa}$ Add. bias')
         pl.hline(y=0)
-        pl._ax.set_ylim(-0.3,0.3)
+        pl._ax.set_ylim(0.8, 1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
         pl.done(f'{outname}_rclkk_ix_{xscale}.png')
@@ -193,7 +193,7 @@ if comm.Get_rank()==0:
         pl.add(lns,nls,label=r'$N_L$ opt. theory',ls='--')
         pl.add_err(cents,bclkk_final,yerr=errs,
                    label=r'Debiased $C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} $')
-        pl._ax.set_ylim(1e-11,3e-7)
+        pl._ax.set_ylim(1e-10,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
         pl.done(f'{outname}_clkk_ix_{xscale}.png')

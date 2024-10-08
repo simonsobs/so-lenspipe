@@ -64,8 +64,27 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
     def kmap(self,stuple):
         icov,ip,i = stuple
         # if i > self.nilc_sims_per_set: raise ValueError
-        iset = ip // 2
-        index = self.nilc_sims_per_set * iset + i
+        if ip < 2:
+            iset = 0
+            index = self.nilc_sims_per_set * (ip + 1) + i
+        else:
+            iset = ip - 2
+            index = i
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
+    
+    def kmap_mf(self,stuple):
+        # build two sets specifically for mcmf
+        icov,ip,i = stuple
+        # if i > self.nilc_sims_per_set: raise ValueError
+        iset = 0
+        index = self.nilc_sims_per_set * ip + i
+        dmap = self.get_observed_map(index,iset)
+        X = self.prepare(dmap)
+        return X
+    
+    # use above function for kmap for appropriate sims
+    def get_mcmf_ilc(self,est,nsims,comm):
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap_mf,comm,
+                              nsims,start=self.start_index)
