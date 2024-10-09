@@ -174,8 +174,8 @@ if comm.Get_rank()==0:
         # this is the additive bias
         pl.add_err(cents,bclkk_final/bclkk_ii,yerr=errs/bclkk_ii,
                    label=r'$(C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} ) / C_L^{\kappa\kappa}$ Add. bias')
-        pl.hline(y=0)
-        pl._ax.set_ylim(0.8, 1.5)
+        pl.hline(y=1.0)
+        pl._ax.set_ylim(0.7, 1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
         pl.done(f'{outname}_rclkk_ix_{xscale}.png')
