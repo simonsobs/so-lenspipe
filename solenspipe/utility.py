@@ -299,7 +299,7 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     ivar_list: list of the inverse variance maps splits
     mask: apodizing mask
     Output:
-    1D power spectrum accounted for w2 in T,E,B (TODO add pureEB here as well)
+    1D power spectrum accounted for w2 in T,E,B 
     """
     
     cl_ab=[]
@@ -308,7 +308,10 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     for i in range(n_splits):
         noise_a=map_list[i]-coadd
         noise_a=np.nan_to_num(noise_a)
-        alm_a=cs.map2alm(noise_a,lmax=lmax) 
+        #do pure EB here to get pure E and B weights
+        Ealm,Balm=pureEB(noise_a[1],noise_a[2],mask,returnMask=0,lmax=lmax,isHealpix=False)
+        alm_T=cs.map2alm(noise_a[0],lmax=lmax)
+        alm_a=np.array([alm_T,Ealm,Balm])
         alm_a=alm_a.astype(np.complex128)
         cls = cs.alm2cl(alm_a)
         cl_ab.append(cls)
@@ -489,11 +492,9 @@ def pixellWrapperSpinS(alm2map,alm,mp12,spin):
 
 def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
     #code by Will Coulton
-    #from pixell import sharp
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
-        #minfo=sharp.map_info_healpix(nside)
         nside=int((len(mask_0)/12.)**.5)   
         if lmax is None:
             lmax=int(3*nside-1)
@@ -501,7 +502,6 @@ def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
         alm2map = cs.alm2map_healpix
         template = np.zeros([2,12*nside**2])
     else:
-        #minfo=cs.match_predefined_minfo(Q.shape,Q.wcs)
         if lmax is None:
             lmax = np.min(np.pi/(Q.pixshape()))
         map2alm = cs.map2alm
@@ -954,7 +954,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
     ls = np.arange(0,Lmax+1)
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
-
+    #consistency with tempura, put every lcl to theory_cross
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
