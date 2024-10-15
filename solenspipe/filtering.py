@@ -223,11 +223,13 @@ class CGPixFilter(object):
                 ainfo, icov_ell, spin, mask_bool[0].astype(bool), minfo,
                 lmax=lmax_prec_cg if lmax_prec_cg else lmax, nsteps=15,
                 lmax_r_ell=None, sfilt=sfilt)
+            
+            prec_masked_mg = None
 
-            prec_masked_mg = preconditioners.MaskedPreconditioner(
-                ainfo, icov_ell[0:1,0:1], 0, mask_bool[0], minfo,
-                min_pix=1000, n_jacobi=1, lmax_r_ell=lmax_mg,
-                sfilt=None if sfilt is None else sfilt[0:1,0:1])
+            #prec_masked_mg = preconditioners.MaskedPreconditioner(
+            #    ainfo, icov_ell[0:1,0:1], 0, mask_bool[0], minfo,
+            #    min_pix=1000, n_jacobi=1, lmax_r_ell=lmax_mg,
+            #    sfilt=None if sfilt is None else sfilt[0:1,0:1])
 
         else:
             prec_masked_cg = None

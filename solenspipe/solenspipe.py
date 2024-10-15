@@ -1521,10 +1521,12 @@ class LensingSandbox(object):
                  lmin,lmax,mlmax,ests, # reconstruction
                  include_te = False, # whether to include TE correlations
                  add_noise = False, mask = None,
+                 n0_sims = None, n1_sims = None, mf_sims = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
         self.no_te_corr = not include_te
+        self.verbose = verbose
         # Specify geometry
         if mask is None:
             if (dec_min is None) and (dec_max is None):
@@ -1566,6 +1568,10 @@ class LensingSandbox(object):
         self.mask = mask
         self.add_noise = add_noise
 
+        self.n0_sims = n0_sims
+        self.n1_sims = n1_sims
+        self.mf_sims = mf_sims
+
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
         calm = futils.get_cmb_alm(index,iset)
@@ -1579,26 +1585,28 @@ class LensingSandbox(object):
             nmap = 0.
         return (omap + nmap) * self.mask
 
-    def kmap(self,stuple):
+    def kmap(self,stuple,nstep=512):
         icov,ip,i = stuple
-        nstep = 500
         if i>nstep: raise ValueError
         if ip==0 or ip==1:
             iset = 0
             index = nstep*ip + i
         elif ip==2 or ip==3:
             iset = ip - 2
-            index = 1000 + i
+            index = 2*nstep + i
         dmap = self.get_observed_map(index,iset)
-        X = self.prepare(dmap)
+        X = self.prepare(dmap, save_output=True)
         return X
 
-    def prepare(self,omap):
+    def prepare(self,omap,save_output=None):
         alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
         with np.errstate(divide='ignore', invalid='ignore'):
             alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(x,self.fwhm))
         ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,
                                                     self.lmax,ignore_te=self.no_te_corr)
+        if save_output is not None:
+            hp.write_alm(save_output, [ftalm, fealm, fbalm])
+
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
@@ -1611,15 +1619,24 @@ class LensingSandbox(object):
         return self.qfuncs[est](X,X)
 
     
-    def get_rdn0(self,prepared_data_alms,est,nsims,comm):
+    def get_rdn0(self,prepared_data_alms,est,comm,nsims=None):
         Xdata = prepared_data_alms
-        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
+        if nsims is None: nsims = self.n0_sims
 
-    def get_mcn1(self,est,nsims,comm):
-        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),
+                                self.kmap,comm,cs.alm2cl,nsims,Xdata)
 
-    def get_mcmf_twosets(self,est,nsims,comm):
+    def get_mcn1(self,est,comm,nsims=None):
+        if nsims is None: nsims = self.n1_sims
+        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,
+                         self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
+
+    def get_mcmf_twosets(self,est,comm,nsims=None):
+        if nsims is None: nsims = self.mf_sims
         return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
     
-    def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
+    def get_mcmf(self,est,comm,nsims=None):
+        if nsims is None: nsims = self.mf_sims
+        return bias.mcmf_pair(0,self.qfuncs[est],
+                              lambda stuple: self.kmap(stuple, nstep=1020),
+                              comm,nsims)

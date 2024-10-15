@@ -21,9 +21,9 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-NITER = 150
+NITER = 200
 NITER_MASKED_CG = 10
-ERR_TOL = 1e-4
+ERR_TOL = 5e-5
 COMPUTE_QE = None
 EVAL_EVERY_NITERS = 10
 
@@ -46,8 +46,35 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         self.mask_bool = enmap.enmap(
                             np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
                          ).astype(bool)
+        
+        # change as desired
+        self.output_sim_path = "/data5/sims/v0.4_filter/"
+        
+    def kmap(self,stuple, nstep=500):
+        icov,ip,i = stuple
+        if i>nstep: raise ValueError
+        if ip==0 or ip==1:
+            iset = 0
+            index = nstep*ip + i
+        elif ip==2 or ip==3:
+            iset = ip - 2
+            index = 2*nstep + i
+        dmap = self.get_observed_map(index,iset)
 
-    def prepare(self, omap):
+        # specific scheme for v0.4 sims
+        filename = self.output_sim_path + \
+                   f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(i).zfill(5)}.fits"
+        filename_ialm = filename.replace(".fits", "_ialm.fits")
+
+        if os.path.exists(filename_ialm):
+            if self.verbose:
+                print(f"Found {filename_ialm}, skipping filtering.")
+            X = hp.read_alm(filename_ialm, hdu=(1,2,3))
+        else:
+            X = self.prepare(dmap, save_output=filename)
+        return X
+
+    def prepare(self, omap, save_output=None):
         # run optimal filtering
         ucls, tcls = get_theory_dicts_white_noise(self.fwhm, self.noise,
                                                   grad=False, lmax=self.mlmax)
@@ -56,7 +83,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         filt = optfilt.CGPixFilter(ucls, b_ell, icov_pix=self.icov_pix,
                                    mask_bool=self.mask_bool,
                                    include_te=(not self.no_te_corr),
-                                   lmax=None, swap_bm=True,
+                                   lmax=self.lmax, swap_bm=True,
                                    lmax_prec_cg=self.lmax_prec_cg, mlmax=self.mlmax)
 
         # zero out input map at masked locations
@@ -72,7 +99,15 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         # high pass filter to lmin
         hpass = np.ones(self.mlmax)
         hpass[:self.lmin] = 0.
-        
-        return cs.almxfl(alm_dict['ialm'], hpass)
+
+        ialm = cs.almxfl(alm_dict['ialm'], hpass)
+        if save_output is not None:
+            walm = cs.almxfl(alm_dict['walm'], hpass)
+            hp.write_alm(save_output.replace(".fits", "_ialm.fits"), ialm)
+            hp.write_alm(save_output.replace(".fits", "_walm.fits"), walm)
+
+        return ialm
+
+
 
 

@@ -86,6 +86,7 @@ if comm.Get_rank() == 0:
 mg = sandbox_extensions.LensingSandboxOF(None, None,
                                          fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                                          lmin,lmax,mlmax,ests,include_te=include_te,
+                                         n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,
                                          mask=mask,add_noise=add_noise,verbose=True)
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
@@ -96,8 +97,8 @@ if comm.Get_rank() == 0:
     hp.write_alm(f'{outname}_{te_str}{mask_str}_galms_debug.fits', galm, overwrite=True)
 
 if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
-rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
-mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+rdn0 = mg.get_rdn0(Xdata,est,comm)[0]
+mcn1 = mg.get_mcn1(est,comm)[0]
 
 if nsims_mf==0:
     print("Skipping meanfield...")
@@ -105,7 +106,7 @@ if nsims_mf==0:
     mcmf_alm_2 = 0.
 else:
     print("Meanfield...")
-    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,nsims_mf,comm)
+    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,comm)
     # Get only gradient components of mcmf
     mcmf_alm_1 = mcmf_alm_1[0]
     mcmf_alm_2 = mcmf_alm_2[0]
