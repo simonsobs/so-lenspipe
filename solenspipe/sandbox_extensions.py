@@ -58,8 +58,8 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
     def get_observed_map(self,index,iset=0):
         imap = enmap.read_map(self.nilc_sims_path + \
                               f"sim_{index}_iset_{iset}_simple2_coadd_covsmooth_64.fits")
-        # (optionally) downgrade before applying mask
-        return self._apply_mask(self._downgrade_res(imap), self.mask)
+        # assume we want the mask to match the resolution of the map
+        return self._apply_mask(imap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
@@ -83,6 +83,15 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
+    
+    def prepare(self,omap):
+        # TT only for now
+        alm = cs.map2alm(omap,lmax=self.mlmax)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
+        ftalm,fealm,fbalm = futils.isotropic_filter([alm, alm*0., alm*0.],
+                                                    self.tcls,self.lmin,self.lmax)
+        return [ftalm,fealm,fbalm]
     
     # use above function for kmap for appropriate sims
     def get_mcmf_ilc(self,est,nsims,comm):

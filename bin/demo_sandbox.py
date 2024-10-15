@@ -47,7 +47,7 @@ fwhm_arcmin = 1.6
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 2.0 if not(debug) else 8.0
+res = 1.0 if not(debug) else 8.0
 add_noise = args.add_noise
 
 # Specify analysis

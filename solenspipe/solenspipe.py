@@ -1518,7 +1518,6 @@ def get_labels():
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
-                 start_index = 0,
                  add_noise = False, mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
@@ -1543,8 +1542,6 @@ class LensingSandbox(object):
             print(f"W2 factor: {self.w2:.5f}")
             print(f"W3 factor: {self.w3:.5f}")
             print(f"W4 factor: {self.w4:.5f}")
-            if start_index != 0:
-                print(f"Starting at sim index {start_index}.")
 
         self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
         self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
@@ -1563,11 +1560,6 @@ class LensingSandbox(object):
         self.add_noise = add_noise
         self.mask = mask
 
-        self.res = res
-        self.nilc_sims_per_set = 250
-        self.nilc_sims_path = "/data5/depot/needlets/proto/"
-        self.start_index = start_index
-
     def _apply_mask(self,imap,mask,eps=1e-8):
         if len(imap.shape) == 3:
             return enmap.enmap(np.array([
@@ -1584,28 +1576,37 @@ class LensingSandbox(object):
         return omap
 
     def get_observed_map(self,index,iset=0):
-        sim_idx = index % self.nilc_sims_per_set + iset * self.nilc_sims_per_set
-        imap = enmap.read_map(self.nilc_sims_path + \
-                              f"sim_{sim_idx}_lensmode_coadd_covsmooth_64.fits")
-        imap = enmap.downgrade(imap, int(self.res / (21600 / imap.shape[1])),
-                               op=np.mean)
-        return self._apply_mask(imap, self.mask)
+        shape,wcs = self.shape,self.wcs
+        calm = futils.get_cmb_alm(index,iset)
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
+        # ignoring pixel window function here
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
+        if self.add_noise:
+            nmap = maps.white_noise((3,)+shape,wcs,self.noise)
+            nmap[1:] *= np.sqrt(2.)
+        else:
+            nmap = 0.
+        return self._apply_mask(omap + nmap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
-        # if i > self.nilc_sims_per_set: raise ValueError
-        index, iset = i % self.nilc_sims_per_set, ip
+        nstep = 500
+        if i>nstep: raise ValueError
+        if ip==0 or ip==1:
+            iset = 0
+            index = nstep*ip + i
+        elif ip==2 or ip==3:
+            iset = ip - 2
+            index = 1000 + i
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
 
     def prepare(self,omap):
-        # temperature only
-        alm = cs.map2alm(omap,lmax=self.mlmax)
+        alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
         with np.errstate(divide='ignore', invalid='ignore'):
             alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
-        ftalm,fealm,fbalm = futils.isotropic_filter([alm,alm*0.,alm*0.],
-                                                    self.tcls,self.lmin,self.lmax)
+        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
@@ -1620,12 +1621,10 @@ class LensingSandbox(object):
     
     def get_rdn0(self,prepared_data_alms,est,nsims,comm):
         Xdata = prepared_data_alms
-        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),
-                                self.kmap,comm,cs.alm2cl,nsims,Xdata,start=self.start_index)
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
 
     def get_mcn1(self,est,nsims,comm):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,
-                              nsims,start=self.start_index)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
