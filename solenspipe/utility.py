@@ -1,15 +1,10 @@
-from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
-from orphics import maps,io,cosmology,stats,pixcov,mpi
+from pixell import enmap, curvedsky as cs, utils, enplot,curvedsky as cs
+from orphics import maps,cosmology,stats,pixcov
 import numpy as np
 import healpy as hp
-import matplotlib.pyplot as plt
-from soapack import interfaces
 from scipy.optimize import curve_fit
-import pixell.powspec
 from orphics import maps
-from soapack import interfaces as sints
-import os
-from falafel.utils import get_cmb_alm,test_cmb_alm
+from falafel.utils import get_cmb_alm
 import pytempura
 
 
@@ -25,8 +20,6 @@ def stamp_plot(imap,ra,dec,boxwidth=10):
     box = np.array([[dec-width/2.,ra-width/2.],[dec+width/2.,ra+width/2.]])
     stamp = imap.submap(box)
     return stamp
-
-
 
 def project_mask(mask,shape,wcs,fname=None):
     sim_mask = enmap.project(mask,shape,wcs,order=1)
@@ -291,7 +284,7 @@ def get_w(n,maps,mask):
 
 
 
-def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
+def get_datanoise(map_list,ivar_list, mask,lmax=6000):
     """
     Calculate the noise power of a coadded map given a list of maps and list of ivars.
     Inputs:
@@ -299,7 +292,7 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     ivar_list: list of the inverse variance maps splits
     mask: apodizing mask
     Output:
-    1D power spectrum accounted for w2 in T,E,B (TODO add pureEB here as well)
+    1D power spectrum accounted for w2 in T,E,B
     """
     
     cl_ab=[]
@@ -308,7 +301,10 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     for i in range(n_splits):
         noise_a=map_list[i]-coadd
         noise_a=np.nan_to_num(noise_a)
-        alm_a=cs.map2alm(noise_a,lmax=lmax) 
+        #do pure EB here to get pure E and B weights
+        Ealm,Balm=pureEB(noise_a[1],noise_a[2],mask,returnMask=0,lmax=lmax,isHealpix=False)
+        alm_T=cs.map2alm(noise_a[0],lmax=lmax)
+        alm_a=np.array([alm_T,Ealm,Balm])
         alm_a=alm_a.astype(np.complex128)
         cls = cs.alm2cl(alm_a)
         cl_ab.append(cls)
@@ -316,12 +312,9 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     w2=w_n(mask,2)
     cl_sum = np.sum(cl_ab, axis=0)
     power = 1/n_splits/(n_splits-1) * cl_sum
-    ls=np.arange(len(power[0]))
     power[~np.isfinite(power)] = 0
     power/=w2
     return power
-
-
 
 def get_datanoise_fullresTT(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
     """
@@ -631,7 +624,7 @@ def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False,fixed_amp=False):
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
     #cmb_alm = test_cmb_alm(s_i,s_set,unlensed=unlensed,fixed_amp=fixed_amp).astype(np.complex128)
-    cmb_alm=get_cmb_alm(s_i,s_set,unlensed=unlensed).astype(np.complex128)
+    cmb_alm=get_cmb_alm(s_i,s_set).astype(np.complex128)
     if beam is  not None:
         cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
@@ -699,6 +692,7 @@ def apod(imap,width):
     return enmap.apod(imap,[width,0]) 
 
 def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
+    from soapack import interfaces as sints
     #code by Will Coulton
     rmin = 15.0 * utils.arcmin
     width = 40. * utils.arcmin

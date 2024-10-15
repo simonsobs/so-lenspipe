@@ -1,20 +1,15 @@
 from __future__ import print_function
-import matplotlib
 from orphics import maps,io,cosmology,mpi
-from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils,bunch #  enplot,
 import pytempura
 import numpy as np
-import os,sys
+import os
 import healpy as hp
-from enlib import bench
 from falafel import qe
 import os
-import glob
 import traceback,warnings
 from . import bias
-from falafel.utils import get_cmb_alm, get_kappa_alm, \
-    get_theory_dicts, get_theory_dicts_white_noise, \
-    change_alm_lmax, get_theory_dicts_white_noise
+from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
