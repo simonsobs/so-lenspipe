@@ -75,10 +75,26 @@ else:
 DATA_SIM_INDEX = 0
 START_INDEX = DATA_SIM_INDEX
 
+if comm.Get_rank() == 0:
+    print("FWHM (arcmin): ", fwhm_arcmin)
+    print("Noise (muK-arcmin): ", noise_uk)
+    print("Resolution (arcmin): ", res)
+    print("Adding noise: ", add_noise)
+    print(f"(lmin, lmax, mlmax, Lmax): ({lmin}, {lmax}, {mlmax}, {Lmax})")
+    print("Estimators: ", ests)
+    print("RDN0 sims: ", nsims_rdn0)
+    print("N1 sims: ", nsims_n1)
+    print("MF sims: ", nsims_mf)
+    print("Mask path: ", args.mask)
+    try:
+        print("Mask shape: ", mask.shape)
+    except AttributeError: # mask is none
+        pass
+    
 mg = sb_ext.LensingSandboxILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                               lmin,lmax,mlmax,ests,start_index=START_INDEX,
-                              downgrade_res=res,add_noise=add_noise,
-                              nilc_sims_per_set=150,mask=mask,verbose=True)
+                              nilc_sims_per_set=150,add_noise=add_noise,
+                              mask=mask,verbose=True)
 data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
@@ -111,6 +127,10 @@ else:
     mcmf_alm_2 = mcmf_alm_2[0]
 
 if comm.Get_rank()==0:
+    # Save mean-field alms if desired
+    if not(args.no_save):
+        hp.write_alm(f"{outname}_mcmf_alm_1.fits", mcmf_alm_1)
+        hp.write_alm(f"{outname}_mcmf_alm_2.fits", mcmf_alm_2)
     # Subtract mean-field alms and convert from phi to kappa
     galm_1 = plensing.phi_to_kappa(galm - mcmf_alm_1)
     galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)
