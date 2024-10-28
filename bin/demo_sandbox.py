@@ -43,13 +43,15 @@ fwhm_arcmin = 1.5
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 3.0 if not(debug) else 2.0
+res = 2.0 if not(debug) else 2.0
 add_noise = args.add_noise
 
 # Specify analysis
 lmin = 600
-lmax = 3000 if not(debug) else 3000
-mlmax = 4000 if not(debug) else 4000
+lmax = 5000 if not(debug) else 3000
+mlmax = 5100 if not(debug) else 4000
+lmax_of = 5400
+mlmax_of = 6000
 Lmax = 2000 if not(debug) else 2000
 est = args.estimator if not(debug) else 'TT'
 ests = [est]
@@ -58,7 +60,10 @@ nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
-    mask = enmap.downgrade(mask, int(res / (10800 / mask.shape[0])))
+    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])))
+    # make mask binary for our cases here:
+    mask[mask < 0.5] = 0.
+    mask[mask >= 0.5] = 1.
 else:
     mask = args.mask
 include_te = args.te
@@ -71,6 +76,7 @@ if comm.Get_rank() == 0:
     print("Resolution (arcmin): ", res)
     print("Adding noise: ", add_noise)
     print(f"(lmin, lmax, mlmax, Lmax): ({lmin}, {lmax}, {mlmax}, {Lmax})")
+    print(f"(lmax_of, mlmax_of): ({lmax_of}, {mlmax_of})")
     print("Estimators: ", ests)
     print("RDN0 sims: ", nsims_rdn0)
     print("N1 sims: ", nsims_n1)
@@ -82,8 +88,8 @@ if comm.Get_rank() == 0:
         pass
     print("Include TE: ", include_te)
 
-# ivar, mcg lmax
-mg = sandbox_extensions.LensingSandboxOF(None, None,
+# lmax_of, mlmax_of, ivar, mcg lmax
+mg = sandbox_extensions.LensingSandboxOF(lmax_of, mlmax_of, None, None,
                                          fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                                          lmin,lmax,mlmax,ests,include_te=include_te,
                                          n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,
@@ -107,6 +113,11 @@ if nsims_mf==0:
 else:
     print("Meanfield...")
     mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,comm)
+    # save alms
+    
+    if comm.Get_rank() == 0:
+        hp.write_alm(f'{outname}_mcmf_alm_1.fits', mcmf_alm_1, overwrite=True)
+        hp.write_alm(f'{outname}_mcmf_alm_2.fits', mcmf_alm_2, overwrite=True)
     # Get only gradient components of mcmf
     mcmf_alm_1 = mcmf_alm_1[0]
     mcmf_alm_2 = mcmf_alm_2[0]

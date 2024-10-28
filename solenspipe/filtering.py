@@ -197,10 +197,8 @@ class CGPixFilter(object):
         
         if scale_a:
             sfilt = mat_utils.matpow(b_ell, -0.5)
-            lmax_mg = 3000
         else:
             sfilt = None
-            lmax_mg = 6000
 
         ainfo = cs.alm_info(lmax)
 
@@ -218,22 +216,15 @@ class CGPixFilter(object):
         )
 
         # if at least something is masked (zero)
+        prec_masked_mg = None
+
         if np.nonzero(mask_bool[0])[0].size < mask_bool[0].size:
             prec_masked_cg = preconditioners.MaskedPreconditionerCG(
                 ainfo, icov_ell, spin, mask_bool[0].astype(bool), minfo,
                 lmax=lmax_prec_cg if lmax_prec_cg else lmax, nsteps=15,
                 lmax_r_ell=None, sfilt=sfilt)
-            
-            prec_masked_mg = None
-
-            #prec_masked_mg = preconditioners.MaskedPreconditioner(
-            #    ainfo, icov_ell[0:1,0:1], 0, mask_bool[0], minfo,
-            #    min_pix=1000, n_jacobi=1, lmax_r_ell=lmax_mg,
-            #    sfilt=None if sfilt is None else sfilt[0:1,0:1])
-
         else:
             prec_masked_cg = None
-            prec_masked_mg = None
 
         self.shape_in = shape_in
         self.icov_ell = icov_ell
@@ -267,10 +258,10 @@ class CGPixFilter(object):
                                  self.minfo)
 
         solver = solvers.CGWienerMap.from_arrays(imap, self.minfo, self.ainfo, self.icov_ell, 
-                                                    self.icov_pix, b_ell=self.b_ell,
-                                                    draw_constr=False, mask_pix=self.mask_bool,
-                                                    swap_bm=self.swap_bm, spin=self.spin,
-                                                    sfilt=self.sfilt)
+                                                 self.icov_pix, b_ell=self.b_ell,
+                                                 draw_constr=False, mask_pix=self.mask_bool,
+                                                 swap_bm=self.swap_bm, spin=self.spin,
+                                                 sfilt=self.sfilt)
         
         solver.add_preconditioner(self.prec_pinv)
 
@@ -325,7 +316,7 @@ class CGPixFilter(object):
         for idx in range(niter_masked_cg + niter):
             if idx == niter_masked_cg:
                 solver.reset_preconditioner()
-                solver.add_preconditioner(self.prec_harm)
+                solver.add_preconditioner(self.prec_pinv)
 
                 solver.b_vec = solver.b0
                 solver.init_solver(x0=solver.x)

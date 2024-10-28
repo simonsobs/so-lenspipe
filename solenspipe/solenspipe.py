@@ -1572,18 +1572,33 @@ class LensingSandbox(object):
         self.n1_sims = n1_sims
         self.mf_sims = mf_sims
 
+    def _apply_mask_binary(self, imap, mask):
+        if len(imap.shape) > 2:
+            assert imap.shape[0] == 3
+            return np.array([self._apply_mask_binary(imap[0], mask),
+                             self._apply_mask_binary(imap[1], mask),
+                             self._apply_mask_binary(imap[2], mask)])
+        else:
+            omap = imap.copy()
+            omap[~mask.astype(bool)] = 0.
+            return omap
+
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
-        calm = futils.get_cmb_alm(index,iset)
+        calm = futils.change_alm_lmax(futils.get_cmb_alm(index,iset),
+                                      self.mlmax)
         calm = cs.almxfl(calm,lambda x: maps.gauss_beam(x,self.fwhm))
         # ignoring pixel window function here
-        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,
+                                           dtype=np.float32),spin=[0,2])
         if self.add_noise:
             nmap = maps.white_noise((3,)+shape,wcs,self.noise)
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return (omap + nmap) * self.mask
+        #return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
+        #                   omap.wcs)
+        return omap+nmap
 
     def kmap(self,stuple,nstep=512):
         icov,ip,i = stuple
