@@ -20,6 +20,7 @@ from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
+output_sim_path = config['output_sim_path']
 
 NITER = 200
 NITER_MASKED_CG = 25
@@ -54,8 +55,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                             np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
                          ).astype(bool)
         
-        # change as desired
-        self.output_sim_path = "/data5/sims/v0.4_filter/"
+        self.output_sim_path = output_sim_path
     
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
