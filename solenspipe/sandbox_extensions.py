@@ -54,11 +54,6 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                             np.concatenate([self.mask[np.newaxis, :]]*3, axis=0)
                          ).astype(bool)
         
-        # we are passing in a binary, non-apodized mask into optimal filtering
-        self.w2 = maps.wfactor(2,self.mask_bool[0].astype(float))
-        self.w3 = maps.wfactor(3,self.mask_bool[0].astype(float))
-        self.w4 = maps.wfactor(4,self.mask_bool[0].astype(float))
-        
         # change as desired
         self.output_sim_path = "/data5/sims/v0.4_filter/"
     
@@ -75,9 +70,8 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        #return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
-        #                   omap.wcs)
-        return omap+nmap
+        return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
+                           omap.wcs)
     
     def kmap(self,stuple, nstep=512):
         icov,ip,i = stuple
@@ -93,13 +87,13 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         # specific scheme for v0.4 sims
         filename = self.output_sim_path + \
                    f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(i).zfill(5)}.fits"
-        filename_ialm = filename.replace(".fits", "_ialm_lmax5000.fits")
+        filename_ialm = filename.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits")
 
         if os.path.exists(filename_ialm):
             if self.verbose:
                 print(f"Found {filename_ialm}, skipping filtering.")
             X = hp.read_alm(filename_ialm, hdu=(1,2,3))
-            X = self.lmin_filter(X)
+            X = self.lmax_filter(self.lmin_filter(X))
         else:
             X = self.prepare(dmap, save_output=filename)
         return X

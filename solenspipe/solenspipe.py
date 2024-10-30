@@ -1596,9 +1596,7 @@ class LensingSandbox(object):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        #return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
-        #                   omap.wcs)
-        return omap+nmap
+        return enmap.enmap((omap + nmap)*self.mask, omap.wcs)
 
     def kmap(self,stuple,nstep=512):
         icov,ip,i = stuple
