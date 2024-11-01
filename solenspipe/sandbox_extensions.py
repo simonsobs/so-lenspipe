@@ -13,9 +13,6 @@ import os
 import glob
 import traceback,warnings
 from . import bias, solenspipe, filtering as optfilt
-from falafel.utils import get_cmb_alm, get_kappa_alm, \
-    get_theory_dicts, get_theory_dicts_white_noise, \
-    change_alm_lmax
 from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -72,31 +69,6 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
             nmap = 0.
         return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
                            omap.wcs)
-    
-    def kmap(self,stuple, nstep=512):
-        icov,ip,i = stuple
-        if i>nstep: raise ValueError
-        if ip==0 or ip==1:
-            iset = 0
-            index = nstep*ip + i
-        elif ip==2 or ip==3:
-            iset = ip - 2
-            index = 2*nstep + i
-        dmap = self.get_observed_map(index,iset)
-
-        # specific scheme for v0.4 sims
-        filename = self.output_sim_path + \
-                   f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(i).zfill(5)}.fits"
-        filename_ialm = filename.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits")
-
-        if os.path.exists(filename_ialm):
-            if self.verbose:
-                print(f"Found {filename_ialm}, skipping filtering.")
-            X = hp.read_alm(filename_ialm, hdu=(1,2,3))
-            X = self.lmax_filter(self.lmin_filter(X))
-        else:
-            X = self.prepare(dmap, save_output=filename)
-        return X
 
     def lmin_filter(self, ialm, lmin=None):
         # high pass filter to lmin
@@ -121,8 +93,8 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                 compute_qe=COMPUTE_QE,
                 eval_every_niters=EVAL_EVERY_NITERS):
         # run optimal filtering
-        ucls, tcls = get_theory_dicts_white_noise(self.fwhm, self.noise,
-                                                  grad=False, lmax=self.mlmax_of)
+        ucls, tcls = futils.get_theory_dicts_white_noise(self.fwhm, self.noise,
+                                                         grad=False, lmax=self.mlmax_of)
         b_ell = maps.gauss_beam(np.arange(self.mlmax_of), self.fwhm)
 
         filt = optfilt.CGPixFilter(ucls, b_ell, icov_pix=self.icov_pix,
@@ -141,16 +113,56 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                                eval_every_niters=eval_every_niters,
                                tcls=tcls)
 
-        #ialm = self.lmin_filter(alm_dict['ialm'])
         ialm = alm_dict['ialm']
         if save_output is not None:
-            #walm = self.lmin_filter(alm_dict['walm'])
             walm = alm_dict['walm']
             hp.write_alm(save_output.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits"), ialm)
             hp.write_alm(save_output.replace(".fits", f"_walm_lmax{self.lmax_of}.fits"), walm)
-
+        # top hat filter
         return self.lmax_filter(self.lmin_filter(ialm))
-        #return alm_dict['ialm']
+    
+    def kmap(self, stuple, nstep=512):
+        icov,ip,i = stuple
+        if i>nstep: raise ValueError
+        if ip==0 or ip==1:
+            iset = 0
+            index = nstep*ip + i
+        elif ip==2 or ip==3:
+            iset = ip - 2
+            index = 2*nstep + i
+        dmap = self.get_observed_map(index,iset)
+
+        # specific scheme for v0.4 sims
+        filename = self.output_sim_path + \
+                   f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(i).zfill(5)}.fits"
+        filename_ialm = filename.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits")
+
+        if os.path.exists(filename_ialm):
+            if self.verbose:
+                print(f"Found {filename_ialm}, skipping filtering.")
+            X = hp.read_alm(filename_ialm, hdu=(1,2,3))
+            X = self.lmax_filter(self.lmin_filter(X))
+        else:
+            X = self.prepare(dmap, save_output=filename)
+        return X
+
+    def get_rdn0(self,prepared_data_alms,est,comm,nsims=None):
+        Xdata = prepared_data_alms
+        if nsims is None: nsims = self.n0_sims
+
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),
+                                self.kmap,comm,cs.alm2cl,nsims,Xdata)
+
+    def get_mcn1(self,est,comm,nsims=None):
+        if nsims is None: nsims = self.n1_sims
+        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,
+                         self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
+    
+    def get_mcmf(self,est,comm,nsims=None):
+        if nsims is None: nsims = self.mf_sims
+        return bias.mcmf_pair(0,self.qfuncs[est],
+                              self.kmap,
+                              comm,nsims)
 
 # for testing purposes only
 class LensingSandboxOFHyperparams(LensingSandboxOF):
@@ -169,7 +181,6 @@ class LensingSandboxOFHyperparams(LensingSandboxOF):
         self.compute_qe = compute_qe
         self.eval_every_niters = eval_every_niters
 
-    
     def prepare(self, omap, save_output=None, lmax_of=5400, mlmax_of=6000):
         return super().prepare(omap,
                                save_output=save_output,
