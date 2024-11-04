@@ -130,11 +130,10 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         elif ip==2 or ip==3:
             iset = ip - 2
             index = 2*nstep + i
-        dmap = self.get_observed_map(index,iset)
 
         # specific scheme for v0.4 sims
         filename = self.output_sim_path + \
-                   f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(i).zfill(5)}.fits"
+                   f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(index).zfill(5)}.fits"
         filename_ialm = filename.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits")
 
         if os.path.exists(filename_ialm):
@@ -143,6 +142,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
             X = hp.read_alm(filename_ialm, hdu=(1,2,3))
             X = self.lmax_filter(self.lmin_filter(X))
         else:
+            dmap = self.get_observed_map(index,iset)
             X = self.prepare(dmap, save_output=filename)
         return X
 
