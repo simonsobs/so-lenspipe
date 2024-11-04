@@ -66,8 +66,7 @@ nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 # Placeholder until better way of inferring downgrade resolution
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
-    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])),
-                           op=np.mean)
+    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])))
     if args.apodize is not None:
         mask = maps.cosine_apodize(mask, args.apodize)
 else:
@@ -95,7 +94,7 @@ if comm.Get_rank() == 0:
     
 mg = sb_ext.LensingSandboxILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                               lmin,lmax,mlmax,ests,start_index=START_INDEX,
-                              nilc_sims_per_set=150,add_noise=add_noise,
+                              nilc_sims_per_set=50,add_noise=add_noise,
                               mask=mask,verbose=True)
 data_map = mg.get_observed_map(DATA_SIM_INDEX)
 Xdata = mg.prepare(data_map)
@@ -120,9 +119,9 @@ else:
 # Load MF from disk if provided
 if args.mf_file is not None:
     try:
-        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_1.fits"),
+        mcmf_alm_1 = hp.read_alm(args.mf_file + "_mcmf_alm_1.fits",
                                  hdu=(1,2,3))
-        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_2.fits"),
+        mcmf_alm_2 = hp.read_alm(args.mf_file + "_mcmf_alm_2.fits",
                                  hdu=(1,2,3))
         if comm.Get_rank()==0:
             print("Reading meanfield from {args.mf_file}, skipping MF calculation.")
@@ -233,7 +232,8 @@ if comm.Get_rank()==0:
         pl.add(cents,brdn0,label=r'$N_L^{0,\rm RD}$ ' + f'({nsims_rdn0} sims)')
         pl.add(cents,bmcn1,label=r'$N_L^{1,\rm MC}$ ' + (f'({nsims_n1} sims)' if args.n1_file is None
                                                                              else '(from file)'))
-        if nsims_mf>0: pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$ ' + f'({nsims_mf} sims)')
+        pl.add(cents,bmcmf,label=r'$C_L^{\rm MCMF}$ ' + (f'({nsims_mf} sims)' if args.mf_file is None
+                                                                             else '(from file)'))
         pl.add(lns,nls,label=r'$N_L$ opt. theory',ls='--')
         pl.add_err(cents,bclkk_final,yerr=errs,
                    label=r'Debiased $C_L^{\hat{\kappa}\hat{\kappa}}-N_L^{0,\rm RD} - N_L^{1,\rm MC} $')
