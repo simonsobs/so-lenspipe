@@ -90,6 +90,6 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
         return [ftalm,fealm,fbalm]
     
     # use above function for kmap for appropriate sims
-    def get_mcmf_ilc(self,est,nsims,comm):
+    def get_mcmf_ilc(self,est,comm,nsims):
         return bias.mcmf_pair(0,self.qfuncs[est],self.kmap_mf,comm,
                               nsims,start=self.start_index)

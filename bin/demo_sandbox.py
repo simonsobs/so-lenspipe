@@ -103,45 +103,58 @@ galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
 
+# Load N1 from disk if provided
 if args.n1_file is not None:
     try:
         mcn1 = np.loadtxt(args.n1_file, usecols=[5])
-        print(f"Loaded MCN1 from {args.n1_file}, skipping N1 calculation.")
+        if comm.Get_rank()==0:
+            print(f"Loaded MCN1 from {args.n1_file}, skipping N1 calculation.")
     except FileNotFoundError:
-        mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+        mcn1 = mg.get_mcn1(est,comm,nsims_n1)[0]
 else:
     if nsims_n1 > 0:
-        mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
+        mcn1 = mg.get_mcn1(est,comm,nsims_n1)[0]
     else:
         mcn1 = rdn0 * 0.
 
+# Load MF from disk if provided
 if args.mf_file is not None:
     try:
-        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "mcmf_alm_1.fits"),
+        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_1.fits"),
                                  hdu=(1,2,3))
-        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "mcmf_alm_2.fits"),
+        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_2.fits"),
                                  hdu=(1,2,3))
+        if comm.Get_rank()==0:
+            print("Reading meanfield from {args.mf_file}, skipping MF calculation.")
     except FileNotFoundError:
+        if comm.Get_rank()==0:
+            print("Could not find meanfield file {args.mf_file}.")
         args.mf_file = None
 else:
     if nsims_mf==0:
-        print("Skipping meanfield...")
+        if comm.Get_rank()==0:
+            print("Skipping meanfield...")
         mcmf_alm_1 = 0.
         mcmf_alm_2 = 0.
     else:
-        print("Meanfield...")
+        if comm.Get_rank()==0:
+            print("Computing meanfield...")
         # specific for the case only where # of mf sims > # of n1 sims
         mg.nilc_sims_per_set = 400
-        mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf_ilc(est,nsims_mf,comm)
+        mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf_ilc(est,comm,nsims_mf)
+
+        # save alms
+        if comm.Get_rank() == 0:
+            hp.write_alm(f'{outname}_mcmf_alm_1.fits', mcmf_alm_1[0], overwrite=True)
+            hp.write_alm(f'{outname}_mcmf_alm_2.fits', mcmf_alm_2[0], overwrite=True)
+            hp.write_alm(f'{outname}_mcmfc_alm_1.fits', mcmf_alm_1[1], overwrite=True)
+            hp.write_alm(f'{outname}_mcmfc_alm_2.fits', mcmf_alm_2[1], overwrite=True)
+
         # Get only gradient components of mcmf
         mcmf_alm_1 = mcmf_alm_1[0]
         mcmf_alm_2 = mcmf_alm_2[0]
 
 if comm.Get_rank()==0:
-    # Save mean-field alms if desired
-    if not(args.no_save):
-        hp.write_alm(f"{outname}_mcmf_alm_1.fits", mcmf_alm_1)
-        hp.write_alm(f"{outname}_mcmf_alm_2.fits", mcmf_alm_2)
     # Subtract mean-field alms and convert from phi to kappa
     galm_1 = plensing.phi_to_kappa(galm - mcmf_alm_1)
     galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)
