@@ -160,9 +160,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
     
     def get_mcmf(self,est,comm,nsims=None):
         if nsims is None: nsims = self.mf_sims
-        return bias.mcmf_pair(0,self.qfuncs[est],
-                              self.kmap,
-                              comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
 
 # for testing purposes only
 class LensingSandboxOFHyperparams(LensingSandboxOF):

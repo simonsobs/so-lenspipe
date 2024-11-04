@@ -22,7 +22,11 @@ parser.add_argument("outname", type=str,help='Name of outputs. Could include a p
 parser.add_argument("--estimator",     type=str,  default='MV',help="Estimator.")
 parser.add_argument("--nsims",     type=int,  default=8,help="No. of RDN0 sims. Defaults to 8.")
 parser.add_argument("--nsims-n1",     type=int,  default=None,help="No. of MCN1 sims. Same as nsims if not specified.")
+parser.add_argument("--n1-file", type=str, default=None,
+                    help="Read N1 bias from provided output debug .txt file.")
 parser.add_argument("--nsims-mf",     type=int,  default=None,help="No. of MCMF sims. Same as nsims if not specified.")
+parser.add_argument("--mf-file", type=str, default=None,
+                    help="Read MF bias from provided alms (..._mcmf_alm_[1|2].fits).")
 parser.add_argument("--decmin",     type=float,  default=None,help="Min. declination in deg.")
 parser.add_argument("--decmax",     type=float,  default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
@@ -30,7 +34,7 @@ parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
-parser.add_argument("--te", action='store_true',help='Whether to include TE correlations.')
+parser.add_argument("--te", action='store_true',help='Whether to include TE correlations / filter TEB jointly.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
 
@@ -97,21 +101,57 @@ if comm.Get_rank() == 0:
 
 if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
-mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
-if nsims_mf==0:
-    print("Skipping meanfield...")
-    mcmf_alm_1 = 0.
-    mcmf_alm_2 = 0.
+
+# Load N1 from disk if provided
+if args.n1_file is not None:
+    try:
+        mcn1 = np.loadtxt(args.n1_file, usecols=[5])
+        if comm.Get_rank()==0:
+            print(f"Loaded MCN1 from {args.n1_file}, skipping N1 calculation.")
+    except FileNotFoundError:
+        mcn1 = mg.get_mcn1(est,comm,nsims_n1)[0]
 else:
-    print("Meanfield...")
-    mcmf_alm_1_obj, mcmf_alm_2_obj = mg.get_mcmf_twosets(est,nsims_mf,comm)
-    mcmf_alm_1, mcmf_alm_2 = mcmf_alm_1_obj[0], mcmf_alm_2_obj[0]
+    if nsims_n1 > 0:
+        mcn1 = mg.get_mcn1(est,comm,nsims_n1)[0]
+    else:
+        mcn1 = rdn0 * 0.
+
+# Load MF from disk if provided
+if args.mf_file is not None:
+    try:
+        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_1.fits"),
+                                 hdu=(1,2,3))
+        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_2.fits"),
+                                 hdu=(1,2,3))
+        if comm.Get_rank()==0:
+            print("Reading meanfield from {args.mf_file}, skipping MF calculation.")
+    except FileNotFoundError:
+        if comm.Get_rank()==0:
+            print("Could not find meanfield file {args.mf_file}.")
+        args.mf_file = None
+else:
+    if nsims_mf==0:
+        if comm.Get_rank()==0:
+            print("Skipping meanfield...")
+        mcmf_alm_1 = 0.
+        mcmf_alm_2 = 0.
+    else:
+        if comm.Get_rank()==0:
+            print("Computing meanfield...")
+        mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf(est,comm,nsims_mf)
+
+        # save alms
+        if comm.Get_rank() == 0:
+            hp.write_alm(f'{outname}_mcmf_alm_1.fits', mcmf_alm_1[0], overwrite=True)
+            hp.write_alm(f'{outname}_mcmf_alm_2.fits', mcmf_alm_2[0], overwrite=True)
+            hp.write_alm(f'{outname}_mcmfc_alm_1.fits', mcmf_alm_1[1], overwrite=True)
+            hp.write_alm(f'{outname}_mcmfc_alm_2.fits', mcmf_alm_2[1], overwrite=True)
+
+        # Get only gradient components of mcmf
+        mcmf_alm_1 = mcmf_alm_1[0]
+        mcmf_alm_2 = mcmf_alm_2[0]
 
 if comm.Get_rank()==0:
-    print("MCMF alm 1 shape: ", mcmf_alm_1.shape)
-    print(mcmf_alm_1)
-    print("MCMF alm 2 shape: ", mcmf_alm_2.shape)
-    print(mcmf_alm_2)
     # Subtract mean-field alms and convert from phi to kappa
     galm_1 = plensing.phi_to_kappa(galm - mcmf_alm_1)
     galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)

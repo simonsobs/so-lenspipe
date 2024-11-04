@@ -1646,13 +1646,7 @@ class LensingSandbox(object):
         if nsims is None: nsims = self.n1_sims
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,
                          self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
-
-    def get_mcmf_twosets(self,est,comm,nsims=None):
-        if nsims is None: nsims = self.mf_sims
-        return bias.mcmf_twosets(0,self.qfuncs[est],self.kmap,comm,nsims)
     
     def get_mcmf(self,est,comm,nsims=None):
         if nsims is None: nsims = self.mf_sims
-        return bias.mcmf_pair(0,self.qfuncs[est],
-                              lambda stuple: self.kmap(stuple, nstep=1020),
-                              comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
