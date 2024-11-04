@@ -27,7 +27,7 @@ parser.add_argument("--n1-file", type=str, default=None,
 parser.add_argument("--nsims-mf", type=int, default=None,
                     help="No. of MCMF sims. Same as nsims if not specified.")
 parser.add_argument("--mf-file", type=str, default=None,
-                    help="Read MF bias from provided alms (_[1|2].fits).")
+                    help="Read MF bias from provided alms (..._mcmf_alm_[1|2].fits).")
 parser.add_argument("--decmin", type=float, default=None,help="Min. declination in deg.")
 parser.add_argument("--decmax", type=float, default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',
@@ -117,8 +117,10 @@ else:
 
 if args.mf_file is not None:
     try:
-        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_1.fits"), hdu=(1,2,3))
-        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_2.fits"), hdu=(1,2,3))
+        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "mcmf_alm_1.fits"),
+                                 hdu=(1,2,3))
+        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "mcmf_alm_2.fits"),
+                                 hdu=(1,2,3))
     except FileNotFoundError:
         args.mf_file = None
 else:

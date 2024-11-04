@@ -23,7 +23,7 @@ opath = config['data_path']
 
 class LensingSandboxILC(solenspipe.LensingSandbox):
     def __init__(self, *args, start_index=0, nilc_sims_per_set=400,
-                 nilc_sims_path="/data5/depot/needlets/needproto/",
+                 nilc_sims_path=config['nilc_sims_path'],
                  **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -47,20 +47,24 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
         return omap
 
     def get_observed_map(self,index,iset=0):
-        imap = enmap.read_map(self.nilc_sims_path + \
-                              f"sim_{index}_iset_{iset}_simple2_coadd_covsmooth_64.fits")
+        # fill in iset + index values
+        sim_name = config['nilc_sims_format'].replace("XX", str(iset).zfill(2))
+        sim_name = sim_name.replace("xxxxx", str(index).zfill(5))
+        imap = enmap.read_map(self.nilc_sims_path + sim_name)
         # assume we want the mask to match the resolution of the map
         return self._apply_mask(imap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
-        # if i > self.nilc_sims_per_set: raise ValueError
+        if i > self.nilc_sims_per_set: raise ValueError
+
         if ip < 2:
             iset = 0
-            index = self.nilc_sims_per_set * (ip + 1) + i
+            index = self.nilc_sims_per_set * ip + i
         else:
             iset = ip - 2
-            index = i
+            index = 2 * self.nilc_sims_per_set * i
+
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
@@ -68,8 +72,9 @@ class LensingSandboxILC(solenspipe.LensingSandbox):
     def kmap_mf(self,stuple):
         # build two sets specifically for mcmf
         icov,ip,i = stuple
-        # if i > self.nilc_sims_per_set: raise ValueError
-        iset = 0
+        if i > self.nilc_sims_per_set: raise ValueError
+        # should be same set
+        iset = ip // 2
         index = self.nilc_sims_per_set * ip + i
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
