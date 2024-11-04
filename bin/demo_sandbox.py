@@ -26,13 +26,15 @@ parser.add_argument("--n1-file", type=str, default=None,
                     help="Read N1 bias from provided output debug .txt file.")
 parser.add_argument("--nsims-mf", type=int, default=None,
                     help="No. of MCMF sims. Same as nsims if not specified.")
+parser.add_argument("--mf-file", type=str, default=None,
+                    help="Read MF bias from provided alms (_[1|2].fits).")
 parser.add_argument("--decmin", type=float, default=None,help="Min. declination in deg.")
 parser.add_argument("--decmax", type=float, default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',
                     help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
 parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
 parser.add_argument("--apodize", type=float, help='Apodize the mask with input width in degrees. Only applies if a mask is passed in.')
-parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
+parser.add_argument("--no-save", action='store_true',help='Don\'t save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
 required_args = parser.add_argument_group('Required arguments')
@@ -113,18 +115,25 @@ else:
     else:
         mcn1 = rdn0 * 0.
 
-if nsims_mf==0:
-    print("Skipping meanfield...")
-    mcmf_alm_1 = 0.
-    mcmf_alm_2 = 0.
+if args.mf_file is not None:
+    try:
+        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_1.fits"), hdu=(1,2,3))
+        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_2.fits"), hdu=(1,2,3))
+    except FileNotFoundError:
+        args.mf_file = None
 else:
-    print("Meanfield...")
-    # specific for the case only where # of mf sims > # of n1 sims
-    mg.nilc_sims_per_set = 400
-    mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf_ilc(est,nsims_mf,comm)
-    # Get only gradient components of mcmf
-    mcmf_alm_1 = mcmf_alm_1[0]
-    mcmf_alm_2 = mcmf_alm_2[0]
+    if nsims_mf==0:
+        print("Skipping meanfield...")
+        mcmf_alm_1 = 0.
+        mcmf_alm_2 = 0.
+    else:
+        print("Meanfield...")
+        # specific for the case only where # of mf sims > # of n1 sims
+        mg.nilc_sims_per_set = 400
+        mcmf_alm_1, mcmf_alm_2 = mg.get_mcmf_ilc(est,nsims_mf,comm)
+        # Get only gradient components of mcmf
+        mcmf_alm_1 = mcmf_alm_1[0]
+        mcmf_alm_2 = mcmf_alm_2[0]
 
 if comm.Get_rank()==0:
     # Save mean-field alms if desired
