@@ -71,8 +71,6 @@ if args.mask is not None:
 else:
     mask = args.mask
 include_te = args.te
-te_str = 'TE' if include_te else 'noTE'
-mask_str = '' if not args.mask else '_masked'
 
 if comm.Get_rank() == 0:
     print("FWHM (arcmin): ", fwhm_arcmin)
@@ -102,11 +100,11 @@ data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if comm.Get_rank() == 0:
-    enmap.write_map(f'{outname}_{te_str}{mask_str}_data_map_debug.fits', data_map)
-    hp.write_alm(f'{outname}_{te_str}{mask_str}_falms_debug.fits', Xdata, overwrite=True)
-    hp.write_alm(f'{outname}_{te_str}{mask_str}_galms_debug.fits', galm, overwrite=True)
+    enmap.write_map(f'{outname}_data_map_debug.fits', data_map)
+    hp.write_alm(f'{outname}_falms_debug.fits', Xdata, overwrite=True)
+    hp.write_alm(f'{outname}_galms_debug.fits', galm, overwrite=True)
 
-if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
+if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,comm)[0]
 
 # Load N1 from disk if provided
@@ -126,9 +124,9 @@ else:
 # Load MF from disk if provided
 if args.mf_file is not None:
     try:
-        mcmf_alm_1 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_1.fits"),
+        mcmf_alm_1 = hp.read_alm(args.mf_file + "_mcmf_alm_1.fits",
                                  hdu=(1,2,3))
-        mcmf_alm_2 = hp.read_alm(args.mf_file.replace(".fits", "_mcmf_alm_2.fits"),
+        mcmf_alm_2 = hp.read_alm(args.mf_file + "_mcmf_alm_2.fits",
                                  hdu=(1,2,3))
         if comm.Get_rank()==0:
             print("Reading meanfield from {args.mf_file}, skipping MF calculation.")
@@ -169,7 +167,7 @@ if comm.Get_rank()==0:
                                            enmap.empty(mg.shape,
                                                        mg.wcs,
                                                        dtype=np.float32)),
-                                f'{outname}_{te_str}{mask_str}_kappa_map',downgrade=4)
+                                f'{outname}_kappa_map',downgrade=4)
     clkk_xx = cs.alm2cl(galm_1,galm_2)/mg.w4 # Raw auto-spectrum (mean-field subtracted)
     # Cross-correlate input with the averaged MF-subtracted alms
     clkk_ix = cs.alm2cl(kalm,0.5*(galm_1+galm_2))/mg.w2 # Input x Recon
@@ -211,9 +209,9 @@ if comm.Get_rank()==0:
     bclkk_final = bclkk_xx-brdn0-bmcn1 # Final debiased power spectrum
 
     if not(args.no_save):
-        io.save_cols(f"{outname}_{te_str}{mask_str}_output_clkk.txt",
+        io.save_cols(f"{outname}_output_clkk.txt",
                 (ls,clkk_ii,clkk_xx,clkk_ix,rdn0,mcn1,mcmf,clkk_xx-rdn0-mcn1))
-        io.save_cols(f"{outname}_{te_str}{mask_str}_output_bandpowers.txt",
+        io.save_cols(f"{outname}_output_bandpowers.txt",
                 (cents,bclkk_ii,bclkk_xx,bclkk_ix,brdn0,bmcn1,bmcmf,errs))
 
 
@@ -227,7 +225,7 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(0.8,1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{te_str}{mask_str}_rclkk_ix_{xscale}.png')
+        pl.done(f'{outname}_rclkk_ix_{xscale}.png')
 
     # Plot all spectra and components
     for xscale in ['log','lin']:
@@ -243,5 +241,5 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(1e-9,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{te_str}{mask_str}_clkk_ix_{xscale}.png')
+        pl.done(f'{outname}_clkk_ix_{xscale}.png')
 
