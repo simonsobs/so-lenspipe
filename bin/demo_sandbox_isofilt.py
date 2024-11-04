@@ -43,11 +43,11 @@ outname = args.outname
 save_map_plots = args.map_plots
 
 # Specify instrument
-fwhm_arcmin = 1.5
+fwhm_arcmin = 1.6
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 3.0 if not(debug) else 2.0
+res = 1.0 if not(debug) else 2.0
 add_noise = args.add_noise
 
 # Specify analysis
@@ -62,8 +62,7 @@ nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
-    mask = enmap.downgrade(mask, int(res / (10800 / mask.shape[0])),
-                           op=np.mean)
+    mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])))
 else:
     mask = args.mask
 include_te = args.te
@@ -100,7 +99,7 @@ if comm.Get_rank() == 0:
     hp.write_alm(f'{outname}_{te_str}{mask_str}_galms_debug.fits', galm, overwrite=True)
 
 if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
-rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
+rdn0 = mg.get_rdn0(Xdata,est,comm,nsims_rdn0)[0]
 
 # Load N1 from disk if provided
 if args.n1_file is not None:

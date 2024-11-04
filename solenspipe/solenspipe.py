@@ -1611,7 +1611,7 @@ class LensingSandbox(object):
             iset = ip - 2
             index = 2*nstep + i
         dmap = self.get_observed_map(index,iset)
-        X = self.prepare(dmap, save_output=True)
+        X = self.prepare(dmap)
         return X
 
     def prepare(self,omap,save_output=None):
@@ -1621,7 +1621,7 @@ class LensingSandbox(object):
         ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,
                                                     self.lmax,ignore_te=self.no_te_corr)
         if save_output is not None:
-            hp.write_alm(save_output, [ftalm, fealm, fbalm])
+            hp.write_alm(save_output, [ftalm, fealm, fbalm], overwrite=True)
 
         return [ftalm,fealm,fbalm]
         
