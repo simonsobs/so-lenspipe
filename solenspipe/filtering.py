@@ -49,6 +49,9 @@ def isotropic_wfilter(alm,ucls,tcls,lmin,lmax,ignore_te=True):
     return [talm,ealm,balm]
 
 ### helper functions
+# criterion for filtering
+def convergence(errors_obj, est, limit=1e-3):
+    return errors_obj[est][-1] <= limit
 
 # calculate worst agreement between cl_new vs cl_old
 # between lmin to lmax with linearly spaced nbins
@@ -316,7 +319,7 @@ class CGPixFilter(object):
         for idx in range(niter_masked_cg + niter):
             if idx == niter_masked_cg:
                 solver.reset_preconditioner()
-                solver.add_preconditioner(self.prec_pinv)
+                solver.add_preconditioner(self.prec_harm)
 
                 solver.b_vec = solver.b0
                 solver.init_solver(x0=solver.x)
@@ -350,15 +353,22 @@ class CGPixFilter(object):
                         try:
                             kappa_errors[est].append(
                                 worst_agreement(kappa_dict[est],
-                                                kappas[est][idx-compute_qe])
+                                                kappas[est][idx-compute_qe],
+                                                lmax=self.lmax, mlmax=self.mlmax)
                             )
                         except KeyError:
                             kappa_errors[est].append(1.)
                         
-                        if verbose: print(f"| {est}: {kappa_errors[est][-1]: 0.5f} ", end="")
+                        if verbose: print(f"| {est}: {kappa_errors[est][-1]: .2%} ", end="")
 
                     del kappa_dict
                     if verbose: print(f" |")
+
+                    if convergence(kappa_errors, 'mv'):
+                        warnings.warn(f"Stopping early because MV QE max err ({kappa_errors[est][-1]}) is below 1e-3.")
+                        print(f"optweight step {idx + 1} / {niter_masked_cg + niter} (converged due to MV QE limit), "\
+                            f"|Ax-b|/|b|: {errors[-1]:.2e}, time {t_eval:.3f} s")
+                        break
         
             times.append(t_eval)
             if benchmark:

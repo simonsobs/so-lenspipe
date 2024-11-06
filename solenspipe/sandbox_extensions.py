@@ -20,9 +20,9 @@ opath = config['data_path']
 output_sim_path = config['output_sim_path']
 
 NITER = 200
-NITER_MASKED_CG = 25
+NITER_MASKED_CG = 20
 ERR_TOL = 1e-5
-COMPUTE_QE = None
+COMPUTE_QE = 10
 EVAL_EVERY_NITERS = 10
 
 class LensingSandboxOF(solenspipe.LensingSandbox):
