@@ -1516,7 +1516,12 @@ def get_labels():
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
-                 add_noise = False, mask = None,
+                 add_white_noise = False, 
+                 add_noise_model = False,
+                 noise_model_path = None,
+                 add_noise_map = True,
+                 noise_map_path = None,
+                 mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
@@ -1540,8 +1545,21 @@ class LensingSandbox(object):
             print(f"W2 factor: {self.w2:.5f}")
             print(f"W3 factor: {self.w3:.5f}")
             print(f"W4 factor: {self.w4:.5f}")
-
-        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
+        
+        if (add_white_noise and add_noise_model):
+            add_white_noise = False
+        if add_white_noise:
+            self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
+        elif add_noise_model:
+            noise_sim = enmap.read_map(noise_model_path%(str(0).zfill(4)),
+                                                   sel=np.s_[0, 0]  # just load f090, remove split axis
+                                                   )
+            noise_sim_alm = cs.map2alm(noise_sim, lmax=9000)
+            nells = cs.alm2cl(noise_sim_alm)
+            nells_dict = {"TT": nells[0],
+                          "EE": nells[1],
+                          "BB": nells[2]}
+            self.ucls, self.tcls = futils.get_theory_dicts(nells=nells_dict,grad=True)
         self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
         ls = np.arange(self.Als[ests[0]][0].size)
         self.Nls = {}
@@ -1555,7 +1573,11 @@ class LensingSandbox(object):
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
-        self.add_noise = add_noise
+        self.add_white_noise = add_white_noise
+        self.add_noise_model = add_noise_model
+        self.noise_model_path = noise_model_path
+        self.add_noise_map = add_noise_map
+        self.noise_map_path = noise_map_path
         self.mask = mask
 
     def _apply_mask(self,imap,mask,eps=1e-8):
@@ -1573,15 +1595,34 @@ class LensingSandbox(object):
         omap[mask >= (1-eps)] = imap[mask >= (1-eps)]
         return omap
 
-    def get_observed_map(self,index,iset=0):
+    def get_observed_map_with_noise_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
         calm = futils.get_cmb_alm(index,iset)
         calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
         # ignoring pixel window function here
         omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
-        if self.add_noise:
+        if self.add_noise_map:
+            if self.noise_map_path == None:
+                raise Exception("Need a noise map")
+            else:
+                nmap = enmap.read_map(self.noise_map_path)
+        else:
+            nmap = 0.
+        return self._apply_mask(omap + nmap, self.mask)
+
+    def get_observed_map(self,index,iset=0,n_index=1):
+        shape,wcs = self.shape,self.wcs
+        calm = futils.get_cmb_alm(index,iset)
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
+        # ignoring pixel window function here
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
+        if self.add_white_noise:
             nmap = maps.white_noise((3,)+shape,wcs,self.noise)
             nmap[1:] *= np.sqrt(2.)
+        elif self.add_noise_model:
+            noise_sim_ores = enmap.read_map(self.noise_model_path%(str(n_index+1).zfill(4)),sel=np.s_[0, 0])
+            nmap = enmap.empty((3,)+shape, wcs, noise_sim_ores.dtype)
+            cs.alm2map(cs.map2alm(noise_sim_ores,lmax=5400),nmap)
         else:
             nmap = 0.
         return self._apply_mask(omap + nmap, self.mask)
@@ -1596,7 +1637,8 @@ class LensingSandbox(object):
         elif ip==2 or ip==3:
             iset = ip - 2
             index = 1000 + i
-        dmap = self.get_observed_map(index,iset)
+        n_index = i
+        dmap = self.get_observed_map(index,iset,n_index = n_index)
         X = self.prepare(dmap)
         return X
 
