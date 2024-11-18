@@ -31,6 +31,7 @@ parser.add_argument("--decmin",     type=float,  default=None,help="Min. declina
 parser.add_argument("--decmax",     type=float,  default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
 parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
+parser.add_argument("--apodize", type=float, help='Apodize the mask with input width in degrees. Only applies if a mask is passed in.')
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
@@ -63,8 +64,11 @@ nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
     mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])))
+    if args.apodize is not None:
+        mask = maps.cosine_apodize(mask, args.apodize)
 else:
     mask = args.mask
+    
 include_te = args.te
 te_str = 'TE' if include_te else 'noTE'
 mask_str = '' if not args.mask else '_masked'
@@ -86,11 +90,11 @@ if comm.Get_rank() == 0:
         pass
     print("Include TE: ", include_te)
 
-mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                               lmin,lmax,mlmax,ests,include_te=include_te,
-                               add_noise=add_noise,mask=mask,verbose=True)
+mg = sandbox_extensions.LensingSandboxNILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                                   lmin,lmax,mlmax,ests,include_te=include_te,
+                                   add_noise=add_noise,mask=mask,verbose=True)
 
-data_map = mg.get_observed_map(0)
+data_map = mg.get_observed_map(1)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if comm.Get_rank() == 0:

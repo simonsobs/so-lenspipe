@@ -43,17 +43,17 @@ outname = args.outname
 save_map_plots = args.map_plots
 
 # Specify instrument
-fwhm_arcmin = 1.5
+fwhm_arcmin = 1.6
 noise_uk = 10.0
 dec_min = args.decmin
 dec_max = args.decmax
-res = 2.0 if not(debug) else 2.0
+res = 1.0 if not(debug) else 2.0
 add_noise = args.add_noise
 
 # Specify analysis
 lmin = 600
-lmax = 5000 if not(debug) else 3000
-mlmax = 5100 if not(debug) else 4000
+lmax = 3000 if not(debug) else 3000
+mlmax = 4000 if not(debug) else 4000
 lmax_of = 5400
 mlmax_of = 6000
 Lmax = 2000 if not(debug) else 2000
@@ -96,9 +96,24 @@ mg = sandbox_extensions.LensingSandboxOF(lmax_of, mlmax_of, None, None,
                                          lmin,lmax,mlmax,ests,include_te=include_te,
                                          n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,
                                          mask=mask,add_noise=add_noise,verbose=True)
-data_map = mg.get_observed_map(0)
-Xdata = mg.prepare(data_map)
+# save a bit of time to not recompute our "data" map
+DATA_INDEX = 1
+
+# specific scheme for v0.4 sims
+filename = mg.output_sim_path + \
+           f"fullskyLensedCMB_alm_set00_{str(DATA_INDEX).zfill(5)}.fits"
+filename_ialm = filename.replace(".fits", f"_ialm_4ptcg_lmax{lmax_of}.fits")
+
+if os.path.exists(filename_ialm):
+    data_map = mg.get_observed_map(DATA_INDEX)
+    X = hp.read_alm(filename_ialm, hdu=(1,2,3))
+    Xdata = mg.lmax_filter(mg.lmin_filter(X))
+else:
+    data_map = mg.get_observed_map(DATA_INDEX)
+    Xdata = mg.prepare(data_map, save_output=filename)
+
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
+
 if comm.Get_rank() == 0:
     enmap.write_map(f'{outname}_data_map_debug.fits', data_map)
     hp.write_alm(f'{outname}_falms_debug.fits', Xdata, overwrite=True)
@@ -162,7 +177,7 @@ if comm.Get_rank()==0:
     galm_2 = plensing.phi_to_kappa(galm - mcmf_alm_2)
 
     # Get the input kappa
-    kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
+    kalm = maps.change_alm_lmax(futils.get_kappa_alm(DATA_INDEX),mlmax)
     if save_map_plots: io.hplot(cs.alm2map(galm,
                                            enmap.empty(mg.shape,
                                                        mg.wcs,

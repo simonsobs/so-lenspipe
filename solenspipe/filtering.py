@@ -252,7 +252,8 @@ class CGPixFilter(object):
     # harmonic preconditioner 
     def filter(self, imap, niter=None, niter_masked_cg=5, 
                benchmark=False, verbose=True, err_tol=1e-5,
-               compute_qe=None, eval_every_niters=1, tcls=None):
+               compute_qe=None, compute_qe_after=None,
+               eval_every_niters=1, tcls=None):
 
         assert imap.shape == (self.ncomp,) + self.shape_in 
 
@@ -266,7 +267,7 @@ class CGPixFilter(object):
                                                  swap_bm=self.swap_bm, spin=self.spin,
                                                  sfilt=self.sfilt)
         
-        solver.add_preconditioner(self.prec_pinv)
+        solver.add_preconditioner(self.prec_harm)
 
         is_mask_present = np.nonzero(self.mask_bool[0])[0].size < self.mask_bool[0].size
         if is_mask_present:
@@ -341,34 +342,34 @@ class CGPixFilter(object):
                     break
 
                 if compute_qe is not None and (idx % compute_qe == 0):
-                    falm = solver.get_icov()
-                    kappa_dict = reconstruct(falm, px, ests,
-                                             self.theory_cls, self.mlmax, Als)
-                    
-                    if verbose:
-                        print(f"optweight step {idx + 1} / {niter_masked_cg + niter}, "\
-                              f"kappa maxdiff: ")
-                    for est in ests:
-                        kappas[est][idx] = kappa_dict[est]
-                        try:
-                            kappa_errors[est].append(
-                                worst_agreement(kappa_dict[est],
-                                                kappas[est][idx-compute_qe],
-                                                lmax=self.lmax, mlmax=self.mlmax)
-                            )
-                        except KeyError:
-                            kappa_errors[est].append(1.)
+                    if compute_qe_after is None or idx >= compute_qe_after:
+                        falm = solver.get_icov()
+                        kappa_dict = reconstruct(falm, px, ests,
+                                                self.theory_cls, self.mlmax, Als)
                         
-                        if verbose: print(f"| {est}: {kappa_errors[est][-1]: .2%} ", end="")
+                        if verbose:
+                            print(f"optweight step {idx + 1} / {niter_masked_cg + niter}, "\
+                                 f"kappa maxdiff: ")
+                        for est in ests:
+                            kappas[est][idx] = kappa_dict[est]
+                            try:
+                                kappa_errors[est].append(
+                                    worst_agreement(kappa_dict[est],
+                                                    kappas[est][idx-compute_qe],
+                                                    lmax=self.lmax, mlmax=self.mlmax)
+                                )
+                            except KeyError:
+                                kappa_errors[est].append(1.)
+                            
+                            if verbose: print(f"| {est}: {kappa_errors[est][-1]: .2%} ", end="")
 
-                    del kappa_dict
-                    if verbose: print(f" |")
+                        del kappa_dict
+                        if verbose: print(f" |")
 
-                    if convergence(kappa_errors, 'mv'):
-                        warnings.warn(f"Stopping early because MV QE max err ({kappa_errors[est][-1]}) is below 1e-3.")
-                        print(f"optweight step {idx + 1} / {niter_masked_cg + niter} (converged due to MV QE limit), "\
-                            f"|Ax-b|/|b|: {errors[-1]:.2e}, time {t_eval:.3f} s")
-                        break
+                        if convergence(kappa_errors, 'mv'):
+                            if verbose: print("optweight converged due to MV QE limit.")
+                            warnings.warn(f"Stopping early because MV QE max err ({kappa_errors[est][-1]}) is below 1e-3.")
+                            break
         
             times.append(t_eval)
             if benchmark:

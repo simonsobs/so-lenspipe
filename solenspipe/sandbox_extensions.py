@@ -24,6 +24,7 @@ NITER_MASKED_CG = 20
 ERR_TOL = 1e-5
 COMPUTE_QE = 10
 EVAL_EVERY_NITERS = 10
+COMPUTE_QE_AFTER = 40
 
 class LensingSandboxOF(solenspipe.LensingSandbox):
     def __init__(self, lmax_of=None, mlmax_of=None,
@@ -91,6 +92,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                 niter_masked_cg=NITER_MASKED_CG,
                 err_tol=ERR_TOL,
                 compute_qe=COMPUTE_QE,
+                compute_qe_after=COMPUTE_QE_AFTER,
                 eval_every_niters=EVAL_EVERY_NITERS):
         # run optimal filtering
         ucls, tcls = futils.get_theory_dicts_white_noise(self.fwhm, self.noise,
@@ -110,14 +112,19 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
                                niter_masked_cg=niter_masked_cg, 
                                benchmark=False, verbose=True,
                                err_tol=err_tol, compute_qe=compute_qe,
+                               compute_qe_after=compute_qe_after,
                                eval_every_niters=eval_every_niters,
                                tcls=tcls)
 
         ialm = alm_dict['ialm']
         if save_output is not None:
             walm = alm_dict['walm']
-            hp.write_alm(save_output.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits"), ialm)
-            hp.write_alm(save_output.replace(".fits", f"_walm_lmax{self.lmax_of}.fits"), walm)
+            hp.write_alm(save_output.replace(".fits",
+                                             f"_ialm_{'4ptcg_' if compute_qe is not None else ''}lmax{self.lmax_of}.fits"),
+                         ialm)
+            hp.write_alm(save_output.replace(".fits",
+                                             f"_walm_{'4ptcg_' if compute_qe is not None else ''}lmax{self.lmax_of}.fits"),
+                         walm)
         # top hat filter
         return self.lmax_filter(self.lmin_filter(ialm))
     
@@ -134,7 +141,7 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
         # specific scheme for v0.4 sims
         filename = self.output_sim_path + \
                    f"fullskyLensedCMB_alm_set{str(iset).zfill(2)}_{str(index).zfill(5)}.fits"
-        filename_ialm = filename.replace(".fits", f"_ialm_lmax{self.lmax_of}.fits")
+        filename_ialm = filename.replace(".fits", f"_ialm_4ptcg_lmax{self.lmax_of}.fits")
 
         if os.path.exists(filename_ialm):
             if self.verbose:
@@ -190,4 +197,24 @@ class LensingSandboxOFHyperparams(LensingSandboxOF):
                                lmax_of=lmax_of,
                                mlmax_of=mlmax_of)
 
+# for Frank's NILC sims
+class LensingSandboxNILC(solenspipe.LensingSandbox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def get_observed_map(self,index,iset=0):
+        shape,wcs = self.shape,self.wcs
+        filename = "/data5/sims/nilc_sims_frank/" + \
+                  f"ilc_v4_all_coadd_alm_set_{str(iset).zfill(2)}_{str(index).zfill(5)}.fits"
+        calm = futils.change_alm_lmax(hp.read_alm(filename,hdu=(1,2,3)),
+                                      self.mlmax)
+        # beam + noise already included
 
+        # ignoring pixel window function here
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,
+                                           dtype=np.float32),spin=[0,2])
+        
+        return enmap.enmap(omap * self.mask, omap.wcs)
+    
+    def kmap(self,stuple,nstep=512):
+        return super().kmap(stuple, nstep=50)
