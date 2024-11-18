@@ -121,10 +121,10 @@ class LensingSandboxOF(solenspipe.LensingSandbox):
             walm = alm_dict['walm']
             hp.write_alm(save_output.replace(".fits",
                                              f"_ialm_{'4ptcg_' if compute_qe is not None else ''}lmax{self.lmax_of}.fits"),
-                         ialm)
+                         ialm, overwrite=True)
             hp.write_alm(save_output.replace(".fits",
                                              f"_walm_{'4ptcg_' if compute_qe is not None else ''}lmax{self.lmax_of}.fits"),
-                         walm)
+                         walm, overwrite=True)
         # top hat filter
         return self.lmax_filter(self.lmin_filter(ialm))
     
