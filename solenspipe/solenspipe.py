@@ -1551,7 +1551,7 @@ class LensingSandbox(object):
         if add_white_noise:
             self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
         elif add_noise_model:
-            noise_sim = enmap.read_map(noise_model_path%(str(0).zfill(4)),
+            noise_sim = enmap.read_map(noise_model_path%(str(0),str(0).zfill(4)),
                                                    sel=np.s_[0, 0]  # just load f090, remove split axis
                                                    )
             noise_sim_alm = cs.map2alm(noise_sim, lmax=9000)
@@ -1568,8 +1568,6 @@ class LensingSandbox(object):
         for est in ests:
             self.qfuncs[est] =  get_qfunc(px,self.ucls,mlmax,est,Al1=self.Als[est])
             self.Nls[est] = self.Als[est][0] * (ls*(ls+1.)/2.)**2.
-
-
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
@@ -1610,7 +1608,7 @@ class LensingSandbox(object):
             nmap = 0.
         return self._apply_mask(omap + nmap, self.mask)
 
-    def get_observed_map(self,index,iset=0,n_index=1):
+    def get_observed_map(self,index,iset=0,n_index=1,n_set=0):
         shape,wcs = self.shape,self.wcs
         calm = futils.get_cmb_alm(index,iset)
         calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
@@ -1620,7 +1618,7 @@ class LensingSandbox(object):
             nmap = maps.white_noise((3,)+shape,wcs,self.noise)
             nmap[1:] *= np.sqrt(2.)
         elif self.add_noise_model:
-            noise_sim_ores = enmap.read_map(self.noise_model_path%(str(n_index+1).zfill(4)),sel=np.s_[0, 0])
+            noise_sim_ores = enmap.read_map(self.noise_model_path%(str(n_set),str(n_index+1).zfill(4)),sel=np.s_[0, 0])
             nmap = enmap.empty((3,)+shape, wcs, noise_sim_ores.dtype)
             cs.alm2map(cs.map2alm(noise_sim_ores,lmax=5400),nmap)
         else:
@@ -1637,8 +1635,9 @@ class LensingSandbox(object):
         elif ip==2 or ip==3:
             iset = ip - 2
             index = 1000 + i
+        n_set = ip
         n_index = i
-        dmap = self.get_observed_map(index,iset,n_index = n_index)
+        dmap = self.get_observed_map(index,iset,n_index = n_index,n_set=n_set)
         X = self.prepare(dmap)
         return X
 
