@@ -307,6 +307,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
+        assert est1 in ['TT','MV'], "bh qfunc only implemented for TT and MV"
         assert est2 in ['SRC','MASK'] # TODO: add mask
         if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
