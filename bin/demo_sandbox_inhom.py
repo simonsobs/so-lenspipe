@@ -19,7 +19,9 @@ import argparse
 # Parse command line
 parser = argparse.ArgumentParser(description='Run the lensing sandbox.')
 parser.add_argument("outname", type=str,help='Name of outputs. Could include a path.')
+parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--estimator",     type=str,  default='MV',help="Estimator.")
+parser.add_argument("--ivar", type=str, default=None, help="Path to ivar map.")
 parser.add_argument("--nsims",     type=int,  default=8, help="No. of RDN0 sims. Defaults to 8.")
 parser.add_argument("--nsims-n1",     type=int,  default=None,help="No. of MCN1 sims. Same as nsims if not specified.")
 parser.add_argument("--n1-file", type=str, default=None,
@@ -31,9 +33,8 @@ parser.add_argument("--decmin",     type=float,  default=None,help="Min. declina
 parser.add_argument("--decmax",     type=float,  default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
 parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
-parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
-parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
+parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--te", action='store_true',help='Whether to include TE correlations / filter TEB jointly.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
@@ -72,6 +73,12 @@ else:
     mask = args.mask
 include_te = args.te
 
+if args.ivar is not None:
+    ivar = enmap.read_map(args.ivar)
+    ivar = enmap.downgrade(mask, int(res / (21600 / ivar.shape[1])))
+else:
+    ivar = None
+
 if comm.Get_rank() == 0:
     print("FWHM (arcmin): ", fwhm_arcmin)
     print("Noise (muK-arcmin): ", noise_uk)
@@ -84,14 +91,16 @@ if comm.Get_rank() == 0:
     print("N1 sims: ", nsims_n1)
     print("MF sims: ", nsims_mf)
     print("Mask path: ", args.mask)
+    print("ivar map: ", args.ivar)
     try:
         print("Mask shape: ", mask.shape)
     except AttributeError: # mask is none
         pass
+
     print("Include TE: ", include_te)
 
 # lmax_of, mlmax_of, ivar, mcg lmax
-mg = sandbox_extensions.LensingSandboxOF(lmax_of, mlmax_of, None, None,
+mg = sandbox_extensions.LensingSandboxOFInhom(lmax_of, mlmax_of, ivar, None,
                                          fwhm_arcmin,noise_uk,dec_min,dec_max,res,
                                          lmin,lmax,mlmax,ests,include_te=include_te,
                                          n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,

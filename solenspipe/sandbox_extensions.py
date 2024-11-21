@@ -218,3 +218,27 @@ class LensingSandboxNILC(solenspipe.LensingSandbox):
     
     def kmap(self,stuple,nstep=512):
         return super().kmap(stuple, nstep=50)
+    
+class LensingSandboxOFInhom(LensingSandboxOF):
+    def __init__(self):
+        super().__init__()
+
+        self.ivar = self._apply_mask_binary(self.ivar, self.mask)
+    
+    def get_observed_map(self,index,iset=0):
+        shape,wcs = self.shape,self.wcs
+        calm = futils.change_alm_lmax(futils.get_cmb_alm(index,iset),
+                                      self.mlmax_of)
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(x,self.fwhm))
+        # ignoring pixel window function here
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,
+                                           dtype=np.float32),spin=[0,2])
+        if self.add_noise:
+            # not white noise!
+            nmap = maps.modulated_noise_map(self.ivar, parea=None,
+                                            cylindrical=True, lmax=self.mlmax_of)
+            nmap[1:] *= np.sqrt(2.)
+        else:
+            nmap = 0.
+        return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),
+                           omap.wcs)
