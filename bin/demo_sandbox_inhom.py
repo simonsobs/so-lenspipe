@@ -75,7 +75,8 @@ include_te = args.te
 
 if args.ivar is not None:
     ivar = enmap.read_map(args.ivar)
-    ivar = enmap.downgrade(mask, int(res / (21600 / ivar.shape[1])))
+    ivar = enmap.downgrade(ivar, int(res / (21600 / ivar.shape[1])),
+                           op=np.sum)
 else:
     ivar = None
 
@@ -96,15 +97,20 @@ if comm.Get_rank() == 0:
         print("Mask shape: ", mask.shape)
     except AttributeError: # mask is none
         pass
+    
+    try:
+        print("Ivar shape: ", ivar.shape)
+    except AttributeError:
+        pass
 
     print("Include TE: ", include_te)
 
 # lmax_of, mlmax_of, ivar, mcg lmax
 mg = sandbox_extensions.LensingSandboxOFInhom(lmax_of, mlmax_of, ivar, None,
-                                         fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                                         lmin,lmax,mlmax,ests,include_te=include_te,
-                                         n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,
-                                         mask=mask,add_noise=add_noise,verbose=True)
+                                              fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                                              lmin,lmax,mlmax,ests,include_te=include_te,
+                                              n0_sims=nsims_rdn0,n1_sims=nsims_n1,mf_sims=nsims_mf,
+                                              mask=mask,add_noise=add_noise,verbose=True)
 # save a bit of time to not recompute our "data" map
 DATA_INDEX = 0
 

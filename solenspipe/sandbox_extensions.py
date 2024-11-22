@@ -220,8 +220,8 @@ class LensingSandboxNILC(solenspipe.LensingSandbox):
         return super().kmap(stuple, nstep=50)
     
 class LensingSandboxOFInhom(LensingSandboxOF):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.ivar = self._apply_mask_binary(self.ivar, self.mask)
     
@@ -237,6 +237,9 @@ class LensingSandboxOFInhom(LensingSandboxOF):
             # not white noise!
             nmap = maps.modulated_noise_map(self.ivar, parea=None,
                                             cylindrical=True, lmax=self.mlmax_of)
+            # default behavior of maps.modulated_noise_map is to set div by 0
+            # to infinity, but that causes problems with rest of pipeline
+            nmap[~np.isfinite(nmap)] = 0.
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
