@@ -223,7 +223,12 @@ class LensingSandboxOFInhom(LensingSandboxOF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.ivar = self._apply_mask_binary(self.ivar, self.mask)
+        # for pol, sqrt(2) times noise level is 1/2 times ivar
+        ivar_masked = self._apply_mask_binary(self.ivar, self.mask)
+        ivar_masked_pol = ivar_masked * 0.5
+        self.icov_pix = enmap.enmap([ivar_masked,
+                                     ivar_masked_pol,
+                                     ivar_masked_pol])
     
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
@@ -234,13 +239,14 @@ class LensingSandboxOFInhom(LensingSandboxOF):
         omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,
                                            dtype=np.float32),spin=[0,2])
         if self.add_noise:
-            # not white noise!
+            # draw noise map from ivar!
             nmap = maps.modulated_noise_map(self.ivar, parea=None,
                                             cylindrical=True, lmax=self.mlmax_of)
             # default behavior of maps.modulated_noise_map is to set div by 0
             # to infinity, but that causes problems with rest of pipeline
             nmap[~np.isfinite(nmap)] = 0.
-            nmap[1:] *= np.sqrt(2.)
+            nmap = enmap.enmap([nmap, nmap*np.sqrt(2), nmap*np.sqrt(2)])
+            assert len(nmap.shape) == 3 # includes polarization
         else:
             nmap = 0.
         return enmap.enmap(self._apply_mask_binary(omap + nmap, self.mask),

@@ -99,7 +99,7 @@ if comm.Get_rank() == 0:
         pass
     
     try:
-        print("Ivar shape: ", ivar.shape)
+        print("ivar map shape: ", ivar.shape)
     except AttributeError:
         pass
 
