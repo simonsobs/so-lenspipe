@@ -45,7 +45,7 @@ save_map_plots = args.map_plots
 
 # Specify instrument
 fwhm_arcmin = 1.6
-noise_uk = 10.0
+noise_uk = 24.
 dec_min = args.decmin
 dec_max = args.decmax
 res = 2.0 if not(debug) else 2.0
