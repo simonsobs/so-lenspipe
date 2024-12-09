@@ -9,7 +9,7 @@ import pixell.powspec
 from orphics import maps
 from soapack import interfaces as sints
 import os
-from falafel.utils import get_cmb_alm,test_cmb_alm
+from falafel.utils import get_cmb_alm#,test_cmb_alm
 import pytempura
 
 
