@@ -30,7 +30,7 @@ parser.add_argument("--map-plots", action='store_true',help='Whether to plot dat
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
 
-
+rank = comm.Get_rank()
 debug = args.debug
 outname = args.outname
 save_map_plots = args.map_plots
@@ -58,17 +58,17 @@ mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,lmin,lma
 data_map = mg.get_observed_map(0)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
-if save_map_plots: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
+if save_map_plots and rank==0: io.hplot(data_map,f'{outname}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,nsims_rdn0,comm)[0]
 mcn1 = mg.get_mcn1(est,nsims_n1,comm)[0]
 if nsims_mf==0:
-    print("Skipping meanfield...")
+    if rank==0: print("Skipping meanfield...")
     mcmf_alm = 0.
 else:
-    print("Meanfield...")
+    if rank==0: print("Meanfield...")
     mcmf_alm = mg.get_mcmf(est,nsims_mf,comm)[0]
 
-if comm.Get_rank()==0:
+if rank==0:
     # Subtract mean-field alms and convert from phi to kappa
     galm = plensing.phi_to_kappa(galm - mcmf_alm)
     # Get the input kappa

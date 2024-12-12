@@ -1514,7 +1514,6 @@ def get_labels():
     return labs
 
 
-# Load signal map, apply beam and add noise
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
