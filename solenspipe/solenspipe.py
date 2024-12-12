@@ -1,21 +1,15 @@
 from __future__ import print_function
-import matplotlib
-matplotlib.use("Agg")
 from orphics import maps,io,cosmology,mpi
-from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils,bunch #  enplot,
 import pytempura
 import numpy as np
-import os,sys
+import os
 import healpy as hp
-from enlib import bench
 from falafel import qe
 import os
-import glob
 import traceback,warnings
 from . import bias
-from falafel.utils import get_cmb_alm, get_kappa_alm, \
-    get_theory_dicts, get_theory_dicts_white_noise, \
-    change_alm_lmax, get_theory_dicts_white_noise
+from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -1128,7 +1122,7 @@ def diagonal_RDN0(get_sim_power,nltt,nlee,nlbb,theory,theory_cross,lmin,lmax,sim
     noise=np.array([nltt,nlee,nlbb,nlte])/Tcmb**2
     lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
     fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])/Tcmb**2
-    ocl= fcl+noise
+    ocl= fcl+noise #fiducial spectra
     ocl[np.where(ocl==0)] = 1e30
     AgTT,AcTT=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
     AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
@@ -1472,7 +1466,7 @@ class weighted_bin1D:
         bin_means=np.array(bin_means)
         return self.cents,bin_means
         
-    def binning_matrix(self,ix,iy,weights):
+    def binning_matrix(self,ix,iy,weights,planck=False):
         #return the binning matrix used for the data product ix,iy are length of the array we want to bin
         x = ix.copy()
         y = iy.copy()
@@ -1485,7 +1479,11 @@ class weighted_bin1D:
         nrows=len(self.bin_edges)
         for i in range(1,nrows):
             col=np.zeros(len(y))
-            col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
+            if planck:
+                col[self.bin_edges[i-1]+1:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]+1:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]+1:self.bin_edges[i]+1])
+
+            else:
+                col[self.bin_edges[i-1]:self.bin_edges[i]+1]=weights[self.bin_edges[i-1]:self.bin_edges[i]+1]/np.sum(weights[self.bin_edges[i-1]:self.bin_edges[i]+1])
             matrix.append(col)
         matrix=np.array(matrix)
         return matrix 
@@ -1557,7 +1555,22 @@ class LensingSandbox(object):
         self.lmin = lmin
         self.lmax = lmax
         self.add_noise = add_noise
+        self.mask = mask
 
+    def _apply_mask(self,imap,mask,eps=1e-8):
+        if len(imap.shape) == 3:
+            return enmap.enmap(np.array([
+                self._apply_mask(imap[0],mask,eps),
+                self._apply_mask(imap[1],mask,eps),
+                self._apply_mask(imap[2],mask,eps)
+            ]), imap.wcs)
+        
+        # should now be 2d
+        omap = imap * mask
+        # handle edge cases
+        omap[mask < eps] = 0.
+        omap[mask >= (1-eps)] = imap[mask >= (1-eps)]
+        return omap
 
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
@@ -1570,7 +1583,7 @@ class LensingSandbox(object):
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return omap + nmap
+        return self._apply_mask(omap + nmap, self.mask)
 
     def kmap(self,stuple):
         icov,ip,i = stuple
@@ -1611,4 +1624,4 @@ class LensingSandbox(object):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
