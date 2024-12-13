@@ -1,4 +1,5 @@
 from orphics import maps
+from pixell import enmap
 
 # Note: downgrading not added yet
 
@@ -16,12 +17,12 @@ def preprocess_core(imap, ivar, mask,
 
     imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
     if is_binary_mask:
-        imap[!mask] = 0
+        imap[~mask] = 0
     else:
         imap = imap * mask
     fmap = enmap.fft(imap)
-    fmap = enmap.apply_window(imap,pow=-1,nofft=True)
-    fmap[!kspace_mask] = 0
+    fmap = enmap.apply_window(fmap,pow=-1,nofft=True)
+    fmap[:,~kspace_mask] = 0
     imap = enmap.ifft(fmap).real
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
