@@ -1,6 +1,24 @@
 from orphics import maps
 from pixell import enmap, utils as u, curvedsky as cs
 
+"""
+Some subtleties when applying this to different experiments:
+
+A CAR map at X resolution has a pixel window p(X).
+A block-downgrade operation to Y resolution will induce an additional
+pixel window of p(Y)/p(X).
+
+Therefore, the correct pixel window to deconvolve from the block-downgraded
+map is p(Y).
+
+Planck maps have a healpix window function h(nside).  The CAR reprojected
+maps do not correct for this and do not contain the usual p(X) pixel window
+either since they are reprojected using SHTs. Therefore, if you downgrade
+from X to Y, the pixel window that needs to be deconvolved is:
+h(nside)p(Y)/p(X).
+
+"""
+
 def preprocess_core(imap, mask,
                     calibration, pol_eff,
                     inpaint_ivar=None,
