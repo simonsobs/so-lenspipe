@@ -20,7 +20,7 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-def get_sim_pixelization(lmax,is_healpix,verbose=False):
+def get_sim_pixelization(lmax,is_healpix,dtype=np.float32,verbose=False):
     # Geometry
     if is_healpix:
         nside = futils.closest_nside(lmax)
@@ -31,7 +31,7 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
         shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(px_arcmin/60.),proj='car')
         nside = None
         if verbose: print(f"shape,wcs: {shape}, {wcs}")
-    return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
+    return qe.pixelization(shape=shape,wcs=wcs,nside=nside,dtype=dtype)
 
 
 def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
