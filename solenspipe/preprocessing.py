@@ -4,9 +4,10 @@ from pixell import enmap
 # Note: downgrading not added yet
 
 def preprocess_core(imap, ivar, mask,
-               inpaint_mask, kspace_mask,
-               calibration, pol_eff,
-               is_binary_mask=False):
+                    inpaint_mask,
+                    calibration, pol_eff,
+                    lxcut=None,lycut=None,kspace_mask=None,
+                    is_binary_mask=False):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -20,10 +21,13 @@ def preprocess_core(imap, ivar, mask,
         imap[~mask] = 0
     else:
         imap = imap * mask
-    fmap = enmap.fft(imap)
-    fmap = enmap.apply_window(fmap,pow=-1,nofft=True)
-    fmap[:,~kspace_mask] = 0
-    imap = enmap.ifft(fmap).real
+    if lxcut is not None:
+        imap = utility.kspace_mask(imap, vk_mask=[-lxcut,lxcut], hk_mask=[-lycut,lycut], normalize="phys", deconvolve=True)
+    else:
+        fmap = enmap.fft(imap)
+        fmap = enmap.apply_window(fmap,pow=-1,nofft=True)
+        fmap[:,~kspace_mask] = 0
+        imap = enmap.ifft(fmap).real
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
     return imap
