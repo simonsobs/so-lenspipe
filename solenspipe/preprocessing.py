@@ -1,5 +1,6 @@
 from orphics import maps
 from pixell import enmap, utils as u, curvedsky as cs
+import numpy as np
 
 """
 Some subtleties when applying this to different experiments:
@@ -78,7 +79,7 @@ def get_sim_core(shape,wcs,signal_alms,noise_alms,
     signal_alms[0] = cs.almxfl(signal_alms[0],beam_fells * transfer_fells)
     signal_alms[1] = cs.almxfl(signal_alms[1],beam_fells)
     signal_alms[2] = cs.almxfl(signal_alms[2],beam_fells)
-    omap = enmap.alm2map(signal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+    omap = cs.alm2map(signal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     
     res = maps.resolution(shape,wcs) / u.arcmin
     omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
@@ -92,8 +93,8 @@ def get_sim_core(shape,wcs,signal_alms,noise_alms,
         nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     omap = omap + nmap
     # notice how these are inverse of what's in preprocess
-    omap = imap / calibration  
-    omap[1:] = imap[1:] * pol_eff
+    omap = omap / calibration  
+    omap[1:] = omap[1:] * pol_eff
     return enmap.downgrade(omap,dfact)
 
 
