@@ -47,6 +47,42 @@ frequency band, reprojected to the CAR pixelization and subtracted of sources (s
 Planck reprojection
 ^^^^^^^^^^^^^^^^^^^
 
+The Planck maps need to be reprojected to the same pixelization as ACT/SO.
+This is done by SHT-ing the Planck healpix maps and inverse SHT-ing to
+the target pixelization.  This results in maps that have the original
+healpix pixel window intact, and no rectangular pixel window, requiring
+special treatment later.
+
+Source subtraction
+^^^^^^^^^^^^^^^^^^
+
+Around 20,000 compact sources (mostly radio and dusty sources) have been
+detected in co-added ACT data.  This catalog is used to perform forced
+photometry on both ACT and Planck maps, subsequently subtracting them
+using a model of their beam. This results in `srcfree` maps, which are
+our main input data product.
+
+With SO, we will produce similar `srcfree` maps either using the original
+ACT catalog, or using new catalogs of sources detected in ACT+SO+Planck
+coadds.
+
+
+Pre-processing
+^^^^^^^^^^^^^^
+
+Each `srcfree` CAR map is loaded for pre-processing. We block downgrade
+these maps by a factor of 2. For ACT/SO maps,
+we inpaint at the location of around ~1000 source residuals, but we ignore
+these regions for Planck.
+
+We then apply an analysis mask and perform the following 2D Fourier operations.
+If ACT/SO, then we divide by the pixel window corresponding to the downgraded
+resolution.  If Planck, then we divide by a ratio of pixel windows of the upgraded
+and downgraded resolutions, since these maps did not have a pixel window corresponding
+to the upgraded resolution. Importantly, for Planck, we leave the healpix pixel window in the map, and account for it in the beam
+later.
+
+
 Simulation
 ----------
 

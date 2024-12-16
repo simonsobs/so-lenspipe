@@ -19,37 +19,73 @@ h(nside)p(Y)/p(X).
 
 """
 
-def preprocess_core(imap, mask,
+def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
+    """
+    Remove rectangular pixel window effects from the map.
+    If the map was produced in native rect pixelization,
+    then what factor it was downgraded by (dfact) is not relevant
+    and can be ignored, with the deconvolved window corresponding
+    to that of the current map.
+
+    If the map was reprojected (e.g. from healpix), then the
+    ratio of pixel windows is used.  This function will not
+    account for the original healpix pixel window.
+
+    This will perform necessary Fourier operations on input maps.
+    This includes:
+    1. Correcting for a map-maker pixel window
+    2. Correctiong for a downgrade pixel window
+    3. k-space masking
+
+    
+    (1) and (3) are only done if the map originates from ACT/SO
+    (2) is done if the map was downgraded
+
+    """
+    wy1, wx1 = enmap.calc_window(imap.shape)
+    if maptype=='native':
+        wy2 = wx2 = 1
+    elif maptype=='reprojected':
+        if (dfact is None) or (dfact==1):
+            if kspace_mask is None: return imap
+            wy2 = wx2 = wy1 = wx1 = 1
+        else:
+            wy2, wx2 = enmap.calc_window(imap.shape, scale=dfact)
+    else:
+        raise ValueError
+    fmap = enmap.fft(imap)
+    fmap *= (wy2/wy1)[:,None]
+    fmap *= (wx2/wx1)
+    if kspace_mask is not None:
+        fmap[:,~kspace_mask] = 0
+    imap = enmap.ifft(fmap).real
+    return imap
+
+
+
+def preprocess_core(imap, ivar, mask,
+                    maptype='native',
+                    dfact = None,
                     calibration, pol_eff,
-                    inpaint_ivar=None,
                     inpaint_mask=None,
-                    lxcut=None,lycut=None,kspace_mask=None,
-                    is_binary_mask=False):
+                    kspace_mask=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
-    It assumes the map has already been downgraded.
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
-
-    if inpaint_mask:
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=inpaint_ivar)
-
-    if is_binary_mask:
-        imap[~mask] = 0
-    else:
-        imap = imap * mask
+    if dfact!=1 and (dfact is not None):
+        imap = enmap.downgrade(imap,dfact)
+        ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
-    if lxcut is not None:
-        imap = utility.kspace_mask(imap, vk_mask=[-lxcut,lxcut], hk_mask=[-lycut,lycut], normalize="phys", deconvolve=True)
-    else:
-        fmap = enmap.fft(imap)
-        fmap = enmap.apply_window(fmap,pow=-1,nofft=True)
-        fmap[:,~kspace_mask] = 0
-        imap = enmap.ifft(fmap).real
+    if inpaint_mask:
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+
+    imap = imap * mask
+    imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
         
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
@@ -59,15 +95,17 @@ def preprocess_core(imap, mask,
     return imap, ivar
 
 
-def get_sim_core(shape,wcs,signal_alms,noise_alms,
-            beam_fells, transfer_fells,
-            calibration,pol_eff,
-            dfact,
-            apod_y_arcmin = 0.,
-            apod_x_arcmin = 10.,
-            noise_mask=None,
-            noise_lmax = 5400,
-            lcosine=80,alpha=-4,flmin = 700): # these are all optional arguments for noise stitching
+def get_sim_core(shape,wcs,signal_alms,
+                 beam_fells, transfer_fells,
+                 calibration,pol_eff,
+                 maptype='native',
+                 noise_alms=None,
+                 apod_y_arcmin = 0.,
+                 apod_x_arcmin = 0.,
+                 noise_mask=None,
+                 rms_uk_arcmin=None,
+                 noise_lmax = 5400,
+                 lcosine=80): # these are all optional arguments for noise stitching
 
     """
     shape,wcs should ideally correspond to native ACT/SO pixelization of 0.5 arcmin
@@ -79,25 +117,29 @@ def get_sim_core(shape,wcs,signal_alms,noise_alms,
     signal_alms[1] = cs.almxfl(signal_alms[1],beam_fells)
     signal_alms[2] = cs.almxfl(signal_alms[2],beam_fells)
     omap = enmap.alm2map(signal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
-    
-    res = maps.resolution(shape,wcs) / u.arcmin
-    omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
-    omap = enmap.apply_window(omap,pow=1)
+    if maptype=='native':
+        if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
+            res = maps.resolution(shape,wcs) / u.arcmin
+            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
+        omap = enmap.apply_window(omap,pow=1)
+    elif maptype=='reprojected':
+        pass
+    else:
+        raise ValueError        
     if noise_mask:
         lstitch = noise_lmax - 200
         mlmax = noise_lmax + 600
-        nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,
-                                   lstitch=lstitch,lcosine=lcosime,mlmax=mlmax,alpha=alpha,flmin = flmin)
+        nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
+                                   lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
     else:
         nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     omap = omap + nmap
     # notice how these are inverse of what's in preprocess
     omap = imap / calibration  
     omap[1:] = imap[1:] * pol_eff
-    return enmap.downgrade(omap,dfact)
+    return omap
 
 
-# Note: downgrading not added yet
 
 # orphics.maps.kspace_coadd_alms
 # pure E,B:   Q, U maps and a mask -> E, B alms
@@ -117,9 +159,9 @@ kcoadd = kspace_coadd_alms(kmaps) # beam deconvolved kspace coadd alms
 
 """
 def calculate_noise_power(qid):
-    coadd # load downgraded coadd map
+    coadd # load coadd map
     #ivar_coadd
-    splits # load downgraded splits
+    splits # load splits
     ivar_splits
 
     nmaps = 0.
