@@ -95,13 +95,32 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     return imap
 
 
+def obtain_kspacemask(shape,wcs, vk_mask=None, hk_mask=None):
+    
+    lymap, lxmap = enmap.lmap(shape, wcs)
+    ly, lx = lymap[:,0], lxmap[0,:]
+    
+    if vk_mask is not None:
+        id_vk = np.where((lx > vk_mask[0]) & (lx < vk_mask[1]))
+    if hk_mask is not None:
+        id_hk = np.where((ly > hk_mask[0]) & (ly < hk_mask[1]))
+    
+    # i don't know how to continue this
+    
+    kspace_mask = np.empty((2, ly.shape, lx.shape))
+    kspace_mask[0] = id_vk[]
+    kspace_mask[1] = id_hk
+    # !!!!
+    return kspace_mask    
+
+
 
 def preprocess_core(imap, ivar, mask,
                     maptype='native',
                     dfact = None,
                     calibration, pol_eff,
                     inpaint_mask=None,
-                    kspace_mask=None):
+                    vk_mask=None, hk_mask=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -116,6 +135,11 @@ def preprocess_core(imap, ivar, mask,
         
     if inpaint_mask:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        
+    if vk_mask is not None or hk_mask is not None:
+        kspace_mask = obtain_kspacemask(imap.shape, imap.wcs, vk_mask=vk_mask, hk_mask=hk_mask)
+    else:
+        kspace_mask = None
 
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
