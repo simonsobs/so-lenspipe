@@ -119,9 +119,9 @@ def obtain_kspacemask(shape,wcs, vk_mask=None, hk_mask=None):
 
 
 def preprocess_core(imap, ivar, mask,
+                    calibration, pol_eff,
                     maptype='native',
                     dfact = None,
-                    calibration, pol_eff,
                     inpaint_mask=None,
                     vk_mask=None, hk_mask=None):
     """
@@ -200,6 +200,62 @@ def get_sim_core(shape,wcs,signal_alms,
     return omap
 
 
+def calculate_noise_power(qid, args, mask,
+                          calibration, pol_eff,
+                          maptype='native',
+                          dfact = None,
+                          inpaint_mask=None,
+                          vk_mask=None, hk_mask=None):
+    
+    '''
+    args:
+    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    args.maps_subproduct: str, subproduct name for maps, e.g. 'default'
+    
+    '''
+    
+    datamodel = DataModel.from_config(args.config_name)
+    qid_kwargs = datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+    
+    nsplits = qid_kwargs['num_splits']
+    
+    coadd_map = datamodel.read_map(qid=qid, coadd=True, subproduct=args.maps_subproduct, maptag='map_srcfree')
+
+    # load map and ivar splits
+    ivar_splits = [] 
+    map_splits = []
+    for k in range(nsplits):
+        ivar_splits.append(datamodel.read_map(qid=qid, split_num=k, subproduct=args.maps_subproduct, maptag='ivar'))
+        map_splits.append(datamodel.read_map(qid=qid, split_num=k, subproduct=args.maps_subproduct, maptag='map_srcfree'))
+    
+    nmaps = 0.
+    for k in range(nsplits):
+        diff = coadd - map_splits[k]
+        ivar = utility.ivar_eff(k,ivar_splits)
+        nmap, nivar = preprocess_core(diff, ivar, mask,
+                                      calibration, pol_eff,
+                                      maptype=maptype,
+                                      dfact=dfact,
+                                      inpaint_mask=inpaint_mask,
+                                      vk_mask=vk_mask, hk_mask=hk_mask)
+        nmaps = nmaps + nmap
+
+    nmaps = nmaps / nsplits
+    
+    Ealm,Balm=pureEB(noise_a[1],noise_a[2],mask,returnMask=0,lmax=lmax,isHealpix=False)
+    alm_T=cs.map2alm(noise_a[0],lmax=lmax)
+    alm_a=np.array([alm_T,Ealm,Balm])
+    alm_a=alm_a.astype(np.complex128)
+    ????????
+    cl_ab = cs.alm2cl(alm_a)
+    w2=w_n(mask,2)
+    cl_sum = np.sum(cl_ab, axis=0) # is this necessary anymore, just one now
+    power = 1/n_splits/(n_splits-1) * cl_sum
+    power[~np.isfinite(power)] = 0
+    power/=w2
+    
+    return nmaps
+
 
 # orphics.maps.kspace_coadd_alms
 # pure E,B:   Q, U maps and a mask -> E, B alms
@@ -217,24 +273,7 @@ kcoadd = kspace_coadd_alms(kmaps) # beam deconvolved kspace coadd alms
 
 """
 
-"""
-def calculate_noise_power(qid):
-    coadd # load coadd map
-    #ivar_coadd
-    splits # load splits
-    ivar_splits
 
-    nmaps = 0.
-    for k in range(nsplits):
-        diff = coadd - splits[k]
-        ivar = utility.ivar_eff(k,ivar_splits)
-        nmap, nivar = preprocess_core(diff, mask,
-                                      calibration, pol_eff)
-        nmaps = nmaps + nmap
-
-    nmaps = nmaps / nsplits
-    
-"""
 
 """
     # load geometry
