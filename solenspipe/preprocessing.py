@@ -238,7 +238,7 @@ def calculate_noise_power(qid, args, mask,
                                       dfact=dfact,
                                       inpaint_mask=inpaint_mask,
                                       vk_mask=vk_mask, hk_mask=hk_mask)
-        nmaps = nmaps + nmap
+       \\\ nmaps = nmaps + nmap
 
     nmaps = nmaps / nsplits
     
