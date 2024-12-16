@@ -186,13 +186,18 @@ def get_sim_core(shape,wcs,signal_alms,
         pass
     else:
         raise ValueError        
-    if noise_mask:
-        lstitch = noise_lmax - 200
-        mlmax = noise_lmax + 600
-        nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
-                                   lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
+
+    if noise_alms is not None:
+        if noise_mask:
+            lstitch = noise_lmax - 200
+            mlmax = noise_lmax + 600
+            nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
+                                       lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
+        else:
+            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     else:
-        nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+        nmap = 0.
+        
     omap = omap + nmap
     # notice how these are inverse of what's in preprocess
     omap = omap / calibration  
