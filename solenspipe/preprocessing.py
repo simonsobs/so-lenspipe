@@ -2,10 +2,54 @@ from orphics import maps
 from pixell import enmap, utils as u, curvedsky as cs
 import numpy as np
 from mnms import noise_models as nm
+from sofind import DataModel
+from pixell import bunch
 
-def get_metadata(qid,splitnum):
+def is_planck(qid):
+    if qid in ['p01','p02','p03','p04','p05', 'p06', 'p07']:
+        return True
+    else:
+        return False
+    
+def get_inpaint_mask(args):
+    
+    '''
+    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+    args.regular_hole: float, radius of hole [arcmin] for regular sources
+    args.large_hole: float, radius of hole [arcmin] for large sources
+    args.shape: tuple, shape of mask
+    args.wcs: wcs object, wcs of mask
+    '''
+    
+    datamodel = DataModel.from_config(args.config_name)
+    
+    # read catalog coordinates
+    rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+    ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+
+    # Make masks for gapfill
+    mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+    mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+    jmask = mask1 & mask2
+    jmask = ~jmask
+    
+    return jmask
+
+def get_metadata(qid, splitnum, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
+    
+    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+    args.regular_hole: float, radius of hole [arcmin] for regular sources
+    args.large_hole: float, radius of hole [arcmin] for large sources
+    args.shape: tuple, shape of mask
+    args.wcs: wcs object, wcs of mask
+    args.beam_subproduct: str, subproduct name for beam
+    args.tf_subproduct: str, subproduct name for transfer function
+    args.cal_subproduct: str, subproduct name for calibration
+    args.poleff_subproduct: str, subproduct name for polarization efficiency
     """
     
     
@@ -26,12 +70,14 @@ def get_metadata(qid,splitnum):
             isplit = 1
 
     else:
-        meta.beam_fells = get_act_beam(qid)
-        meta.transfer_fells = get_act_transfer(qid)
-        meta.calibration = get_act_cal(qid)
-        meta.pol_eff = get_act_poleff(qid)
-        meta.inpaint_mask = get_inpaint_mask(inpaint_cat_version)
-        meta.kspace_mask = get_kspace_mask(lxcut,lycut)
+        dm = DataModel.from_config(args.config_name)
+        
+        meta.beam_fells = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split=splitnum, coadd=coadd)
+        meta.transfer_fells = dm.read_tf(qid, subproduct = args.tf_subproduct)
+        meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
+        meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
+        meta.inpaint_mask = get_inpaint_mask(args)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.nsplits = 4
         meta.noisemodel = ACTNoiseMedatada(qid)
@@ -43,7 +89,6 @@ class PlanckNoiseMedatada:
     print('under development')
 
 class ACTNoiseMedatada:
-    
     
     def __init__(self, qid):
         self.qid = qid
