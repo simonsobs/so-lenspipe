@@ -2,6 +2,38 @@ from orphics import maps
 from pixell import enmap, utils as u, curvedsky as cs
 import numpy as np
 
+
+def get_metadata(qid,splitnum):
+    """
+    SOFind-aware function to get map metadata
+    """
+    meta = bunch.Bunch({})
+    if is_planck(qid):
+        meta.beam_fells = get_planck_beam(qid,pixwin=True)
+        meta.transfer_fells = 1.0
+        meta.calibration = 1.0
+        meta.pol_eff = 1.0
+        meta.inpaint_mask = None
+        meta.kspace_mask = None
+        meta.maptype = 'reprojected'
+        meta.nsplits = 2
+        if splitnum==0 or splitnum==1:
+            isplit = 0
+        elif splitnum==2 or splitnum==3:
+            isplit = 1
+    else:
+        meta.beam_fells = get_act_beam(qid)
+        meta.transfer_fells = get_act_transfer(qid)
+        meta.calibration = get_act_cal(qid)
+        meta.pol_eff = get_act_poleff(qid)
+        meta.inpaint_mask = get_inpaint_mask(inpaint_cat_version)
+        meta.kspace_mask = get_kspace_mask(lxcut,lycut)
+        meta.maptype = 'native'
+        meta.nsplits = 4
+        isplit = splitnum
+    return meta, isplit
+
+
 """
 Some subtleties when applying this to different experiments:
 
