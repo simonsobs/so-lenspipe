@@ -1,12 +1,14 @@
 from orphics import maps
 from pixell import enmap, utils as u, curvedsky as cs
 import numpy as np
-
+from mnms import noise_models as nm
 
 def get_metadata(qid,splitnum):
     """
     SOFind-aware function to get map metadata
     """
+    
+    
     meta = bunch.Bunch({})
     if is_planck(qid):
         meta.beam_fells = get_planck_beam(qid,pixwin=True)
@@ -17,10 +19,12 @@ def get_metadata(qid,splitnum):
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.nsplits = 2
+        meta.noisemodel = PlanckNoiseMedatada(qid)
         if splitnum==0 or splitnum==1:
             isplit = 0
         elif splitnum==2 or splitnum==3:
             isplit = 1
+
     else:
         meta.beam_fells = get_act_beam(qid)
         meta.transfer_fells = get_act_transfer(qid)
@@ -30,8 +34,86 @@ def get_metadata(qid,splitnum):
         meta.kspace_mask = get_kspace_mask(lxcut,lycut)
         meta.maptype = 'native'
         meta.nsplits = 4
+        meta.noisemodel = ACTNoiseMedatada(qid)
         isplit = splitnum
+
     return meta, isplit
+
+class PlanckNoiseMedatada:
+    print('under development')
+
+class ACTNoiseMedatada:
+    
+    
+    def __init__(self, qid):
+        self.qid = qid
+            
+        # noise model qids
+        qid_dict_noise = {'pa4a': ['pa4a', 'pa4b'],
+                        'pa4b': ['pa4a', 'pa4b'],
+                        'pa5a': ['pa5a', 'pa5b'],
+                        'pa5b': ['pa5a', 'pa5b'],
+                        'pa6a': ['pa6a', 'pa6b'],
+                        'pa6b': ['pa6a', 'pa6b'],
+                        'pa5a_dd': ['pa5a_dd', 'pa5b_dd'],
+                        'pa5b_dd': ['pa5a_dd', 'pa5b_dd'],
+                        'pa6a_dd': ['pa6a_dd', 'pa6b_dd'],
+                        'pa6b_dd': ['pa6a_dd', 'pa6b_dd'],
+                        'pa5a_dw': ['pa5a_dw', 'pa5b_dw'],
+                        'pa5b_dw': ['pa5a_dw', 'pa5b_dw']}
+
+        qid_dict_noise_model_name = {'pa4b': 'tile_cmbmask',
+                                'pa5a': 'tile_cmbmask',
+                            'pa5b': 'tile_cmbmask',
+                            'pa6a': 'tile_cmbmask_ivfwhm2',
+                            'pa6b': 'tile_cmbmask_ivfwhm2',
+                            'pa5a_dd': 'tile_cmbmask_daydeep',
+                            'pa5b_dd': 'tile_cmbmask_daydeep',
+                            'pa6a_dd': 'tile_cmbmask_daydeep',
+                            'pa6b_dd': 'tile_cmbmask_daydeep',
+                            'pa5a_dw': 'tile_cmbmask_daywide',
+                            'pa5b_dw': 'tile_cmbmask_daywide'}
+
+        qid_dict_config_noise_name = {'pa4b': 'act_dr6v4',
+                                    'pa5a': 'act_dr6v4',
+                                    'pa5b': 'act_dr6v4',
+                                    'pa6a': 'act_dr6v4',
+                                    'pa6b': 'act_dr6v4',
+                                    'pa5a_dd': 'act_dr6v4_day',
+                                    'pa5b_dd': 'act_dr6v4_day',
+                                    'pa6a_dd': 'act_dr6v4_day',
+                                    'pa6b_dd': 'act_dr6v4_day',
+                                    'pa5a_dw': 'act_dr6v4_day',
+                                    'pa5b_dw': 'act_dr6v4_day'}
+        
+        print(f"Initializing NoiseMetadata with qid: {self.qid}")        
+        self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
+                                        qid_dict_noise_model_name[self.qid],
+                                        *qid_dict_noise[self.qid])
+
+    # def get_noise_fn(sim_num, split_num, lmax=5400, alm=True):
+    #     return tnm.get_sim_fn(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm)
+    
+    def get_index_sim_qid(self,qid):
+
+        # Define a mapping from order to index
+        order_to_index = {'a': 0, 'b': 1}
+        # Extract the order from the qid
+        order = qid.split('pa')[1][1]
+        # Get the index corresponding to the order
+        index = order_to_index[order]
+
+        return index
+
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True):
+        
+        # grab a sim from disk, fail if does not exist on-disk
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        index = self.get_index_sim_qid(self.qid)
+        my_sim = my_sim[index].squeeze()
+        
+        return my_sim        
+
 
 
 """
@@ -184,12 +266,9 @@ def calculate_noise_power(qid, args, mask,
                           inpaint_mask=None,
                           vk_mask=None, hk_mask=None):
     
-    '''
-    args:
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
-    args.maps_subproduct: str, subproduct name for maps, e.g. 'default'
-    
-    '''
+    # args:
+    # args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    # args.maps_subproduct: str, subproduct name for maps, e.g. 'default'
     
     datamodel = DataModel.from_config(args.config_name)
     qid_kwargs = datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
