@@ -4,6 +4,12 @@ import numpy as np
 from mnms import noise_models as nm
 from sofind import DataModel
 from pixell import bunch
+from solenspipe import utility as simgen
+import os
+
+specs_weights = {'QU': ['I','Q','U'],
+        'EB': ['I','E','B']}
+nspecs = len(specs_weights['QU'])
 
 def is_planck(qid):
     if qid in ['p01','p02','p03','p04','p05', 'p06', 'p07']:
@@ -36,7 +42,7 @@ def get_inpaint_mask(args):
     
     return jmask
 
-def get_metadata(qid, splitnum, coadd=False, args=None):
+def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
     
@@ -81,14 +87,20 @@ def get_metadata(qid, splitnum, coadd=False, args=None):
         meta.inpaint_mask = get_inpaint_mask(args)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
-        meta.nsplits = 4
+        meta.nsplits = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)['num_splits']
         meta.noisemodel = ACTNoiseMedatada(qid)
-        isplit = splitnum
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        isplit = None if coadd else splitnum
 
     return meta, isplit
 
+
 class PlanckNoiseMedatada:
-    print('under development')
+    
+    def __init__(self, qid):
+        self.qid = qid
+        print('under development')
 
 class ACTNoiseMedatada:
     
@@ -242,7 +254,7 @@ def preprocess_core(imap, ivar, mask,
         imap = enmap.downgrade(imap,dfact)
         ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
-    if inpaint_mask:
+    if inpaint_mask is not None:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
     imap = imap * mask
@@ -305,61 +317,90 @@ def get_sim_core(shape,wcs,signal_alms,
     omap[1:] = omap[1:] * pol_eff
     return omap
 
-'''
-def calculate_noise_power(qid, args, mask,
-                          calibration, pol_eff,
-                          maptype='native',
-                          dfact = None,
-                          inpaint_mask=None,
-                          vk_mask=None, hk_mask=None):
-    
-    # args:
-    # args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
-    # args.maps_subproduct: str, subproduct name for maps, e.g. 'default'
-    
-    datamodel = DataModel.from_config(args.config_name)
-    qid_kwargs = datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
-    
-    nsplits = qid_kwargs['num_splits']
-    
-    coadd_map = datamodel.read_map(qid=qid, coadd=True, subproduct=args.maps_subproduct, maptag='map_srcfree')
 
-    # load map and ivar splits
-    ivar_splits = [] 
-    map_splits = []
-    for k in range(nsplits):
-        ivar_splits.append(datamodel.read_map(qid=qid, split_num=k, subproduct=args.maps_subproduct, maptag='ivar'))
-        map_splits.append(datamodel.read_map(qid=qid, split_num=k, subproduct=args.maps_subproduct, maptag='map_srcfree'))
+def calculate_noise_power(nmap, mask, mlmax, nsplits, pureEB):    
     
-    nmaps = 0.
+    cl_ab = []
     for k in range(nsplits):
-        diff = coadd - map_splits[k]
-        ivar = utility.ivar_eff(k,ivar_splits)
-        nmap, nivar = preprocess_core(diff, ivar, mask,
-                                      calibration, pol_eff,
-                                      maptype=maptype,
-                                      dfact=dfact,
-                                      inpaint_mask=inpaint_mask,
-                                      vk_mask=vk_mask, hk_mask=hk_mask)
-       \\\ nmaps = nmaps + nmap
 
-    nmaps = nmaps / nsplits
-    
-    Ealm,Balm=pureEB(noise_a[1],noise_a[2],mask,returnMask=0,lmax=lmax,isHealpix=False)
-    alm_T=cs.map2alm(noise_a[0],lmax=lmax)
-    alm_a=np.array([alm_T,Ealm,Balm])
-    alm_a=alm_a.astype(np.complex128)
-    ????????
-    cl_ab = cs.alm2cl(alm_a)
-    w2=w_n(mask,2)
-    cl_sum = np.sum(cl_ab, axis=0) # is this necessary anymore, just one now
-    power = 1/n_splits/(n_splits-1) * cl_sum
+        if pureEB:
+            Ealm,Balm=simgen.pureEB(nmap[k][1],nmap[k][2],mask,returnMask=0,lmax=mlmax,isHealpix=False)
+            alm_T=cs.map2alm(nmap[k][0],lmax=mlmax)
+            alm_a=np.array([alm_T,Ealm,Balm], dtype=np.complex128)
+            cl_ab.append(cs.alm2cl(alm_a))
+        else:
+            alm_a = np.array(cs.map2alm(nmap[k],lmax=mlmax), dtype=np.complex128)
+            cl_ab.append(cs.alm2cl(alm_a)) 
+
+    w2=simgen.w_n(mask,2)
+    cl_sum = np.sum(cl_ab, axis=0)
+    power = 1/nsplits/(nsplits-1) * cl_sum
     power[~np.isfinite(power)] = 0
-    power/=w2
     
-    return nmaps
-'''
+    return power / w2
 
+def get_name_weights(qid, spec):
+
+    return f'noise_{qid}_{spec}'
+
+def read_weights(args):
+
+    nqids = len(args.qids)
+    noise_specs = np.zeros((nspecs, nqids, args.mlmax+1), dtype=np.float64)
+
+    if args.pureEB:
+        specs = specs_weights['EB']
+    else:
+        specs = specs_weights['QU']
+
+    for i, qid in enumerate(args.qids):
+        for ispec, spec in enumerate(specs):
+            noise_specs[ispec, i] = np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+    
+    return noise_specs
+
+def get_fout_name(fname, args, stage, tag=None):
+
+    '''
+    fname: name of file to be saved
+    args: argparse object including args.output_dir
+    stage: str
+        ['inpaint', 'cluster_subtraction']
+    '''
+    fname = fname.split('.fits')[0]
+
+    # if stage == 'inpaint':
+    #     fname += '_d2_gapfill.fits' # dowgranded (dfact 2) and inpainted
+    #     folder = 'stage_inpaint/'
+
+    # elif stage == 'cluster_subtraction':
+    #     fname += '_mnemo.fits'
+    #     folder = 'stage_cluster_subtraction/'
+
+    # elif stage == 'preprocessing':
+    #     fname += '_preproccesed_alms.npy'
+    #     folder = 'stage_preprocessing/'
+
+    if stage == 'weights':
+        fname += '_weights.txt'
+        folder = 'stage_compute_weights/'
+
+    # elif stage == 'kspace_coadd':
+    #     fname  = 'kspace_coadd_' + fname + '.fits'
+    #     if tag == 'sim':
+    #         folder = 'stage_kspace_coadd_sims/'
+    #     else:
+    #         folder = 'stage_kspace_coadd/'
+
+    # elif stage == 'noiseless_sims':
+    #     fname += '.fits'
+    #     folder = 'stage_noiseless_sims/'
+
+    output_dir = os.path.join(args.output_dir, f'../{folder}')
+    # create output folder if it does not exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    return os.path.join(output_dir, fname)
 
 # orphics.maps.kspace_coadd_alms
 # pure E,B:   Q, U maps and a mask -> E, B alms
@@ -372,8 +413,6 @@ for qid in qids:
   sim = get_sim(qid)
   psim = preprocess_core(sim)
   kmaps = map2alm(psim)  OR  pure_eb(psim)
-
-kcoadd = kspace_coadd_alms(kmaps) # beam deconvolved kspace coadd alms
 
 """
 
