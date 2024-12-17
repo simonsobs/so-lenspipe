@@ -95,6 +95,49 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     return meta, isplit
 
+class EffectiveBeam:
+
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+
+    def process_beam(self, sofind_beam, norm=True):
+        '''
+        normalized beam if required and then interpolate
+        '''
+        ell_bells, bells = sofind_beam[0], sofind_beam[1]
+        assert ell_bells[0] == 0
+
+        if norm:
+            bells /= bells[0]
+
+        beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
+        return beam
+
+    def get_beam(self):
+        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+        beam_map = self.process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        return beam_map
+
+    def get_tf(self):
+        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+
+    def get_effective_beam(self):
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+        return fkbeam, beam, tf
+
 
 class PlanckNoiseMedatada:
     
@@ -257,7 +300,6 @@ def preprocess_core(imap, ivar, mask,
         
     if inpaint_mask is not None:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
-        imap[~np.isfinite(imap)] = 0. # we do not understand why non finite numbers are happening yet
 
     if foreground_cluster is not None:
         imap[0] = imap[0] - foreground        
