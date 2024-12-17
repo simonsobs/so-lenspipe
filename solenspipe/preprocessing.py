@@ -241,7 +241,8 @@ def preprocess_core(imap, ivar, mask,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
-                    kspace_mask=None):
+                    kspace_mask=None, 
+                    foreground_cluster=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -256,10 +257,13 @@ def preprocess_core(imap, ivar, mask,
         
     if inpaint_mask is not None:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        imap[~np.isfinite(imap)] = 0. # we do not understand why non finite numbers are happening yet
 
+    if foreground_cluster is not None:
+        imap[0] = imap[0] - foreground        
+        
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
-        
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
     
