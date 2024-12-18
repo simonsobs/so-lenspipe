@@ -301,6 +301,10 @@ def preprocess_core(imap, ivar, mask,
     if inpaint_mask is not None:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
+    # Check that non-finite regions are in masked region; then set non-finite to zero
+    if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
+    imap[~np.isfinite(imap)] = 0
+
     if foreground_cluster is not None:
         imap[0] = imap[0] - foreground        
         
