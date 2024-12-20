@@ -71,7 +71,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.nsplits = 2
-        meta.noisemodel = PlanckNoiseMedatada(qid)
+        meta.noisemodel = PlanckNoiseMetadata(qid)
         if splitnum==0 or splitnum==1:
             isplit = 0
         elif splitnum==2 or splitnum==3:
@@ -88,7 +88,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.nsplits = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)['num_splits']
-        meta.noisemodel = ACTNoiseMedatada(qid)
+        meta.noisemodel = ACTNoiseMetadata(qid)
         meta.nspecs = nspecs
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
@@ -140,13 +140,13 @@ class EffectiveBeam:
         return fkbeam, beam, tf
 
 
-class PlanckNoiseMedatada:
+class PlanckNoiseMetadata:
     
     def __init__(self, qid):
         self.qid = qid
         print('under development')
 
-class ACTNoiseMedatada:
+class ACTNoiseMetadata:
     
     def __init__(self, qid):
         self.qid = qid
@@ -301,6 +301,10 @@ def preprocess_core(imap, ivar, mask,
         
     if inpaint_mask is not None:
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+
+    # Check that non-finite regions are in masked region; then set non-finite to zero
+    if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
+    imap[~np.isfinite(imap)] = 0
 
     if foreground_cluster is not None:
         imap[0] = imap[0] - foreground_cluster        
