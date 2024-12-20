@@ -95,6 +95,19 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     return meta, isplit
 
+def process_beam(sofind_beam, norm=True):
+    '''
+    normalized beam if required and then interpolate
+    '''
+    ell_bells, bells = sofind_beam[0], sofind_beam[1]
+    assert ell_bells[0] == 0
+
+    if norm:
+        bells /= bells[0]
+
+    beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
+    return beam
+
 class EffectiveBeam:
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
@@ -106,22 +119,10 @@ class EffectiveBeam:
         self.isplit = isplit
         self.coadd = coadd
 
-    def process_beam(self, sofind_beam, norm=True):
-        '''
-        normalized beam if required and then interpolate
-        '''
-        ell_bells, bells = sofind_beam[0], sofind_beam[1]
-        assert ell_bells[0] == 0
-
-        if norm:
-            bells /= bells[0]
-
-        beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
-        return beam
 
     def get_beam(self):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
-        beam_map = self.process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
         return beam_map
 
     def get_tf(self):
@@ -302,7 +303,7 @@ def preprocess_core(imap, ivar, mask,
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
     if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground        
+        imap[0] = imap[0] - foreground_cluster        
         
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
@@ -389,6 +390,22 @@ def get_name_weights(qid, spec):
 
     return f'noise_{qid}_{spec}'
 
+def get_name_cluster_fgmap(qid):
+    
+    return f'{qid}_nemo'
+
+def get_name_run(args, split=None, coadd=False):
+
+    name_run = f'{"_".join(args.qids)}_mnemo{args.cluster_subtraction}'
+    
+    if split is not None:
+        name_run += f'_split{split}'
+    
+    if coadd:
+        name_run += '_coadd'
+
+    return name_run
+
 def read_weights(args):
 
     nqids = len(args.qids)
@@ -430,13 +447,17 @@ def get_fout_name(fname, args, stage, tag=None):
     if stage == 'weights':
         fname += '_weights.txt'
         folder = 'stage_compute_weights/'
+    
+    elif stage == 'cluster_fgmap':
+        fname += '_cluster_fgmap.fits'
+        folder = 'stage_cluster_fgmap/'
 
-    # elif stage == 'kspace_coadd':
-    #     fname  = 'kspace_coadd_' + fname + '.fits'
-    #     if tag == 'sim':
-    #         folder = 'stage_kspace_coadd_sims/'
-    #     else:
-    #         folder = 'stage_kspace_coadd/'
+    elif stage == 'kspace_coadd':
+        fname  = 'kspace_coadd_' + fname + '.fits'
+        if tag == 'sim':
+            folder = 'stage_kspace_coadd_sims/'
+        else:
+            folder = 'stage_kspace_coadd/'
 
     # elif stage == 'noiseless_sims':
     #     fname += '.fits'
