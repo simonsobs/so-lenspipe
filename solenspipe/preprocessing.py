@@ -95,6 +95,23 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     return meta, isplit
 
+# The following 2 functions require:
+# args.config_name: str, config name of the datamodel, e.g. "act_dr6v4"
+# args.maps_subproduct: str, config name of the maps subproduct, e.g. "default"
+def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
+    datamodel = DataModel.from_config(args.config_name)
+    return datamodel.read_map(qid=qid, coadd=coadd,
+                              split_num=splitnum,
+                              subproduct=args.maps_subproduct,
+                              maptag='ivar')
+
+def get_data_map(qid, splitnum=0, coadd=False, args=None):
+    datamodel = DataModel.from_config(args.config_name)
+    return datamodel.read_map(qid=qid, coadd=coadd,
+                              split_num=splitnum,
+                              subproduct=args.maps_subproduct,
+                              maptag='map_srcfree')
+
 class EffectiveBeam:
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
@@ -366,6 +383,39 @@ def get_sim_core(shape,wcs,signal_alms,
     omap = omap / calibration  
     omap[1:] = omap[1:] * pol_eff
     return omap
+
+def cmb_sims_nomask(sim_index, cmb_set, args):
+
+    """
+    Generate CMB simulations without mask.
+
+    Parameters:
+    sim_index: int
+        CMB sim number to read
+    cmb_set: int
+        CMB set of sim to read
+    args: argument parser
+        .window_pow: window power to deconvolve with
+        .apo_width_pix: apodization width in pixels
+        .fullpix_shape: shape of the full resolution map
+        .fullpix_wcs: WCS of the full resolution map
+        .dfact: int, downgrade factor
+
+    Returns:
+        CMB noiseless simulation on full sky (downgraded, with window function)
+    """
+
+    # Read in full sky simulations without beams
+    signal = simgen.get_beamed_signal(sim_index, cmb_set,
+                                      beam=None, shape=args.fullpix_shape, wcs=args.fullpix_wcs)
+
+    # Apodize before applying window function for FFTs in DEC direction only (RA geometry periodic), width in number of pixels
+    signal = enmap.apod(signal,[args.apo_width_pix, 0])
+    # Apply window function and downgrade
+    wsignal = enmap.apply_window(signal, pow=args.window_pow)
+    wsignal = enmap.downgrade(wsignal, args.dfact)
+    
+    return wsignal
 
 
 def calculate_noise_power(nmap, mask, mlmax, nsplits, pureEB):    
