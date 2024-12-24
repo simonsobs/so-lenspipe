@@ -95,6 +95,25 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     return meta, isplit
 
+# Joshua needs these two functions:
+# The following 2 functions require:
+# args.config_name: str, config name of the datamodel, e.g. "act_dr6v4"
+# args.maps_subproduct: str, config name of the maps subproduct, e.g. "default"
+def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
+    datamodel = DataModel.from_config(args.config_name)
+    return datamodel.read_map(qid=qid, coadd=coadd,
+                              split_num=splitnum,
+                              subproduct=args.maps_subproduct,
+                              maptag='ivar')
+
+def get_data_map(qid, splitnum=0, coadd=False, args=None):
+    datamodel = DataModel.from_config(args.config_name)
+    return datamodel.read_map(qid=qid, coadd=coadd,
+                              split_num=splitnum,
+                              subproduct=args.maps_subproduct,
+                              maptag='map_srcfree')
+
+
 def process_beam(sofind_beam, norm=True):
     '''
     normalized beam if required and then interpolate
