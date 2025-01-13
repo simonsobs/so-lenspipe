@@ -79,9 +79,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     else:
         dm = DataModel.from_config(args.config_name)
-        
-        meta.beam_fells = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split=splitnum, coadd=coadd)
-        meta.transfer_fells = dm.read_tf(qid, subproduct = args.tf_subproduct)
+
+        # meta.beam_fells = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split=splitnum, coadd=coadd)
+        # meta.transfer_fells = dm.read_tf(qid, subproduct = args.tf_subproduct)
         meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
         meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
         meta.inpaint_mask = get_inpaint_mask(args)
@@ -92,6 +92,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nspecs = nspecs
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
+        
+        Beam = EffectiveBeam(dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = Beam.get_effective_beam()[1]
+        meta.transfer_fells = Beam.get_effective_beam()[2]
 
     return meta, isplit
 
@@ -137,7 +141,6 @@ class EffectiveBeam:
         self.qid = qid
         self.isplit = isplit
         self.coadd = coadd
-
 
     def get_beam(self):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
@@ -371,7 +374,7 @@ def get_sim_core(shape,wcs,signal_alms,
         raise ValueError        
 
     if noise_alms is not None:
-        if noise_mask:
+        if noise_mask is not None:
             lstitch = noise_lmax - 200
             mlmax = noise_lmax + 600
             nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
