@@ -395,6 +395,7 @@ class CGPixFilter(object):
         output['solver'] = solver
         output['errors'] = errors
         output['time'] = np.sum(np.array(times))
+        output['niters'] = idx+1
         if benchmark:
             output['chisqs'] = chisqs
             output['residuals'] = residuals
