@@ -1120,7 +1120,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
             AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
             ng=AgTT*AgEE*(AgTTEE0+AgTTEE1)
             nc=AcTT*AcEE*(AcTTEE0+AcTTEE1)
-        elif est1=='TB' and est2 =='EB':
+        elif (est1 == 'TB') and (est2 == 'EB'):
             AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
             AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
             cl=ocl**2/(d_ocl)
