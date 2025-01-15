@@ -19,7 +19,7 @@ from falafel import utils as futils
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
-def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
+def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None,return_coadd=False):
     """Return kappa_alms combinations required for the 4cross estimator in Eq. 38 of arXiv:2011.02475v1 .
 
     Args:
@@ -96,8 +96,11 @@ def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
         phi_xy_x1=phi_xy1-phi_xy11/4
         phi_xy_x2=phi_xy2-phi_xy22/4
         phi_xy_x3=phi_xy3-phi_xy33/4
-
-    phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
+    if return_coadd:
+        #return the coadd phi as if it was a non-split spectra
+        phi_xy=1/16*(phi_xy00+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy11+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy22+phi_xy23+phi_xy30+phi_xy31+phi_xy32+phi_xy33)
+    else:
+        phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
     
 
     return phi_xy
@@ -131,6 +134,29 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
         if verbose: print(f"shape,wcs: {shape}, {wcs}")
     return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
 
+
+def filter_kappa(wfilter, mask, patch_mask, patch_box, kappa_1, lmax=4000, patch=True):
+    """ 
+        Apply filter to kappa mask
+    """
+    alm1 = []
+    kappa_1 = [kappa_1] if not patch else kappa_1
+
+    for kappa in kappa_1:
+        k1 = cs.alm2map(np.nan_to_num(kappa), enmap.empty(mask.shape, mask.wcs))
+        m1 = []
+        for i in range(len(patch_mask)):
+            mask_patch = enmap.read_map(patch_mask[i])
+            sub = k1.submap(patch_box[i]) * mask_patch
+            sub_alm = cs.map2alm(sub, lmax=lmax)
+            sub_alm1 = cs.almxfl(sub_alm, wfilter[i])
+            m1.append(sub_alm1)
+            
+        alm1.append(m1)
+        if not patch:
+            alm1=alm1[0]
+
+    return np.array(alm1)
 
 def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
     """
