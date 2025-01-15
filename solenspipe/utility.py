@@ -11,7 +11,8 @@ from soapack import interfaces as sints
 import os
 from falafel.utils import get_cmb_alm,test_cmb_alm
 import pytempura
-
+import healpy as hp
+import numpy as np
 
 def eshow(x,fname): 
     ''' Define a function to quickly plot the maps '''
@@ -155,7 +156,8 @@ def coadd_map(map_list,ivar_list):
     wcs=map_list[0].wcs
     map_list=np.array(map_list)
     ivar_list=np.array(ivar_list)
-    ivar_list = ivar_list[:, np.newaxis, :, :]
+    if map_list.shape!=ivar_list.shape:
+        ivar_list = ivar_list[:, np.newaxis, :, :]
     coadd_map= np.sum(map_list[:,] * ivar_list, axis = 0)
     coadd_map/=((np.sum(ivar_list, axis = 0)))
     coadd_map[~np.isfinite(coadd_map)] = 0
@@ -1630,3 +1632,35 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     mvdumbN0c=mvdumbN0c/sumcc
     
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
+
+
+
+
+def create_binary_mask(ra_min, ra_max, dec_min, dec_max, nside=512):
+    """
+    Create a binary mask with the specified RA and Dec ranges.
+
+    Parameters:
+    ra_min (float): Minimum right ascension in degrees.
+    ra_max (float): Maximum right ascension in degrees.
+    dec_min (float): Minimum declination in degrees.
+    dec_max (float): Maximum declination in degrees.
+    nside (int): Resolution of the map (NSIDE parameter).
+
+    Returns:
+    np.ndarray: Binary mask.
+    """
+    # Create an empty mask
+    mask = np.zeros(hp.nside2npix(nside), dtype=bool)
+
+    # Convert RA and Dec to theta and phi
+    theta_min, theta_max = np.deg2rad(90 - dec_max), np.deg2rad(90 - dec_min)
+    phi_min, phi_max = np.deg2rad(ra_min), np.deg2rad(ra_max)
+
+    # Loop over all pixels and set the mask to True within the specified RA and Dec ranges
+    for pix in range(len(mask)):
+        theta, phi = hp.pix2ang(nside, pix)
+        if theta_min <= theta <= theta_max and phi_min <= phi <= phi_max:
+            mask[pix] = True
+
+    return mask
