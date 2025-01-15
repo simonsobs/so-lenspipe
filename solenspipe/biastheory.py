@@ -214,7 +214,6 @@ def n1mv_dclkk(cl_array,bins,n1bins,clpp,norms,cls,cltt,clee,clbb,clte,nells,nel
     diff=[n1bins]
     for i in range(len(N1001)):
         der=((N1001[i][:len(n1bins)]-N0999[i][:len(n1bins)])*(n1bins*(n1bins+1))**2)/(delta[i]*(bins[i]+2)*(bins[i]+3)) #strip off (l'*(l'+1)) because original lensed file has factor of (l*(l+1))**2/2pi
-        print('derivative')
         print(der)
         diff.append(der)   
     der=np.insert(np.transpose(diff),0,np.insert(bins+2,0,0),axis=0)      
@@ -546,10 +545,18 @@ def n0derivative_cmb(polN0,polcomb,bins,n0bins,ucls,tcls,clgrad,cltt,clee,clbb,c
     ucls['TE'] = clgrad[1][:8000]
     ucls['EE'] = clgrad[2][:8000]
     ucls['BB'] = clgrad[3][:8000]
+
+    ucls_filters={}
+    ucls_filters['TT'] = clgrad[0][:8000] #otherwise tempura gives error
+    ucls_filters['TE'] = clgrad[1][:8000]
+    ucls_filters['EE'] = clgrad[2][:8000]
+    ucls_filters['BB'] = clgrad[3][:8000]   
+
     tcls['TT'] = np.interp(np.arange(8000),np.arange(len(tcls['TT'])),tcls['TT'])
     tcls['TE'] = np.interp(np.arange(8000),np.arange(len(tcls['TE'])),tcls['TE'])
     tcls['EE'] = np.interp(np.arange(8000),np.arange(len(tcls['EE'])),tcls['EE'])
     tcls['BB'] = np.interp(np.arange(8000),np.arange(len(tcls['BB'])),tcls['BB'])
+
     bins=bins-2
     pol_dict={'TT':clgrad[0],'TE':clte,'EE':clee,'BB':clbb}
     array1001=perturbe_clist(pol_dict[polcomb],bins,1.001)
@@ -569,9 +576,9 @@ def n0derivative_cmb(polN0,polcomb,bins,n0bins,ucls,tcls,clgrad,cltt,clee,clbb,c
     s = stats.Stats(comm)
     for i in my_tasks:
         ucls[polcomb]=array1001[i]
-        a = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
+        a = pytempura.get_norms(est_norm_list,ucls,ucls_filters,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
         ucls[polcomb]=array999[i]
-        b= pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
+        b= pytempura.get_norms(est_norm_list,ucls,ucls_filters,tcls,lmin,lmax,k_ellmax=Lmax_out)[polN0][0]
         high.append(a)
         low.append(b)
 
@@ -593,23 +600,25 @@ def n0derivative_cmb(polN0,polcomb,bins,n0bins,ucls,tcls,clgrad,cltt,clee,clbb,c
     return der
 
 def extend_matrix(sizeL,_matrix):
-    """Used to prepare the calculated derivative matrix into form used for the likelihood. Return (L,L') matrix"""
+    from orphics import maps
+    #unpacked=true
     #sizeL 3000 size of total unbinned clkk used
     #return sizeLxsizeL interpolated matrix
     matrix=_matrix
+    n1bins=matrix.transpose()[0][1:]
     derbins=matrix[0][1:]
-    ellbins=matrix.transpose()[0][1:]
     bins=np.arange(sizeL)
     a=[]
-    for i in range(1,len(matrix)):
-        narray=maps.interp(derbins,matrix[i][1:])(bins)
+    for i in range(1,len(matrix.transpose())):
+        narray=maps.interp(n1bins,matrix.transpose()[i][1:])(bins)
         a.append(narray)
     y=np.array(a).transpose()
     b=[]
-    #interpolate the Ls
+    #the derivatives L' are calculated about the derbins values, this is the binned version, so set the other l' to 0
     for i in range(len(y)):
-        narray=maps.interp(ellbins,y[i])(bins)
-        b.append(narray)
+        ext=np.zeros(sizeL)
+        ext[derbins.astype(int)]=y[i]
+        b.append(ext)
     b=np.array(b)
     a=b.transpose()    
     return a
