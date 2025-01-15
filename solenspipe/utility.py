@@ -969,8 +969,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         response=response[:Lmax+1]
 
     D_l=get_Dpower(X,U,mask,m=4)
-    #S_l=get_Spower(coaddX,coaddU,mask)
-    S_l=coaddX
+    S_l=get_Spower(coaddX,coaddU,mask)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
     ocl=ffl
