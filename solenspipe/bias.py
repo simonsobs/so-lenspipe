@@ -5,7 +5,10 @@ import healpy as hp
 from enlib import bench
 from pixell.mpi import FakeCommunicator
 from pixell import lensing as plensing
-
+from solenspipe import filter_kappa
+from pixell import enmap
+from solenspipe.utility import get_mask,w_n,kspace_mask
+import gc
 """
 Extremely general functions for lensing power spectrum bias subtraction
 ======================================================================
@@ -425,11 +428,24 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,she
             qb_Xs_Ysp = 0.5*(qb(Xs,Ysp)+qb(Ysp,Xs)) if qb is not None else qa_Xs_Ysp
             qb_Ysp_Xs = 0.5*(qb(Ysp,Xs)+qb(Xs,Ysp)) if qb is not None else 0.5*(qa(Ysp,Xs)+qa(Xs,Ysp))
             qb_Yskp_Xsk = 0.5*(qb(Yskp,Xsk)+qb(Xsk,Yskp)) if qb is not None else 0.5*(qa(Yskp,Xsk)+qa(Xsk,Yskp))
-        term = power(qa_Xsk_Yskp,qb_Xsk_Yskp) + power(qa_Xsk_Yskp,qb_Yskp_Xsk) \
-            - power(qa_Xs_Ysp,qb_Xs_Ysp) - power(qa_Xs_Ysp,qb_Ysp_Xs)
+
+
+            a=power(qa_Xsk_Yskp,qb_Xsk_Yskp)
+            b=power(qa_Xsk_Yskp,qb_Yskp_Xsk)
+            c=power(qa_Xs_Ysp,qb_Xs_Ysp)
+            d= power(qa_Xs_Ysp,qb_Ysp_Xs)
+        term = a + b \
+            - c - d
+
+
         n1evals.append(term.copy())
     n1s = utils.allgatherv(n1evals,comm)
     return n1s
+
+
+
+  
+
 
 
 def mcmf(icov,qfunc,get_kmap,comm,nsims):
@@ -630,7 +646,7 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
          verbose=True, skip_rd=False,shear=False,power_mcn0=None):
     """
     This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
-
+    Seed structure such that each data-sim realization requiring sims S and S' uses sims with seeds i and i+1. 
     Parameters:
     sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
     get_kmap: A function to retrieve a specific map based on the provided parameters.
@@ -675,6 +691,8 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
     for i in my_tasks:
         i=i+start
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+
+
         Xs  = get_kmap((0,i_set,i))
         Xs1= get_kmap1((0,i_set,i))
         Xs2= get_kmap2((0,i_set,i))
@@ -697,11 +715,11 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
                 rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
                         + power(qaXsX,qbXsX) 
 
-        Xsp = get_kmap((0,i_set,i+1)) 
-        Xsp1 = get_kmap1((0,i_set,i+1)) 
-        Xsp2 = get_kmap2((0,i_set,i+1)) 
-        Xsp3 = get_kmap3((0,i_set,i+1)) 
 
+            Xsp = get_kmap((0,i_set,i+1)) 
+            Xsp1 = get_kmap1((0,i_set,i+1)) 
+            Xsp2 = get_kmap2((0,i_set,i+1)) 
+            Xsp3 = get_kmap3((0,i_set,i+1)) 
 
         if power_mcn0 is None:
 
@@ -719,11 +737,11 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
             if shear:
                 qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
                 qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) 
             else:
                 qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
                 qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) 
             mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
 
         mcn0evals.append(mcn0_term.copy())
@@ -735,6 +753,441 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
         avgrdn0 = None
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
+
+def mcrdn0_s4_test(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+    """
+    This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
+    Seed structure such that each data-sim realization requiring sims S and S' uses sims with seeds i and i+1. 
+    Parameters:
+    sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
+    get_kmap: A function to retrieve a specific map based on the provided parameters.
+    power: A function to calculate the power spectra
+    phifunc: function that returns the different phi combinations used to produce a phi_cl without noise bias. Eq.(28)-(30) of 2011.02475
+    nsims: The number of simulations used to estimate RDN0.
+    qfunc1: QE wrapper used.
+    get_kmap1, get_kmap2, get_kmap3: Functions to retrieve the data map splits
+    qfunc2: An optional QE wrapper if the second phi used to creat clphiphi is different to the first one.
+    Xdat, Xdat1, Xdat2, Xdat3: Data used in the calculations.
+    use_mpi: A boolean indicating whether to use MPI for distributing tasks.
+    verbose: A boolean indicating whether to print verbose messages.
+    skip_rd: A boolean indicating whether to skip certain operations.
+    shear: A boolean indicating whether to apply shear in the calculations.
+    power_mcn0: An optional parameter related to power calculations.
+
+    Returns:
+        A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
+
+    """
+    
+         
+    i_set,start=sim_set
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+start
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+
+
+        Xs  = get_kmap((0,i_set,i))
+        Xs1= get_kmap1((0,i_set,i))
+        Xs2= get_kmap2((0,i_set,i))
+        Xs3= get_kmap3((0,i_set,i))
+
+
+
+        Xsp = get_kmap((0,i_set,i+1)) 
+        Xsp1 = get_kmap1((0,i_set,i+1)) 
+        Xsp2 = get_kmap2((0,i_set,i+1)) 
+        Xsp3 = get_kmap3((0,i_set,i+1)) 
+
+
+
+        qaXsXsp = qf1(Xs,Xsp) #split1 
+        qbXsXsp = qf2(Xs,Xsp) if qf2 is not None else qaXsXsp #split2
+        qbXspXs = qf2(Xsp,Xs) if qf2 is not None else qf1(Xsp,Xs) #this is not present
+
+        mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+
+
+        mcn0evals.append(mcn0_term.copy())
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+def get_kappa(qf):
+    kappa_f=[]
+
+    for i in range(len(qf)):
+        kappa_f.append(qf[i][0])
+    kappa_f=np.array(kappa_f)
+    return kappa_f
+
+def process_arrays(array1, array2, operation, wfilter, mask, mask_names, box, patch_frac):
+    alm1 = filter_kappa(wfilter, mask, mask_names, box, array1, lmax=4000)
+    alm2 = filter_kappa(wfilter, mask, mask_names, box, array2, lmax=4000)
+
+    acl_list = []
+    for i in range(len(mask_names)):
+        mask_patch = enmap.read_map(mask_names[i])
+        acl = operation(alm1[:,i], alm2[:,i])
+        acl /= w_n(mask_patch, 4)
+        acl_list.append(acl)
+
+    result = np.sum(patch_frac * np.array(acl_list), axis=0)
+
+    del alm1, alm2, acl_list
+    gc.collect()
+
+    return result
+
+def mcrdn0_s4_kf(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None,wfilter=None,patch_frac=None,mask=None,mask_names=None,box=None):
+    """
+    This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
+    Seed structure such that each data-sim realization requiring sims S and S' uses sims with seeds i and i+1. 
+    Parameters:
+    sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
+    get_kmap: A function to retrieve a specific map based on the provided parameters.
+    power: A function to calculate the power spectra
+    phifunc: function that returns the different phi combinations used to produce a phi_cl without noise bias. Eq.(28)-(30) of 2011.02475
+    nsims: The number of simulations used to estimate RDN0.
+    qfunc1: QE wrapper used.
+    get_kmap1, get_kmap2, get_kmap3: Functions to retrieve the data map splits
+    qfunc2: An optional QE wrapper if the second phi used to creat clphiphi is different to the first one.
+    Xdat, Xdat1, Xdat2, Xdat3: Data used in the calculations.
+    use_mpi: A boolean indicating whether to use MPI for distributing tasks.
+    verbose: A boolean indicating whether to print verbose messages.
+    skip_rd: A boolean indicating whether to skip certain operations.
+    shear: A boolean indicating whether to apply shear in the calculations.
+    power_mcn0: An optional parameter related to power calculations.
+
+    Returns:
+        A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
+
+    """
+
+
+    i_set,start=sim_set
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2=qfunc2
+    
+  
+
+    mcn0evals = []
+    if not(skip_rd): 
+        assert Xdat is not None # Data
+        if Xdat1 is None:
+            Xdat1=Xdat
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+        
+
+    for i in my_tasks:
+        i=i+start
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
+
+
+        Xs  = get_kmap((0,i_set,i))
+        Xs1= get_kmap1((0,i_set,i))
+        Xs2= get_kmap2((0,i_set,i))
+        Xs3= get_kmap3((0,i_set,i))
+
+
+        if not(skip_rd): 
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) 
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1)
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+
+                qaXXs=get_kappa(qaXXs)
+                qbXXs=get_kappa(qbXXs)
+                qaXsX=get_kappa(qaXsX)
+                qbXsX=get_kappa(qbXsX)
+
+                # rdn0_only_term_1 = process_arrays(qaXXs, qbXXs, power, wfilter, mask, mask_names, box, patch_frac)
+                # rdn0_only_term_2 = process_arrays(qaXXs, qbXsX, power, wfilter, mask, mask_names, box, patch_frac)
+                # rdn0_only_term_4 = process_arrays(qaXsX, qbXsX, power, wfilter, mask, mask_names, box, patch_frac)
+                # rdn0_only_term_3 = process_arrays(qaXsX, qbXXs, power, wfilter, mask, mask_names, box, patch_frac)
+
+                alm_aXXs=filter_kappa(wfilter,mask,mask_names,box,qaXXs,lmax=4000)
+                alm_bXXs=filter_kappa(wfilter,mask,mask_names,box,qbXXs,lmax=4000)
+
+                acl_list=[]
+                for i in range(len(mask_names)):
+                    mask_patch=enmap.read_map(mask_names[i])
+                    acl=power(alm_aXXs[:,i],alm_bXXs[:,i])
+                    acl/=w_n(mask_patch,4)
+                    acl_list.append(acl)    
+                acl_list=np.array(acl_list)
+                rdn0_only_term_1=np.sum(patch_frac*acl_list,axis=0)
+
+                del alm_bXXs
+                del acl_list
+                gc.collect()
+
+                alm_bXsX=filter_kappa(wfilter,mask,mask_names,box,qbXsX,lmax=4000)
+
+                acl_list=[]
+                for i in range(len(mask_names)):
+                    mask_patch=enmap.read_map(mask_names[i])
+                    acl=power(alm_aXXs[:,i],alm_bXsX[:,i])
+                    acl/=w_n(mask_patch,4)
+                    acl_list.append(acl)    
+                acl_list=np.array(acl_list)
+                rdn0_only_term_2=np.sum(patch_frac*acl_list,axis=0)
+
+                del alm_aXXs
+                del acl_list
+                gc.collect()
+
+                alm_aXsX=filter_kappa(wfilter,mask,mask_names,box,qaXsX,lmax=4000)
+                acl_list=[]
+                for i in range(len(mask_names)):
+                    mask_patch=enmap.read_map(mask_names[i])
+                    acl=power(alm_aXsX[:,i],alm_bXsX[:,i])
+                    acl/=w_n(mask_patch,4)
+                    acl_list.append(acl)    
+                acl_list=np.array(acl_list)
+                rdn0_only_term_4=np.sum(patch_frac*acl_list,axis=0)
+                del alm_bXsX
+                del acl_list
+                gc.collect()
+
+                alm_bXXs=filter_kappa(wfilter,mask,mask_names,box,qbXXs,lmax=4000)
+                acl_list=[]
+                for i in range(len(mask_names)):
+                    mask_patch=enmap.read_map(mask_names[i])
+                    acl=power(alm_aXsX[:,i],alm_bXXs[:,i])
+                    acl/=w_n(mask_patch,4)
+                    acl_list.append(acl)    
+                acl_list=np.array(acl_list)
+                rdn0_only_term_3=np.sum(patch_frac*acl_list,axis=0)
+                del alm_aXsX,alm_bXXs
+                del acl_list
+                gc.collect()
+
+                rdn0_only_term = rdn0_only_term_1+ rdn0_only_term_2 + rdn0_only_term_3 \
+                                 + rdn0_only_term_4 
+       
+
+           
+
+        Xsp = get_kmap((0,i_set,i+1)) 
+        Xsp1 = get_kmap1((0,i_set,i+1)) 
+        Xsp2 = get_kmap2((0,i_set,i+1)) 
+        Xsp3 = get_kmap3((0,i_set,i+1)) 
+
+
+        if power_mcn0 is None:
+
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
+                qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+
+
+
+
+            mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+
+        else:
+            print("mcn0 term")
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+        
+            else:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) 
+
+            #filter only for one alm instead of 16
+            qaXsXsp_l=qaXsXsp[0]
+            qbXsXsp_l=qbXsXsp[0]
+            qbXspXs_l=qbXspXs[0]
+
+
+            qaXsXsp_l_alm=filter_kappa(wfilter,mask,mask_names,box,qaXsXsp_l,lmax=4000,patch=False)
+            qbXsXsp_l_alm=filter_kappa(wfilter,mask,mask_names,box,qbXsXsp_l,lmax=4000,patch=False)
+            qbXspXs_l_alm=filter_kappa(wfilter,mask,mask_names,box,qbXspXs_l,lmax=4000,patch=False)
+
+
+            mcn0_list=[]
+            for i in range(len(mask_names)):
+
+                mask_patch=enmap.read_map(mask_names[i])
+                acl=power_mcn0(qaXsXsp_l_alm[i],qbXsXsp_l_alm[i])+power_mcn0(qaXsXsp_l_alm[i],qbXspXs_l_alm[i])
+                acl/=w_n(mask_patch,4)
+                mcn0_list.append(acl)
+                  
+
+            mcn0_list=np.array(mcn0_list)
+            mcn0_only_term=np.sum(patch_frac*mcn0_list,axis=0)
+
+            del qaXsXsp_l_alm,qbXsXsp_l_alm,qbXspXs_l_alm
+            del mcn0_list
+            gc.collect()
+
+
+
+        mcn0evals.append(mcn0_only_term.copy())
+        if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_only_term)
+
+    if not(skip_rd):
+        avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    else:
+        avgrdn0 = None
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    return avgrdn0, avgmcn0
+
+
+
+def mcn1_kf(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,shear=False,wfilter=None,patch_frac=None,mask=None,mask_names=None,box=None):
+    """
+    MCN1 for alpha=XY cross beta=AB
+    qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+
+
+    Parameters
+    ----------
+    icov: int
+        The index of the realization passed to get_kmap if performing 
+    a covariance calculation - otherwise, set to zero.
+    get_kmap: function
+        Function for getting the filtered a_lms of  data and simulation
+    maps. See notes at top of module.
+    power: function
+        Returns C(l) from two maps x,y, as power(x,y). 
+    nsims: int
+        Number of sims
+    qfunc1: function
+        Function for reconstructing lensing from maps x and y,
+    called as e.g. qfunc(x, y). See e.g. SoLensPipe.qfunc.
+    The x and y arguments accept a [T_alm,E_alm,B_alm] tuple. 
+    The function should return an (N,...) array where N is typically
+    two components for the gradient and curl. 
+    qfunc2: function, optional
+        Same as above, for the third and fourth legs of the 4-point
+    MCN1.
+    comm: object, optional
+        MPI communicator
+    verbose: bool, optional
+        Whether to show progress
+
+    Returns
+    -------
+    mcn1: (N*(N+1)/2,...) array
+        Estimate of the MCN1 bias. If N=2 for gradient and curl,
+    the three components correspond to the gradient MCN1, the
+    curl MCN1 and the gradient x curl MCN1.
+    
+        Estimate of the MCN1 bias
+
+    """
+
+    from pixell import enmap
+    from solenspipe.utility import get_mask,w_n,kspace_mask
+    import gc
+    qa = qfunc1
+    qb = qfunc2
+    comm,rank,my_tasks = mpi.distribute(nsims)
+    n1evals = []
+    for i in my_tasks:
+        i=i+1
+        if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
+        Xs    = get_kmap((icov,0,i)) # S
+        Ysp   = get_kmap((icov,1,i)) # S'
+        Xsk   = get_kmap((icov,2,i)) # Sphi
+        Yskp  = get_kmap((icov,3,i)) # Sphi'
+        if shear:
+            qa_Xsk_Yskp = 0.5*(qa(Xsk[0],Yskp[1])+qa(Yskp[0],Xsk[1]))
+            qb_Xsk_Yskp = 0.5*(qb(Xsk[0],Yskp[1])+qb(Yskp[0],Xsk[1])) if qb is not None else qa_Xsk_Yskp
+            qb_Yskp_Xsk = 0.5*(qb(Yskp[0],Xsk[1])+qb(Xsk[0],Yskp[1])) if qb is not None else 0.5*(qa(Yskp[0],Xsk[1])+qa(Xsk[0],Yskp[1]))
+            qa_Xs_Ysp = 0.5*(qa(Xs[0],Ysp[1])+qa(Ysp[0],Xs[1]))
+            qb_Xs_Ysp = 0.5*(qb(Xs[0],Ysp[1])+qb(Ysp[0],Xs[1])) if qb is not None else qa_Xs_Ysp
+            qb_Ysp_Xs = 0.5*(qb(Ysp[0],Xs[1])+qb(Xs[0],Ysp[1])) if qb is not None else 0.5*(qa(Ysp[0],Xs[1])+qa(Xs[0],Ysp[1]))
+            qb_Yskp_Xsk = 0.5*(qb(Yskp[0],Xsk[1])+qb(Xsk[0],Yskp[1])) if qb is not None else 0.5*(qa(Yskp[0],Xsk[1])+qa(Xsk[0],Yskp[1]))
+        else:
+            qa_Xsk_Yskp = plensing.phi_to_kappa(0.5*(qa(Xsk,Yskp)+qa(Yskp,Xsk)))
+            qb_Xsk_Yskp = plensing.phi_to_kappa(0.5*(qb(Xsk,Yskp)+qb(Yskp,Xsk))) if qb is not None else qa_Xsk_Yskp
+            qa_Xs_Ysp = plensing.phi_to_kappa(0.5*(qa(Xs,Ysp)+qa(Ysp,Xs)))
+            qb_Xs_Ysp = plensing.phi_to_kappa(0.5*(qb(Xs,Ysp)+qb(Ysp,Xs))) if qb is not None else qa_Xs_Ysp
+            qb_Ysp_Xs = plensing.phi_to_kappa(0.5*(qb(Ysp,Xs)+qb(Xs,Ysp))) if qb is not None else plensing.phi_to_kappa(0.5*(qa(Ysp,Xs)+qa(Xs,Ysp)))
+            qb_Yskp_Xsk = plensing.phi_to_kappa(0.5*(qb(Yskp,Xsk)+qb(Xsk,Yskp))) if qb is not None else plensing.phi_to_kappa(0.5*(qa(Yskp,Xsk)+qa(Xsk,Yskp)))
+
+    
+
+            qa_Xsk_Yskp=qa_Xsk_Yskp[0]
+            qb_Xsk_Yskp=qb_Xsk_Yskp[0]
+            qa_Xs_Ysp=qa_Xs_Ysp[0]
+            qb_Xs_Ysp=qb_Xs_Ysp[0]
+            qb_Ysp_Xs=qb_Ysp_Xs[0]
+            qb_Yskp_Xsk=qb_Yskp_Xsk[0]
+
+
+            qa_Xsk_Yskp_alm=filter_kappa(wfilter,mask,mask_names,box, qa_Xsk_Yskp,lmax=4000,patch=False)
+            qb_Xsk_Yskp_alm=filter_kappa(wfilter,mask,mask_names,box, qb_Xsk_Yskp,lmax=4000,patch=False)
+            qa_Xs_Ysp_alm=filter_kappa(wfilter,mask,mask_names,box, qa_Xs_Ysp,lmax=4000,patch=False)
+            qb_Xs_Ysp_alm=filter_kappa(wfilter,mask,mask_names,box, qb_Xs_Ysp,lmax=4000,patch=False)
+            qb_Ysp_Xs_alm=filter_kappa(wfilter,mask,mask_names,box, qb_Ysp_Xs,lmax=4000,patch=False)
+            qb_Yskp_Xsk_alm=filter_kappa(wfilter,mask,mask_names,box, qb_Yskp_Xsk,lmax=4000,patch=False)
+
+
+
+        mcn1_list=[]
+
+        for i in range(len(mask_names)):
+            mask_patch=enmap.read_map(mask_names[i])
+            acl=power(qa_Xsk_Yskp_alm[i],qb_Xsk_Yskp_alm[i])+power(qa_Xsk_Yskp_alm[i],qb_Yskp_Xsk_alm[i])\
+                - power(qa_Xs_Ysp_alm[i],qb_Xs_Ysp_alm[i]) - power(qa_Xs_Ysp_alm[i],qb_Ysp_Xs_alm[i])
+            acl/=w_n(mask_patch,4)
+            mcn1_list.append(acl)
+                
+
+        mcn1_list=np.array(mcn1_list)
+        term=np.sum(patch_frac*mcn1_list,axis=0)
+
+        del qa_Xsk_Yskp_alm,qb_Yskp_Xsk_alm,qb_Xsk_Yskp_alm,qa_Xs_Ysp_alm,qb_Ysp_Xs_alm,qb_Xs_Ysp_alm
+        del mcn1_list
+        gc.collect()
+        n1evals.append(term.copy())
+    n1s = utils.allgatherv(n1evals,comm)
+    return n1s
 
 
 def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
