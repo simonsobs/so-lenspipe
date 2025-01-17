@@ -1,21 +1,15 @@
 from __future__ import print_function
-import matplotlib
 from orphics import maps,io,cosmology,mpi
-from pixell import enmap,lensing as plensing,curvedsky as cs, utils, enplot,bunch
+from pixell import enmap,lensing as plensing,curvedsky as cs, utils,bunch #  enplot,
 import pytempura
 import numpy as np
-import os,sys
+import os
 import healpy as hp
-from enlib import bench
 from falafel import qe
 import os
-import glob
 import traceback,warnings
 from . import bias
-from falafel.utils import get_cmb_alm, get_kappa_alm, \
-    get_theory_dicts, get_theory_dicts_white_noise, \
-    change_alm_lmax
-
+from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
@@ -120,7 +114,7 @@ def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
     return auto
 
 
-def get_sim_pixelization(lmax,is_healpix,verbose=False):
+def get_sim_pixelization(lmax,is_healpix,dtype=np.float32,verbose=False):
     # Geometry
     if is_healpix:
         nside = futils.closest_nside(lmax)
@@ -131,7 +125,7 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
         shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(px_arcmin/60.),proj='car')
         nside = None
         if verbose: print(f"shape,wcs: {shape}, {wcs}")
-    return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
+    return qe.pixelization(shape=shape,wcs=wcs,nside=nside,dtype=dtype)
 
 
 def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
@@ -313,6 +307,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
+        assert est1 in ['TT','MV'], "bh qfunc only implemented for TT and MV"
         assert est2 in ['SRC','MASK'] # TODO: add mask
         if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
@@ -1518,18 +1513,13 @@ def get_labels():
     return labs
 
 
-# Load signal map, apply beam and add noise
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
-                 include_te = False, # whether to include TE correlations
                  add_noise = False, mask = None,
-                 n0_sims = None, n1_sims = None, mf_sims = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
-        self.no_te_corr = not include_te
-        self.verbose = verbose
         # Specify geometry
         if mask is None:
             if (dec_min is None) and (dec_max is None):
@@ -1537,8 +1527,7 @@ class LensingSandbox(object):
             else:
                 if dec_min is None: dec_min = -90.
                 if dec_max is None: dec_max = 90. 
-                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max * utils.degree),
-                                                          res=res * utils.arcmin, variant='fejer1')
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin, variant='fejer1')
             mask = enmap.ones(self.shape,self.wcs)
         else:
             self.shape = mask.shape
@@ -1552,10 +1541,8 @@ class LensingSandbox(object):
             print(f"W3 factor: {self.w3:.5f}")
             print(f"W4 factor: {self.w4:.5f}")
 
-        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,
-                                                                  grad=True,lmax=mlmax)
-        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax,
-                                       no_corr=self.no_te_corr)
+        self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
+        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
         ls = np.arange(self.Als[ests[0]][0].size)
         self.Nls = {}
         px = qe.pixelization(self.shape,self.wcs)
@@ -1564,65 +1551,60 @@ class LensingSandbox(object):
             self.qfuncs[est] =  get_qfunc(px,self.ucls,mlmax,est,Al1=self.Als[est])
             self.Nls[est] = self.Als[est][0] * (ls*(ls+1.)/2.)**2.
 
-        self.ests = ests
+
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
-        self.mask = mask
         self.add_noise = add_noise
+        self.mask = mask
 
-        self.n0_sims = n0_sims
-        self.n1_sims = n1_sims
-        self.mf_sims = mf_sims
-
-    def _apply_mask_binary(self, imap, mask):
-        if len(imap.shape) > 2:
-            assert imap.shape[0] == 3
-            return np.array([self._apply_mask_binary(imap[0], mask),
-                             self._apply_mask_binary(imap[1], mask),
-                             self._apply_mask_binary(imap[2], mask)])
-        else:
-            omap = imap.copy()
-            omap[~mask.astype(bool)] = 0.
-            return omap
+    def _apply_mask(self,imap,mask,eps=1e-8):
+        if len(imap.shape) == 3:
+            return enmap.enmap(np.array([
+                self._apply_mask(imap[0],mask,eps),
+                self._apply_mask(imap[1],mask,eps),
+                self._apply_mask(imap[2],mask,eps)
+            ]), imap.wcs)
+        
+        # should now be 2d
+        omap = imap * mask
+        # handle edge cases
+        omap[mask < eps] = 0.
+        omap[mask >= (1-eps)] = imap[mask >= (1-eps)]
+        return omap
 
     def get_observed_map(self,index,iset=0):
         shape,wcs = self.shape,self.wcs
-        calm = futils.change_alm_lmax(futils.get_cmb_alm(index,iset),
-                                      self.mlmax)
-        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(x,self.fwhm))
+        calm = futils.get_cmb_alm(index,iset)
+        calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
         # ignoring pixel window function here
-        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,
-                                           dtype=np.float32),spin=[0,2])
+        omap = cs.alm2map(calm,enmap.empty((3,)+shape,wcs,dtype=np.float32),spin=[0,2])
         if self.add_noise:
             nmap = maps.white_noise((3,)+shape,wcs,self.noise)
             nmap[1:] *= np.sqrt(2.)
         else:
             nmap = 0.
-        return enmap.enmap((omap + nmap)*self.mask, omap.wcs)
+        return self._apply_mask(omap + nmap, self.mask)
 
-    def kmap(self,stuple,nstep=512):
+    def kmap(self,stuple):
         icov,ip,i = stuple
+        nstep = 500
         if i>nstep: raise ValueError
         if ip==0 or ip==1:
             iset = 0
             index = nstep*ip + i
         elif ip==2 or ip==3:
             iset = ip - 2
-            index = 2*nstep + i
+            index = 1000 + i
         dmap = self.get_observed_map(index,iset)
         X = self.prepare(dmap)
         return X
 
-    def prepare(self,omap,save_output=None):
+    def prepare(self,omap):
         alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
         with np.errstate(divide='ignore', invalid='ignore'):
-            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(x,self.fwhm))
-        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,
-                                                    self.lmax,ignore_te=self.no_te_corr)
-        if save_output is not None:
-            hp.write_alm(save_output, [ftalm, fealm, fbalm], overwrite=True)
-
+            alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
+        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
@@ -1635,18 +1617,12 @@ class LensingSandbox(object):
         return self.qfuncs[est](X,X)
 
     
-    def get_rdn0(self,prepared_data_alms,est,comm,nsims=None):
+    def get_rdn0(self,prepared_data_alms,est,nsims,comm):
         Xdata = prepared_data_alms
-        if nsims is None: nsims = self.n0_sims
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
 
-        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),
-                                self.kmap,comm,cs.alm2cl,nsims,Xdata)
+    def get_mcn1(self,est,nsims,comm):
+        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
-    def get_mcn1(self,est,comm,nsims=None):
-        if nsims is None: nsims = self.n1_sims
-        return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,
-                         self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
-    
-    def get_mcmf(self,est,comm,nsims=None):
-        if nsims is None: nsims = self.mf_sims
+    def get_mcmf(self,est,nsims,comm):
         return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
