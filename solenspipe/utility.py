@@ -136,11 +136,11 @@ def ivar_eff(split,ivar_list):
     """
     ivar_list=np.array(ivar_list)
     h_c=np.sum(ivar_list,axis=0)
-    # w=h_c-ivar_list[split]
+    w=h_c-ivar_list[split]
     weight=1/(1/ivar_list[split]-1/h_c)
     weight[~np.isfinite(weight)] = 0
     weight[weight<0] = 0
-    return enmap.samewcs(weight,ivar_list[0]) # samewcs won't work because you've turned it into array
+    return enmap.samewcs(weight,ivar_list[0])
 
     
 def coadd_map(map_list,ivar_list):

@@ -99,7 +99,6 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     return meta, isplit
 
-# Joshua needs these two functions:
 # The following 2 functions require:
 # args.config_name: str, config name of the datamodel, e.g. "act_dr6v4"
 # args.maps_subproduct: str, config name of the maps subproduct, e.g. "default"
@@ -116,7 +115,6 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
                               split_num=splitnum,
                               subproduct=args.maps_subproduct,
                               maptag='map_srcfree')
-
 
 def process_beam(sofind_beam, norm=True):
     '''
