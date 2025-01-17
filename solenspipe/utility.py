@@ -1,15 +1,10 @@
-from pixell import enmap, curvedsky as cs, utils, enplot,lensing as plensing,curvedsky as cs
-from orphics import maps,io,cosmology,stats,pixcov,mpi
+from pixell import enmap, curvedsky as cs, utils, enplot,curvedsky as cs
+from orphics import maps,cosmology,stats,pixcov
 import numpy as np
 import healpy as hp
-import matplotlib.pyplot as plt
-from soapack import interfaces
 from scipy.optimize import curve_fit
-import pixell.powspec
 from orphics import maps
-from soapack import interfaces as sints
-import os
-from falafel.utils import get_cmb_alm#,test_cmb_alm
+from falafel.utils import get_cmb_alm, get_theory_dicts
 import pytempura
 
 
@@ -25,8 +20,6 @@ def stamp_plot(imap,ra,dec,boxwidth=10):
     box = np.array([[dec-width/2.,ra-width/2.],[dec+width/2.,ra+width/2.]])
     stamp = imap.submap(box)
     return stamp
-
-
 
 def project_mask(mask,shape,wcs,fname=None):
     sim_mask = enmap.project(mask,shape,wcs,order=1)
@@ -291,7 +284,7 @@ def get_w(n,maps,mask):
 
 
 
-def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
+def get_datanoise(map_list,ivar_list, mask,lmax=6000):
     """
     Calculate the noise power of a coadded map given a list of maps and list of ivars.
     Inputs:
@@ -299,7 +292,7 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     ivar_list: list of the inverse variance maps splits
     mask: apodizing mask
     Output:
-    1D power spectrum accounted for w2 in T,E,B (TODO add pureEB here as well)
+    1D power spectrum accounted for w2 in T,E,B
     """
     
     cl_ab=[]
@@ -308,7 +301,10 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     for i in range(n_splits):
         noise_a=map_list[i]-coadd
         noise_a=np.nan_to_num(noise_a)
-        alm_a=cs.map2alm(noise_a,lmax=lmax) 
+        #do pure EB here to get pure E and B weights
+        Ealm,Balm=pureEB(noise_a[1],noise_a[2],mask,returnMask=0,lmax=lmax,isHealpix=False)
+        alm_T=cs.map2alm(noise_a[0],lmax=lmax)
+        alm_a=np.array([alm_T,Ealm,Balm])
         alm_a=alm_a.astype(np.complex128)
         cls = cs.alm2cl(alm_a)
         cl_ab.append(cls)
@@ -316,12 +312,9 @@ def get_datanoise(map_list,ivar_list, mask,beam,beam_deconvolve=True,lmax=6000):
     w2=w_n(mask,2)
     cl_sum = np.sum(cl_ab, axis=0)
     power = 1/n_splits/(n_splits-1) * cl_sum
-    ls=np.arange(len(power[0]))
     power[~np.isfinite(power)] = 0
     power/=w2
     return power
-
-
 
 def get_datanoise_fullresTT(map_list,ivar_list, a, b, mask,beam,N=20,beam_deconvolve=True,lmax=6000):
     """
@@ -699,6 +692,7 @@ def apod(imap,width):
     return enmap.apod(imap,[width,0]) 
 
 def inpaint(omap,ivar,beam_fn,nsplits,qid,output_path,dataSet='DR5',null=False):
+    from soapack import interfaces as sints
     #code by Will Coulton
     rmin = 15.0 * utils.arcmin
     width = 40. * utils.arcmin
@@ -922,7 +916,14 @@ def get_Spower(X,U,mask):
     cls = hp.alm2cl(X,U)/w_n(mask,2)
     return cls
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def get_theory_for_response(lmax=9000):
+    
+    # grad Cl, lensed Cl
+    ucls, tcls = get_theory_dicts(nells=None, lmax=lmax, grad=True)
+    lcl=np.array([ucls['TT'], ucls['EE'], ucls['BB'], ucls['TE']])
+    return lcl
+
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Generate beloved dumb N0s for both gradient and curl.
 
     Args:
@@ -955,9 +956,9 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
 
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
+
     if profile is None:
         profile=np.ones(Lmax+1)
     else:
@@ -967,8 +968,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         response=response[:Lmax+1]
 
     D_l=get_Dpower(X,U,mask,m=4)
-    #S_l=get_Spower(coaddX,coaddU,mask)
-    S_l=coaddX
+    S_l=get_Spower(coaddX,coaddU,mask)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
     ocl=ffl
@@ -1087,10 +1087,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
@@ -1395,7 +1395,7 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MV"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1404,8 +1404,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
   
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     if profile is None:
         profile=np.ones(Lmax+1)
@@ -1549,7 +1548,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
 
 
-def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MVPOL currently no T"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1558,9 +1557,9 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
 
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
+    
     if profile is None:
         profile=np.ones(Lmax+1)
 
