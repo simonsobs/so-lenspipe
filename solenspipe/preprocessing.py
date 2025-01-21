@@ -1,12 +1,15 @@
 from orphics import maps
-from pixell import enmap, utils as u, curvedsky as cs
+from pixell import enmap, utils as u, curvedsky as cs, reproject
 import numpy as np
 from mnms import noise_models as nm
 from sofind import DataModel
 from pixell import bunch
 from solenspipe import utility as simgen
 import os
+import healpy as hp
+from scipy import interpolate
 from enlib import bench
+
 
 specs_weights = {'QU': ['I','Q','U'],
         'EB': ['I','E','B']}
@@ -17,7 +20,43 @@ def is_planck(qid):
         return True
     else:
         return False
-    
+
+def process_residuals_alms(split, freq, task):
+    """
+    Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
+    This is done for a given simulation type, frequency, and task number.
+
+    Parameters
+    ----------
+    split : int
+        The split that the residual corresponds to 0 or 1 =='npipe6v20A', 2 or 3=='npipe6v20B'
+
+    freq : int
+        The frequency (in GHz) of the data to be processed, used to select the 
+        corresponding residual files.
+
+    task : int
+        The task identifier for the simulation. This is used to generate a unique index 
+        for identifying the residual files. +200 is added to the task number to match the simulation label of Planck simulations
+
+
+    output_path : str
+        The directory path where the processed enmap residual files will be saved.
+    """
+
+    n_index = str(task+200).zfill(4)
+    if split==0 or split==1:
+        sim_type = 'npipe6v20A'
+    elif split==2 or split==3:
+        sim_type = 'npipe6v20B'
+    #TODO (not urgent) Put the path in sofind
+    residual = hp.read_map(f'/gpfs/fs0/project/r/rbond/jiaqu/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
+    #multiply by Planck map factor to convert to uKarcmin
+    residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
+    return residual_alm
+
+
+
 def get_inpaint_mask(args):
     
     '''
@@ -69,7 +108,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     
     meta = bunch.Bunch({})
     if is_planck(qid):
-        meta.beam_fells = get_planck_beam(qid,pixwin=True)
+        beam_helper = PlanckBeamHelper(path=args.planck_beam_path)
+        meta.beam_fells = beam_helper.get_beam(qid=qid, splitnum=splitnum, pixwin=True)
         meta.transfer_fells = 1.0
         meta.calibration = 1.0
         meta.pol_eff = 1.0
@@ -116,6 +156,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 # args.maps_subproduct: str, config name of the maps subproduct, e.g. "default"
 def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
     datamodel = DataModel.from_config(args.config_name)
+    if is_planck(qid):
+        splitnum+=1
     return datamodel.read_map(qid=qid, coadd=coadd,
                               split_num=splitnum,
                               subproduct=args.maps_subproduct,
@@ -123,10 +165,15 @@ def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
 
 def get_data_map(qid, splitnum=0, coadd=False, args=None):
     datamodel = DataModel.from_config(args.config_name)
+    if is_planck(qid):
+        splitnum+=1
+        maptag='srcfree'
+    else:
+        maptag='map_srcfree'
     return datamodel.read_map(qid=qid, coadd=coadd,
                               split_num=splitnum,
                               subproduct=args.maps_subproduct,
-                              maptag='map_srcfree')
+                              maptag=maptag)
 
 def process_beam(sofind_beam, norm=True):
     '''
@@ -181,8 +228,20 @@ class PlanckNoiseMetadata:
     
     def __init__(self, qid):
         self.qid = qid
-        print('under development')
 
+        qid_dict_config_noise_name = {'p01': '030',
+                                    'p02': '044',
+                                    'p03': '070',
+                                    'p04': '100',
+                                    'p05': '143',
+                                    'p06': '217',
+                                    'p07': '353',
+                                    'p08': '547',
+                                    'p09': '857'}
+        
+
+                                   
+        
 class ACTNoiseMetadata:
     
     def __init__(self, qid):
@@ -254,6 +313,68 @@ class ACTNoiseMetadata:
         
         return my_sim        
 
+class PlanckBeamHelper:
+    DEFAULT_QID_DICT = {
+        'p01': '030',
+        'p02': '044',
+        'p03': '070',
+        'p04': '100',
+        'p05': '143',
+        'p06': '217',
+        'p07': '353',
+        'p08': '547',
+        'p09': '857'
+    }
+
+    def __init__(self, path, qid_dict=None):
+        """
+        Initialize the PlanckBeamHelper.
+
+        Parameters:
+        - path (str): Base path to the Planck beam data files.
+        - qid_dict (dict, optional): Override the default QID-to-frequency mapping.
+        """
+        self.qid_dict = qid_dict or self.DEFAULT_QID_DICT
+        self.path = path
+
+    def get_beam(self, qid, splitnum, pixwin=True):
+        """
+        Retrieve the Planck beam for a given QID and split number.
+
+        Parameters:
+        - qid (str): QID identifier (e.g., 'p04').
+        - splitnum (int): Split number (1 for 'A', otherwise 'B').
+        - pixwin (bool): Apply pixel window function if True.
+
+        Returns:
+        - np.ndarray: The beam function array.
+        """
+        # Get the frequency associated with the QID
+        freq = self.qid_dict.get(qid)
+        if not freq:
+            raise ValueError(f"Invalid QID: {qid}. Unable to find corresponding frequency.")
+
+        # Determine split letter
+        sl = 'A' if splitnum == 1 else 'B'
+
+        # Load and interpolate the beam
+        file_path = f"{self.path}/npipe_DR6_{sl}x{sl}/bl_T_npipe_DR6_{sl}x{sl}_{freq}{sl}x{freq}{sl}.dat"
+        ell_b, bl = np.loadtxt(file_path, unpack=True)
+        beam_f = interpolate.interp1d(ell_b, bl, kind='linear', bounds_error=False, fill_value=0)
+
+        # Generate the beam function values
+        beam_fells = beam_f(np.arange(5000))
+        if pixwin:
+            beam_fells *= hp.pixwin(2048)[:5000]
+
+        return beam_fells
+    
+    def planck_processed_beam(self, qid, splitnum, pixwin=True):
+        b_ell=self.get_beam(qid, splitnum, pixwin=pixwin)
+        ell=np.arange(len(b_ell))
+        sofind_beam = np.array([ell, b_ell])
+        beam=process_beam(sofind_beam, norm=True)
+        return beam
 
 
 """
@@ -317,8 +438,8 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     return imap
 
 
-def preprocess_core(imap, ivar, mask,
-                    calibration, pol_eff,
+def preprocess_core(imap, mask,
+                    calibration, pol_eff, ivar=None,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
@@ -329,19 +450,24 @@ def preprocess_core(imap, ivar, mask,
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
+    For simulations ivar processing is redundant, we should probably set ivar as an optional argument
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
-    
-    with bench.show("downgrade"):
-        if dfact!=1 and (dfact is not None):
-            imap = enmap.downgrade(imap,dfact)
+    if dfact!=1 and (dfact is not None):
+        imap = enmap.downgrade(imap,dfact)
+        if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-    
-    with bench.show("inpaint"):  
-        if inpaint_mask is not None:
-            imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        
+    if inpaint_mask is not None:
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
+
+    #for Planck, assert that we extract the RA DEC of the ACT footprint only
+    if imap[0].shape != mask.shape:
+        imap = enmap.extract(imap, (3,)+mask.shape, mask.wcs)
+        if ivar is not None:
+            ivar = enmap.extract(ivar, (3,)+mask.shape, mask.wcs)
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
@@ -357,9 +483,14 @@ def preprocess_core(imap, ivar, mask,
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
     
-    ivar = ivar / calibration**2.
-    ivar[1:] = ivar[1:] * pol_eff**2.
-    return imap, ivar
+    if ivar is not None:
+        ivar = ivar / calibration**2.
+        ivar[1:] = ivar[1:] * pol_eff**2.
+    
+    if ivar is not None:
+        return imap, ivar
+    else:
+        return imap
 
 
 def get_sim_core(shape,wcs,signal_alms,
