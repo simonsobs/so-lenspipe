@@ -618,17 +618,21 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False,fixed_amp=False):
+def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False):
     print(s_i,s_set)
     s_i,s_set,_ = convert_seeds((0,s_set,s_i))
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
-    #cmb_alm = test_cmb_alm(s_i,s_set,unlensed=unlensed,fixed_amp=fixed_amp).astype(np.complex128)
     cmb_alm=get_cmb_alm(s_i,s_set).astype(np.complex128)
     if beam is  not None:
         cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
     return cmb_map
+
+def get_signal_alm(s_i,s_set):
+    s_i,s_set,_ = convert_seeds((0,s_set,s_i))
+    cmb_alm=get_cmb_alm(s_i,s_set).astype(np.complex128)
+    return cmb_alm
 
 def bandedcls(cl,_bin_edges):
     ls=np.arange(cl.size)
