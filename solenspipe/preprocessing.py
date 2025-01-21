@@ -6,6 +6,7 @@ from sofind import DataModel
 from pixell import bunch
 from solenspipe import utility as simgen
 import os
+from enlib import bench
 
 specs_weights = {'QU': ['I','Q','U'],
         'EB': ['I','E','B']}
@@ -28,19 +29,24 @@ def get_inpaint_mask(args):
     args.wcs: wcs object, wcs of mask
     '''
     
-    datamodel = DataModel.from_config(args.config_name)
-    
-    # read catalog coordinates
-    rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
-    ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+    if args.cat_date is not None:
 
-    # Make masks for gapfill
-    mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-    mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
-    jmask = mask1 & mask2
-    jmask = ~jmask
+        datamodel = DataModel.from_config(args.config_name)
+        
+        # read catalog coordinates
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+
+        # Make masks for gapfill
+        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+        jmask = mask1 & mask2
+        jmask = ~jmask
+        
+        return jmask
     
-    return jmask
+    else:
+        return None
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
@@ -79,21 +85,27 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
     else:
         dm = DataModel.from_config(args.config_name)
+        qid_dict = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.daynight = qid_dict['daynight']
+   
+        if meta.daynight == 'night':
+            meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
+            meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
+        else:
+            meta.calibration = 1.
+            meta.pol_eff = 1.
 
-        # meta.beam_fells = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split=splitnum, coadd=coadd)
-        # meta.transfer_fells = dm.read_tf(qid, subproduct = args.tf_subproduct)
-        meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
-        meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
         meta.inpaint_mask = get_inpaint_mask(args)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
-        meta.nsplits = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)['num_splits']
         meta.noisemodel = ACTNoiseMetadata(qid)
         meta.nspecs = nspecs
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
         
-        Beam = EffectiveBeam(dm, args, qid, isplit, coadd=coadd)
+        Beam = EffectiveBeam(dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
         meta.beam_fells = Beam.get_effective_beam()[1]
         meta.transfer_fells = Beam.get_effective_beam()[2]
 
@@ -131,14 +143,15 @@ def process_beam(sofind_beam, norm=True):
 
 class EffectiveBeam:
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False, daynight='night'):
         self.datamodel = datamodel
         self.mlmax = args.mlmax
-        self.beam_subproduct = args.beam_subproduct
-        self.tf_subproduct = args.tf_subproduct
         self.qid = qid
         self.isplit = isplit
         self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.daynight = daynight
 
     def get_beam(self):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
@@ -146,7 +159,11 @@ class EffectiveBeam:
         return beam_map
 
     def get_tf(self):
-        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        
+        if self.daynight == 'night':
+            ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        else: 
+            ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
         return maps.interp(ells_tf, tf, fill_value='extrapolate')
 
     def get_effective_beam(self):
@@ -315,22 +332,28 @@ def preprocess_core(imap, ivar, mask,
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
-    if dfact!=1 and (dfact is not None):
-        imap = enmap.downgrade(imap,dfact)
-        ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-        
-    if inpaint_mask is not None:
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+    
+    with bench.show("downgrade"):
+        if dfact!=1 and (dfact is not None):
+            imap = enmap.downgrade(imap,dfact)
+            ivar = enmap.downgrade(ivar,dfact,op=np.sum)
+    
+    with bench.show("inpaint"):  
+        if inpaint_mask is not None:
+            imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
 
-    if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster        
+    with bench.show("nemo clusters"):
+        if foreground_cluster is not None:
+            imap[0] = imap[0] - foreground_cluster        
         
-    imap = imap * mask
-    imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
+    with bench.show("depix map"):
+        imap = imap * mask
+        imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
+
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
     
@@ -378,7 +401,8 @@ def get_sim_core(shape,wcs,signal_alms,
             nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
                                        lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
         else:
-            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
+            nmap[~np.isfinite(nmap)] = 0.
     else:
         nmap = 0.
         
