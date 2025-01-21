@@ -405,11 +405,13 @@ def get_sim_core(shape,wcs,signal_alms,
             nmap[~np.isfinite(nmap)] = 0.
     else:
         nmap = 0.
-        
-    omap = omap + nmap
+    
     # notice how these are inverse of what's in preprocess
+    # not applied to nmap because it is already based on data (which includes them)
     omap = omap / calibration  
     omap[1:] = omap[1:] * pol_eff
+    
+    omap = omap + nmap
     return omap
 
 
