@@ -377,6 +377,96 @@ class PlanckBeamHelper:
         return beam
 
 
+class ForegroundHandler:
+    '''generates foregrounds'''
+
+    def __init__(self, datamodel, args):
+        
+        '''
+        datamodel: DataModel, sofind datamodel
+        args.fg_type: str, type of foregrounds, 'sims' or 'theory'
+        args.fgs_path: str, path to foreground sims
+        args.is_noiseless: bool, if True, no foregrounds are generated
+        args.lmax_signal: int, maximum ell of signal sims
+        args.maps_subproduct: str, subproduct name for maps
+        '''
+
+        self.datamodel = datamodel
+        self.args = args
+        assert self.args.fg_type in ['sims', 'theory'] # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        self.fgcov_func = self._define_fgcov_func()
+
+    def _define_fgcov_func(self):
+        ''' load foreground covariance matrix (power spectra)'''
+        if self.args.is_noiseless:
+            return None
+        if self.args.fg_type == 'sims':
+            return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
+        elif self.args.fg_type == 'theory':
+            return lambda: self.get_fg_cov(qids)
+        return None
+
+    def generate_cov_fgs(self, fgs_path, lmax):
+        
+        '''
+        returns the foreground covariance matrix (power spectrum) for the given lmax 
+        at two frequencies (90 and 150 GHz) and their cross-spectrum
+        
+        fgs_path: str, path to foreground sims
+        lmax: int, maximum ell of fg power spectrum
+        '''
+        
+        w_2_foreground = 0.27
+
+        # Load foreground alms
+        foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
+        foreground_alms_150 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0145.fits')
+
+        # Generate foreground Cls and smooth them
+        cls_90 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_93)/ w_2_foreground, N=10) 
+        cls_150 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_150)/ w_2_foreground, N=10) 
+        cls_150x90 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_93, foreground_alms_150) / w_2_foreground, N=10)
+
+        # Initialize the covariance matrix of the map (a.k.a. power spectrum)
+        cov_matrix = np.zeros((2, 2, lmax + 1))
+
+        # Assign values to the covariance matrix
+        # 0 == f150, 1 == f090
+        cov_matrix[0, 0] = cls_150[:lmax + 1]
+        cov_matrix[0, 1] = cls_150x90[:lmax + 1]
+        cov_matrix[1, 0] = cov_matrix[0, 1]
+        cov_matrix[1, 1] = cls_90[:lmax + 1]
+
+        return cov_matrix
+
+    def get_fg_cov(self, qid):
+        raise NotImplementedError
+
+    def get_map_fgs(self, qid, alms_f):
+        '''
+        qid of the map (frequency it corresponds to) is mapped to component of alms_f
+        '''
+        qid_freq_dict = {'f150': 0, 'f090': 1}
+        qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=self.args.maps_subproduct, qid=qid)
+        index_fg = qid_freq_dict[qid_dict['freq']]
+        return alms_f[index_fg]
+
+    def get_fg_alms(self, fgcov, qid, cmb_set, sim_indices):
+        '''
+        generate alm from cl
+        
+        fgcov: np.ndarray, foreground covariance matrix (2pt)
+        qid: str, qid of the map
+        cmb_set: int, set of cmb sim (for seed)
+        sim_indices: int, index of the sim (for seed)
+        '''
+        if self.args.fg_type == 'sims':
+            alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
+            return self.get_map_fgs(qid, alms_f)
+        elif self.args.fg_type == 'theory':
+            return cs.rand_alm(fgcov)
+        return None
+
 """
 Some subtleties when applying this to different experiments:
 
