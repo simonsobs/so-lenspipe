@@ -8,7 +8,7 @@ import pytempura
 import pyfisher
 from enlib import bench
 import solenspipe
-#from solenspipe import sandbox_extensions
+from solenspipe import sandbox_extensions
 
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
@@ -16,10 +16,7 @@ comm = MPI.COMM_WORLD
 # ARGPARSE
 
 import argparse
-
-# use as:
-# python3 -u demo_sandbox_isofilt.py <outname> --nsims # --nsims-n1 # --nsims-mf # --mask .. 
-
+# Parse command line
 parser = argparse.ArgumentParser(description='Run the lensing sandbox.')
 parser.add_argument("outname", type=str,help='Name of outputs. Could include a path.')
 parser.add_argument("--estimator",     type=str,  default='MV',help="Estimator.")
@@ -34,11 +31,11 @@ parser.add_argument("--decmin",     type=float,  default=None,help="Min. declina
 parser.add_argument("--decmax",     type=float,  default=None,help="Max. declination in deg.")
 parser.add_argument("-d", "--debug", action='store_true',help='Overrides arguments and does a debug run where nsims is 8 and lmaxes are low.')
 parser.add_argument("--mask", type=str, help="Path to mask .fits file, should be a pixell enmap.")
-# usual apodization scale is 3.0 degrees for ACT DR6
 parser.add_argument("--apodize", type=float, help='Apodize the mask with input width in degrees. Only applies if a mask is passed in.')
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
+parser.add_argument("--te", action='store_true',help='Whether to include TE correlations / filter TEB jointly.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
 
@@ -56,18 +53,14 @@ add_noise = args.add_noise
 
 # Specify analysis
 lmin = 600
-# cmb lmax
 lmax = 3000 if not(debug) else 3000
-# cmb lmax of actual fourier space operations (mlmax should be > lmax)
 mlmax = 4000 if not(debug) else 4000
-# lensing lmax
 Lmax = 2000 if not(debug) else 2000
 est = args.estimator if not(debug) else 'TT'
 ests = [est]
 nsims_rdn0 = args.nsims if not(debug) else 8
 nsims_n1 = args.nsims_n1 if not(args.nsims_n1 is None) else nsims_rdn0
 nsims_mf = args.nsims_mf if not(args.nsims_mf is None) else nsims_rdn0
-# make sure mask is apodized in this case (isotropic filtering!)
 if args.mask is not None:
     mask = enmap.read_map(args.mask)
     mask = enmap.downgrade(mask, int(res / (21600 / mask.shape[1])))
@@ -76,7 +69,8 @@ if args.mask is not None:
 else:
     mask = args.mask
     
-
+include_te = args.te
+te_str = 'TE' if include_te else 'noTE'
 mask_str = '' if not args.mask else '_masked'
 
 if comm.Get_rank() == 0:
@@ -94,20 +88,21 @@ if comm.Get_rank() == 0:
         print("Mask shape: ", mask.shape)
     except AttributeError: # mask is none
         pass
+    print("Include TE: ", include_te)
 
-mg = solenspipe.LensingSandbox(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
-                               lmin,lmax,mlmax,ests,add_noise=add_noise,
-                               mask=mask, verbose=True)
+mg = sandbox_extensions.LensingSandboxNILC(fwhm_arcmin,noise_uk,dec_min,dec_max,res,
+                                   lmin,lmax,mlmax,ests,include_te=include_te,
+                                   add_noise=add_noise,mask=mask,verbose=True)
 
-data_map = mg.get_observed_map(0)
+data_map = mg.get_observed_map(1)
 Xdata = mg.prepare(data_map)
 galm,calm = mg.qfuncs[est](Xdata,Xdata)
 if comm.Get_rank() == 0:
-    enmap.write_map(f'{outname}_{mask_str}_data_map_debug.fits', data_map)
-    hp.write_alm(f'{outname}_{mask_str}_falms_debug.fits', Xdata, overwrite=True)
-    hp.write_alm(f'{outname}_{mask_str}_galms_debug.fits', galm, overwrite=True)
+    enmap.write_map(f'{outname}_{te_str}{mask_str}_data_map_debug.fits', data_map)
+    hp.write_alm(f'{outname}_{te_str}{mask_str}_falms_debug.fits', Xdata, overwrite=True)
+    hp.write_alm(f'{outname}_{te_str}{mask_str}_galms_debug.fits', galm, overwrite=True)
 
-if save_map_plots: io.hplot(data_map,f'{outname}_{mask_str}_data_map',downgrade=4)
+if save_map_plots: io.hplot(data_map,f'{outname}_{te_str}{mask_str}_data_map',downgrade=4)
 rdn0 = mg.get_rdn0(Xdata,est,comm,nsims_rdn0)[0]
 
 # Load N1 from disk if provided
@@ -167,7 +162,7 @@ if comm.Get_rank()==0:
     # Get the input kappa
     kalm = maps.change_alm_lmax(futils.get_kappa_alm(0),mlmax)
     if save_map_plots: io.hplot(cs.alm2map(galm,enmap.empty(mg.shape,mg.wcs,dtype=np.float32)),
-                                f'{outname}_{mask_str}_kappa_map',downgrade=4)
+                                f'{outname}_{te_str}{mask_str}_kappa_map',downgrade=4)
     clkk_xx = cs.alm2cl(galm_1,galm_2)/mg.w4 # Raw auto-spectrum (mean-field subtracted)
     clkk_ix = cs.alm2cl(kalm,galm_1)/mg.w2 # Input x Recon
     clkk_ii = cs.alm2cl(kalm,kalm) # Input x Input
@@ -206,10 +201,10 @@ if comm.Get_rank()==0:
 
     bclkk_final = bclkk_xx-brdn0-bmcn1 # Final debiased power spectrum
 
-    if not args.no_save:
-        io.save_cols(f"{outname}_{mask_str}_output_clkk.txt",
+    if not(args.no_save):
+        io.save_cols(f"{outname}_{te_str}{mask_str}_output_clkk.txt",
                 (ls,clkk_ii,clkk_xx,clkk_ix,rdn0,mcn1,mcmf,clkk_xx-rdn0-mcn1))
-        io.save_cols(f"{outname}_{mask_str}_output_bandpowers.txt",
+        io.save_cols(f"{outname}_{te_str}{mask_str}_output_bandpowers.txt",
                 (cents,bclkk_ii,bclkk_xx,bclkk_ix,brdn0,bmcn1,bmcmf,errs))
 
     # Plot relative difference from input
@@ -222,7 +217,7 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(0.8,1.5)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{mask_str}_rclkk_ix_{xscale}.png')
+        pl.done(f'{outname}_{te_str}{mask_str}_rclkk_ix_{xscale}.png')
 
     # Plot all spectra and components
     for xscale in ['log','lin']:
@@ -238,5 +233,5 @@ if comm.Get_rank()==0:
         pl._ax.set_ylim(1e-9,3e-7)
         pl._ax.set_xlim(2,Lmax)
         pl.legend('outside')
-        pl.done(f'{outname}_{mask_str}_clkk_ix_{xscale}.png')
+        pl.done(f'{outname}_{te_str}{mask_str}_clkk_ix_{xscale}.png')
 
