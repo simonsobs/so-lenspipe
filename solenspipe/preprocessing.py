@@ -550,6 +550,7 @@ def preprocess_core(imap, mask,
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
     if inpaint_mask is not None:
+        assert ivar is not None, "need ivar for inpainting"
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
 
