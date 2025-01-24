@@ -731,6 +731,13 @@ def get_fout_name(fname, args, stage, tag=None):
         else:
             folder = 'stage_kspace_coadd/'
 
+    elif stage == 'nilc_coadd':
+        fname  = 'nilc_coadd_' + fname + '.fits'
+        if tag == 'sim':
+            folder = 'stage_nilc_coadd_sims/'
+        else:
+            folder = 'stage_nilc_coadd'
+
     # elif stage == 'noiseless_sims':
     #     fname += '.fits'
     #     folder = 'stage_noiseless_sims/'
