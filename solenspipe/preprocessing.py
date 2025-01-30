@@ -110,6 +110,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.nsplits = 2
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         meta.noisemodel = PlanckNoiseMetadata(qid)
         if splitnum==0 or splitnum==1:
             isplit = 0
