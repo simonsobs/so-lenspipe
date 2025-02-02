@@ -60,6 +60,7 @@ def process_residuals_alms(split, freq, task):
 def get_inpaint_mask(args):
     
     '''
+    args.inpaint: bool, if True, you want to inpaint
     args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
@@ -68,7 +69,8 @@ def get_inpaint_mask(args):
     args.wcs: wcs object, wcs of mask
     '''
     
-    if args.cat_date is not None:
+    if args.inpaint:
+        assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
         datamodel = DataModel.from_config(args.config_name)
         
