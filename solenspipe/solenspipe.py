@@ -189,10 +189,9 @@ def four_split_tau(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
     return tau_xy
 
 
-def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None): #compute the power spectrum from four splits! Doesn't have to be phi
+def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
     phi_x=xy[0];phi01=xy[1];phi02=xy[2];phi03=xy[3];phi12=xy[4];phi13=xy[5];phi23=xy[6];phi_x0=xy[7];phi_x1=xy[8];phi_x2=xy[9];phi_x3=xy[10]
     phi_xp=uv[0];phi01p=uv[1];phi02p=uv[2];phi03p=uv[3];phi12p=uv[4];phi13p=uv[5];phi23p=uv[6];phi_x0p=uv[7];phi_x1p=uv[8];phi_x2p=uv[9];phi_x3p=uv[10]
-    print(np.shape(xy[0]), np.shape(phi_x))
     if cross is False:
         tg1=m**4*cs.alm2cl(phi_x,phi_xp)
         tg2=-4*m**2*(cs.alm2cl(phi_x0,phi_x0p)+cs.alm2cl(phi_x1,phi_x1p)+cs.alm2cl(phi_x2,phi_x2p)+cs.alm2cl(phi_x3,phi_x3p))
@@ -255,7 +254,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
     Returns
     -------
     bh: bool
-        Specify whether  hardened norm is calculated
+        Specify whether hardened norm is calculated
     ls: ndarray
         A (mlmax+1,) shape numpy array for the ell range of the normalization
     Als: dict
@@ -376,7 +375,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     profile : (mlmax) array, default=None
         An array to use as the profile for profile-hardening, when est2="SRC".
         If not provided, will just do point-source hardening. 
-    coup : str, default="lens"
+    coup : str, default="LENS"
         An array to use as the profile for profile-hardening, when est2="SRC".
         If not provided, will just do point-source hardening. 
 
@@ -393,7 +392,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     print(pytempura.est_list)
     print(est1)
     assert est1 in pytempura.est_list
-    if Al1 is not None and "lens" in coup:
+    if Al1 is not None and "LENS" in coup:
         assert Al1.ndim==2, "Both gradient and curl normalizations need to be present."
 
     if est2 is not None:
