@@ -70,6 +70,7 @@ def get_inpaint_mask(args):
     '''
     
     if args.inpaint:
+        print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
         datamodel = DataModel.from_config(args.config_name)
@@ -87,6 +88,7 @@ def get_inpaint_mask(args):
         return jmask
     
     else:
+        print('not inpainting')
         return None
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
@@ -552,7 +554,7 @@ def preprocess_core(imap, mask,
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
     if inpaint_mask is not None:
-        assert ivar is not None, "need ivar for inpainting"
+        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
 
@@ -580,10 +582,8 @@ def preprocess_core(imap, mask,
         ivar = ivar / calibration**2.
         ivar[1:] = ivar[1:] * pol_eff**2.
     
-    if ivar is not None:
-        return imap, ivar
-    else:
-        return imap
+    return imap, ivar # ivar will be none if nothing happened to it
+
 
 
 def get_sim_core(shape,wcs,signal_alms,
@@ -670,7 +670,7 @@ def get_name_cluster_fgmap(qid):
 
 def get_name_run(args, split=None, coadd=False):
 
-    name_run = f'{"_".join(args.qids)}_mnemo{args.cluster_subtraction}'
+    name_run = f'{"_".join(args.qids)}_mnemo{args.cluster_subtraction}_{args.mask_tag}'
     
     if split is not None:
         name_run += f'_split{split}'
@@ -679,6 +679,20 @@ def get_name_run(args, split=None, coadd=False):
         name_run += '_coadd'
 
     return name_run
+
+def get_mask_tag(mask_fn, mask_subproduct):
+
+    """
+    Extracts and returns the tag from the mask filename.
+    """
+
+    assert mask_subproduct == 'lensing_masks', 'mask tag only implemented for lensing masks'
+    # find daynight tag "daydeep", "daywide" o "night"
+    daynight = re.search(r'(daydeep|daywide|night)', mask_fn).group(0)
+    # find skyfraction. it is the string between the last "_" and ".fits"
+    skyfrac  = re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
+
+    return f'{daynight}_{skyfrac}'
 
 def read_weights(args):
 
