@@ -403,7 +403,7 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,she
     comm,rank,my_tasks = mpi.distribute(nsims)
     n1evals = []
     for i in my_tasks:
-        i=i+1
+        i=i+2 # (0 = data, 1 = noisy sim treated as data)
         if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
         Xs    = get_kmap((icov,0,i)) # S
         Ysp   = get_kmap((icov,1,i)) # S'
