@@ -62,7 +62,7 @@ def get_inpaint_mask(args):
     
     '''
     args.inpaint: bool, if True, you want to inpaint
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -113,7 +113,9 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
     
     meta = bunch.Bunch({})
     if is_planck(qid):
+        meta.Name = 'planck_npipe'
         assert splitnum in meta.splits, 'splitnum must be 1 or 2 for Planck'
+        meta.dm = DataModel.from_config(meta.Name)
         beam_helper = PlanckBeamHelper(path=args.planck_beam_path)
         meta.beam_fells = beam_helper.get_beam(qid=qid, splitnum=splitnum, pixwin=True)
         meta.transfer_fells = 1.0
@@ -131,16 +133,17 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
         #     isplit = 1
         
     else:
-        dm = DataModel.from_config(args.config_name)
-        qid_dict = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        meta.Name = 'act_dr6v4'
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
         meta.nsplits = qid_dict['num_splits']
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
         if meta.daynight == 'night':
-            meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
-            meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct)
+            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct)
         else:
             meta.calibration = 1.
             meta.pol_eff = 1.
@@ -153,7 +156,7 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
         
-        Beam = EffectiveBeam(dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
+        Beam = EffectiveBeam(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
         meta.beam_fells = Beam.get_effective_beam()[1]
         meta.transfer_fells = Beam.get_effective_beam()[2]
 
