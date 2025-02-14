@@ -9,6 +9,7 @@ import os
 import healpy as hp
 from scipy import interpolate
 from enlib import bench
+import re
 
 
 specs_weights = {'QU': ['I','Q','U'],
@@ -91,7 +92,7 @@ def get_inpaint_mask(args):
         print('not inpainting')
         return None
 
-def get_metadata(qid, splitnum=0, coadd=False, args=None):
+def get_metadata(qid, splitnum=1, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
     
@@ -112,6 +113,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     
     meta = bunch.Bunch({})
     if is_planck(qid):
+        assert splitnum in meta.splits, 'splitnum must be 1 or 2 for Planck'
         beam_helper = PlanckBeamHelper(path=args.planck_beam_path)
         meta.beam_fells = beam_helper.get_beam(qid=qid, splitnum=splitnum, pixwin=True)
         meta.transfer_fells = 1.0
@@ -121,17 +123,19 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.nsplits = 2
+        meta.splits = np.array([1, 2])
         meta.noisemodel = PlanckNoiseMetadata(qid)
-        if splitnum==0 or splitnum==1:
-            isplit = 0
-        elif splitnum==2 or splitnum==3:
-            isplit = 1
-
+        # if splitnum==0 or splitnum==1:
+        #     isplit = 0
+        # elif splitnum==2 or splitnum==3:
+        #     isplit = 1
+        
     else:
         dm = DataModel.from_config(args.config_name)
         qid_dict = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
         meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
         if meta.daynight == 'night':
@@ -205,9 +209,22 @@ class EffectiveBeam:
         self.daynight = daynight
 
     def get_beam(self):
-        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
-        beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
-        return beam_map
+        
+        if self.beam_subproduct == 'beams_v4_20230130_snfit':
+            
+            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
+            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
+
+            beam_T = process_beam(beam_T, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            beam_P = process_beam(beam_P, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        
+            return beam_T, beam_P
+        
+        else:
+            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+            beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        
+            return beam_map
 
     def get_tf(self):
         
@@ -219,12 +236,27 @@ class EffectiveBeam:
 
     def get_effective_beam(self):
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
-        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
         tf = self.get_tf()(np.arange(self.mlmax+1))
         
-        fkbeam[0] = beam * tf
-        fkbeam[1] = beam
-        fkbeam[2] = beam
+        if self.beam_subproduct == 'beams_v4_20230130_snfit':
+            
+            beam_T, beam_P = self.get_beam()
+            beam_T = beam_T(np.arange(self.mlmax+1))
+            beam_P = beam_P(np.arange(self.mlmax+1))
+            
+            beam = beam_P
+            fkbeam[0] = beam_T
+            fkbeam[1] = beam_P
+            fkbeam[2] = beam_P
+            
+        else:
+            beam = self.get_beam()(np.arange(self.mlmax+1))
+            
+            fkbeam[0] = beam * tf
+            fkbeam[1] = beam
+            fkbeam[2] = beam
+
         return fkbeam, beam, tf
 
 
