@@ -602,13 +602,11 @@ def preprocess_core(imap, mask,
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
 
-    with bench.show("nemo clusters"):
-        if foreground_cluster is not None:
-            imap[0] = imap[0] - foreground_cluster        
+    if foreground_cluster is not None:
+        imap[0] = imap[0] - foreground_cluster        
         
-    with bench.show("depix map"):
-        imap = imap * mask
-        imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
+    imap = imap * mask
+    imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
