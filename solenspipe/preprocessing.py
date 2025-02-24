@@ -62,7 +62,7 @@ def get_inpaint_mask(args):
     
     '''
     args.inpaint: bool, if True, you want to inpaint
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
+    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -74,7 +74,7 @@ def get_inpaint_mask(args):
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
-        datamodel = DataModel.from_config(args.config_name)
+        datamodel = DataModel.from_config(args.Name)
         
         # read catalog coordinates
         rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
@@ -96,7 +96,7 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
     
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    ## args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -724,8 +724,8 @@ def get_mask_tag(mask_fn, mask_subproduct):
     assert mask_subproduct == 'lensing_masks', 'mask tag only implemented for lensing masks'
     # find daynight tag "daydeep", "daywide" o "night"
     daynight = re.search(r'(daydeep|daywide|night)', mask_fn).group(0)
-    # find skyfraction. it is the string between the last "_" and ".fits"
-    skyfrac  = re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
+    # find skyfraction. it is 2 digit number. the string between the last "_" and ".fits"
+    skyfrac  = re.search(r'_(\d{2})(?:_[^_]+)?\.fits$', mask_fn).group(1) # re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
 
     return f'{daynight}_{skyfrac}'
 
