@@ -1551,9 +1551,7 @@ class LensingSandbox(object):
         if add_white_noise:
             self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
         elif add_noise_model:
-            noise_sim = enmap.read_map(noise_model_path%(str(0),str(0).zfill(4)),
-                                                   sel=np.s_[0, 0]  # just load f090, remove split axis
-                                                   )
+            noise_sim = enmap.read_map(noise_model_path%(str(0).zfill(4)))
             noise_sim_alm = cs.map2alm(noise_sim, lmax=9000)
             nells = cs.alm2cl(noise_sim_alm)
             nells_dict = {"TT": nells[0],
@@ -1603,12 +1601,13 @@ class LensingSandbox(object):
             if self.noise_map_path == None:
                 raise Exception("Need a noise map")
             else:
+                print(self.noise_map_path)
                 nmap = enmap.read_map(self.noise_map_path)
         else:
             nmap = 0.
         return self._apply_mask(omap + nmap, self.mask)
 
-    def get_observed_map(self,index,iset=0,n_index=1,n_set=0):
+    def get_observed_map(self,index,iset=0,n_index=1):
         shape,wcs = self.shape,self.wcs
         calm = futils.get_cmb_alm(index,iset)
         calm = cs.almxfl(calm,lambda x: maps.gauss_beam(self.fwhm,x))
@@ -1618,13 +1617,32 @@ class LensingSandbox(object):
             nmap = maps.white_noise((3,)+shape,wcs,self.noise)
             nmap[1:] *= np.sqrt(2.)
         elif self.add_noise_model:
-            noise_sim_ores = enmap.read_map(self.noise_model_path%(str(n_set),str(n_index+1).zfill(4)),sel=np.s_[0, 0])
+            print(self.noise_model_path%(str(n_index+1).zfill(4)))
+            noise_sim_ores = enmap.read_map(self.noise_model_path%(str(n_index+1).zfill(4)))
             nmap = enmap.empty((3,)+shape, wcs, noise_sim_ores.dtype)
             cs.alm2map(cs.map2alm(noise_sim_ores,lmax=5400),nmap)
         else:
             nmap = 0.
         return self._apply_mask(omap + nmap, self.mask)
 
+    def kmap_2_noise_sets(self,stuple):
+        icov,ip,i = stuple
+        nstep = 500
+        if i>nstep: raise ValueError
+        if ip==0 or ip==1:
+            iset = 0
+            index = nstep*ip + i
+        elif ip==2 or ip==3:
+            iset = ip - 2
+            index = 1000 + i
+        if ip==0:
+            n_index = i
+        elif ip==1:
+            n_index = 400 + i
+        dmap = self.get_observed_map(index,iset,n_index = n_index)
+        X = self.prepare(dmap)
+        return X
+    
     def kmap(self,stuple):
         icov,ip,i = stuple
         nstep = 500
@@ -1635,9 +1653,8 @@ class LensingSandbox(object):
         elif ip==2 or ip==3:
             iset = ip - 2
             index = 1000 + i
-        n_set = ip
-        n_index = i
-        dmap = self.get_observed_map(index,iset,n_index = n_index,n_set=n_set)
+        n_index = ip*4 + i
+        dmap = self.get_observed_map(index,iset,n_index = n_index)
         X = self.prepare(dmap)
         return X
 
@@ -1660,10 +1677,10 @@ class LensingSandbox(object):
     
     def get_rdn0(self,prepared_data_alms,est,nsims,comm):
         Xdata = prepared_data_alms
-        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap,comm,cs.alm2cl,nsims,Xdata)
+        return bias.simple_rdn0(0,est,est,lambda alpha,X,Y: self.qfuncs[alpha](X,Y),self.kmap_2_noise_sets,comm,cs.alm2cl,nsims,Xdata)
 
     def get_mcn1(self,est,nsims,comm):
         return bias.mcn1(0,self.kmap,cs.alm2cl,nsims,self.qfuncs[est],comm=comm,verbose=True).mean(axis=0)
 
     def get_mcmf(self,est,nsims,comm):
-        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap,comm,nsims)
+        return bias.mcmf_pair(0,self.qfuncs[est],self.kmap_2_noise_sets,comm,nsims)
