@@ -8,9 +8,7 @@ from solenspipe import utility as simgen
 import os
 import healpy as hp
 from scipy import interpolate
-from enlib import bench
 import re
-
 
 specs_weights = {'QU': ['I','Q','U'],
         'EB': ['I','E','B']}
@@ -58,7 +56,7 @@ def process_residuals_alms(split, freq, task):
 
 
 
-def get_inpaint_mask(args):
+def get_inpaint_mask(args, datamodel):
     
     '''
     args.inpaint: bool, if True, you want to inpaint
@@ -74,8 +72,6 @@ def get_inpaint_mask(args):
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
-        datamodel = DataModel.from_config(args.Name)
-        
         # read catalog coordinates
         rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
         ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
@@ -92,11 +88,10 @@ def get_inpaint_mask(args):
         print('not inpainting')
         return None
 
-def get_metadata(qid, splitnum=1, coadd=False, args=None):
+def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
     
-    ## args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -114,23 +109,19 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
     meta = bunch.Bunch({})
     if is_planck(qid):
         meta.Name = 'planck_npipe'
-        assert splitnum in meta.splits, 'splitnum must be 1 or 2 for Planck'
         meta.dm = DataModel.from_config(meta.Name)
-        beam_helper = PlanckBeamHelper(path=args.planck_beam_path)
-        meta.beam_fells = beam_helper.get_beam(qid=qid, splitnum=splitnum, pixwin=True)
-        meta.transfer_fells = 1.0
+        meta.splits = np.array([0,1])
+        meta.nsplits = 2
+        assert splitnum in meta.splits, 'splitnum must be 1 or 2 for Planck'
         meta.calibration = 1.0
         meta.pol_eff = 1.0
+        Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
+        meta.beam_fells = Beam.get_effective_beam()[1]
+        meta.transfer_fells = Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
-        meta.nsplits = 2
-        meta.splits = np.array([1, 2])
         meta.noisemodel = PlanckNoiseMetadata(qid)
-        # if splitnum==0 or splitnum==1:
-        #     isplit = 0
-        # elif splitnum==2 or splitnum==3:
-        #     isplit = 1
         
     else:
         meta.Name = 'act_dr6v4'
@@ -148,7 +139,7 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
             meta.calibration = 1.
             meta.pol_eff = 1.
 
-        meta.inpaint_mask = get_inpaint_mask(args)
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid)
@@ -156,7 +147,7 @@ def get_metadata(qid, splitnum=1, coadd=False, args=None):
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
         
-        Beam = EffectiveBeam(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
+        Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
         meta.beam_fells = Beam.get_effective_beam()[1]
         meta.transfer_fells = Beam.get_effective_beam()[2]
 
@@ -199,7 +190,7 @@ def process_beam(sofind_beam, norm=True):
     beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
     return beam
 
-class EffectiveBeam:
+class ACTBeamHelper:
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False, daynight='night'):
         self.datamodel = datamodel
@@ -277,10 +268,7 @@ class PlanckNoiseMetadata:
                                     'p07': '353',
                                     'p08': '547',
                                     'p09': '857'}
-        
 
-                                   
-        
 class ACTNoiseMetadata:
     
     def __init__(self, qid):
@@ -353,28 +341,16 @@ class ACTNoiseMetadata:
         return my_sim        
 
 class PlanckBeamHelper:
-    DEFAULT_QID_DICT = {
-        'p01': '030',
-        'p02': '044',
-        'p03': '070',
-        'p04': '100',
-        'p05': '143',
-        'p06': '217',
-        'p07': '353',
-        'p08': '547',
-        'p09': '857'
-    }
 
-    def __init__(self, path, qid_dict=None):
+    def __init__(self, datamodel, args, qid, isplit):
         """
         Initialize the PlanckBeamHelper.
-
-        Parameters:
-        - path (str): Base path to the Planck beam data files.
-        - qid_dict (dict, optional): Override the default QID-to-frequency mapping.
         """
-        self.qid_dict = qid_dict or self.DEFAULT_QID_DICT
-        self.path = path
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.beam_subproduct = args.beam_subproduct
 
     def get_beam(self, qid, splitnum, pixwin=True):
         """
@@ -388,25 +364,37 @@ class PlanckBeamHelper:
         Returns:
         - np.ndarray: The beam function array.
         """
-        # Get the frequency associated with the QID
-        freq = self.qid_dict.get(qid)
-        if not freq:
-            raise ValueError(f"Invalid QID: {qid}. Unable to find corresponding frequency.")
 
         # Determine split letter
-        sl = 'A' if splitnum == 1 else 'B'
+        sl = 'A' if splitnum == 0 else 'B'
 
         # Load and interpolate the beam
-        file_path = f"{self.path}/npipe_DR6_{sl}x{sl}/bl_T_npipe_DR6_{sl}x{sl}_{freq}{sl}x{freq}{sl}.dat"
-        ell_b, bl = np.loadtxt(file_path, unpack=True)
-        beam_f = interpolate.interp1d(ell_b, bl, kind='linear', bounds_error=False, fill_value=0)
+        ell_b, bl = self.datamodel.read_beam(qid, subproduct=self.beams_subproduct, split_num=sl)
+        beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
 
         # Generate the beam function values
-        beam_fells = beam_f(np.arange(5000))
+        beam_fells = beam_f(np.arange(self.mlmax+1))
         if pixwin:
-            beam_fells *= hp.pixwin(2048)[:5000]
+            beam_fells *= hp.pixwin(2048)[:self.mlmax+1]
 
         return beam_fells
+    
+    def get_tf():
+        ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+
+        return fkbeam, beam, tf
     
     def planck_processed_beam(self, qid, splitnum, pixwin=True):
         b_ell=self.get_beam(qid, splitnum, pixwin=pixwin)
@@ -697,9 +685,12 @@ def get_name_weights(qid, spec):
 
     return f'noise_{qid}_{spec}'
 
-def get_name_cluster_fgmap(qid):
+def get_name_cluster_fgmap(qid, isplit=1, coadd=False):
     
-    return f'{qid}_nemo'
+    if coadd:
+        return f'{qid}_nemo' # !!!
+    else:
+        return f'{qid}_split{isplit}_nemo'
 
 def get_name_run(args, split=None, coadd=False):
 
