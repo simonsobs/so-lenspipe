@@ -105,14 +105,13 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     args.kvfilter: int, vertical fourier strip width
     """
     
-    
     meta = bunch.Bunch({})
+    assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
     if is_planck(qid):
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([0,1])
         meta.nsplits = 2
-        assert splitnum in meta.splits, 'splitnum must be 1 or 2 for Planck'
         meta.calibration = 1.0
         meta.pol_eff = 1.0
         Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
@@ -122,7 +121,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.noisemodel = PlanckNoiseMetadata(qid)
-        
+        # assigning ACT splits 0 + 1 to Planck split 0
+        # and ACT splits 2 + 3 to Planck split 1
+        isplit = None if coadd else splitnum // 2
     else:
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
@@ -269,6 +270,9 @@ class PlanckNoiseMetadata:
                                     'p08': '547',
                                     'p09': '857'}
 
+        print(f"Initializing NoiseMetadata with qid: {self.qid}")
+        self.qid_freq = qid_dict_config_noise_name[qid]
+
 class ACTNoiseMetadata:
     
     def __init__(self, qid):
@@ -358,7 +362,7 @@ class PlanckBeamHelper:
 
         Parameters:
         - qid (str): QID identifier (e.g., 'p04').
-        - splitnum (int): Split number (1 for 'A', otherwise 'B').
+        - splitnum (int): Split number (0 for 'A', otherwise 'B').
         - pixwin (bool): Apply pixel window function if True.
 
         Returns:
