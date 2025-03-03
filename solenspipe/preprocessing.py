@@ -45,7 +45,7 @@ def process_residuals_alms(isplit, freq, task):
     """
 
     n_index = str(task+200).zfill(4)
-    sim_Type = 'npipe6v20' + ('B' if isplit == 1 else 'A')
+    sim_type = 'npipe6v20' + ('B' if isplit == 1 else 'A')
     #TODO (not urgent) Put the path in sofind
     residual = hp.read_map(f'/gpfs/fs0/project/r/rbond/jiaqu/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
     #multiply by Planck map factor to convert to uKarcmin
