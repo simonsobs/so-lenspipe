@@ -15,39 +15,37 @@ specs_weights = {'QU': ['I','Q','U'],
 nspecs = len(specs_weights['QU'])
 
 def is_planck(qid):
-    if qid in ['p01','p02','p03','p04','p05', 'p06', 'p07']:
+    if qid in ['p01','p02','p03','p04','p05','p06','p07']:
         return True
     else:
         return False
 
-def process_residuals_alms(split, freq, task):
+def process_residuals_alms(isplit, freq, task):
     """
     Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
     This is done for a given simulation type, frequency, and task number.
 
     Parameters
     ----------
-    split : int
-        The split that the residual corresponds to 0 or 1 =='npipe6v20A', 2 or 3=='npipe6v20B'
+    isplit : int
+        The Planck split that the residual corresponds to, 0 for 'npipe6v20A', 1 for 'npipe6v20B'
+        (This format is automatically compatible with the Planck metadata format from get_metadata)
 
     freq : int
         The frequency (in GHz) of the data to be processed, used to select the 
-        corresponding residual files.
+        corresponding residual files. Can be provided using:
+        metadata.noisemodel.qid_dict_config_noise_name[qid]
 
     task : int
         The task identifier for the simulation. This is used to generate a unique index 
         for identifying the residual files. +200 is added to the task number to match the simulation label of Planck simulations
-
 
     output_path : str
         The directory path where the processed enmap residual files will be saved.
     """
 
     n_index = str(task+200).zfill(4)
-    if split==0 or split==1:
-        sim_type = 'npipe6v20A'
-    elif split==2 or split==3:
-        sim_type = 'npipe6v20B'
+    sim_Type = 'npipe6v20' + ('B' if isplit == 1 else 'A')
     #TODO (not urgent) Put the path in sofind
     residual = hp.read_map(f'/gpfs/fs0/project/r/rbond/jiaqu/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
     #multiply by Planck map factor to convert to uKarcmin
@@ -120,7 +118,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
-        meta.noisemodel = PlanckNoiseMetadata(qid)
+        meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True)
         # assigning ACT splits 0 + 1 to Planck split 0
         # and ACT splits 2 + 3 to Planck split 1
         isplit = None if coadd else splitnum // 2
@@ -143,7 +141,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
-        meta.noisemodel = ACTNoiseMetadata(qid)
+        meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
@@ -257,7 +255,7 @@ class ACTBeamHelper:
 
 class PlanckNoiseMetadata:
     
-    def __init__(self, qid):
+    def __init__(self, qid, verbose=False):
         self.qid = qid
 
         qid_dict_config_noise_name = {'p01': '030',
@@ -269,13 +267,13 @@ class PlanckNoiseMetadata:
                                     'p07': '353',
                                     'p08': '547',
                                     'p09': '857'}
-
-        print(f"Initializing NoiseMetadata with qid: {self.qid}")
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
         self.qid_freq = qid_dict_config_noise_name[qid]
 
 class ACTNoiseMetadata:
     
-    def __init__(self, qid):
+    def __init__(self, qid, verbose=False):
         self.qid = qid
             
         # noise model qids
@@ -315,8 +313,9 @@ class ACTNoiseMetadata:
                                     'pa6b_dd': 'act_dr6v4_day',
                                     'pa5a_dw': 'act_dr6v4_day',
                                     'pa5b_dw': 'act_dr6v4_day'}
-        
-        print(f"Initializing NoiseMetadata with qid: {self.qid}")        
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+
         self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
                                         qid_dict_noise_model_name[self.qid],
                                         *qid_dict_noise[self.qid])
@@ -356,13 +355,11 @@ class PlanckBeamHelper:
         self.isplit = isplit
         self.beam_subproduct = args.beam_subproduct
 
-    def get_beam(self, qid, splitnum, pixwin=True):
+    def get_beam(self, pixwin=True):
         """
         Retrieve the Planck beam for a given QID and split number.
 
         Parameters:
-        - qid (str): QID identifier (e.g., 'p04').
-        - splitnum (int): Split number (0 for 'A', otherwise 'B').
         - pixwin (bool): Apply pixel window function if True.
 
         Returns:
@@ -370,10 +367,12 @@ class PlanckBeamHelper:
         """
 
         # Determine split letter
-        sl = 'A' if splitnum == 0 else 'B'
+        sl = 'A' if self.isplit == 0 else 'B'
 
         # Load and interpolate the beam
-        ell_b, bl = self.datamodel.read_beam(qid, subproduct=self.beams_subproduct, split_num=sl)
+        ell_b, bl = self.datamodel.read_beam(self.qid,
+                        subproduct=self.beam_subproduct,
+                        split_num=sl)
         beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
 
         # Generate the beam function values
@@ -383,7 +382,7 @@ class PlanckBeamHelper:
 
         return beam_fells
     
-    def get_tf():
+    def get_tf(self):
         ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
         return maps.interp(ells_tf, tf, fill_value='extrapolate')
     
@@ -392,7 +391,7 @@ class PlanckBeamHelper:
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
-        beam = self.get_beam()(np.arange(self.mlmax+1))
+        beam = self.get_beam()[np.arange(self.mlmax+1)]
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam
