@@ -389,7 +389,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     coup = [c.upper() for c in coup]
     
     print(coup)
-    print(pytempura.est_list)
+    print("est list = "+str(pytempura.est_list))
     print(est1)
     assert est1 in pytempura.est_list
     if Al1 is not None and "LENS" in coup:
