@@ -20,6 +20,8 @@ def is_planck(qid):
     else:
         return False
 
+# leaving this for archival purposes for now
+# function called in v5 preprocessing is in PlanckNoiseMetadata
 def process_residuals_alms(isplit, freq, task):
     """
     Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
@@ -118,7 +120,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
-        meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True)
+        meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
+                                              config_name=meta.Name,
+                                              subproduct_name="noise_sims")
         # assigning ACT splits 0 + 1 to Planck split 0
         # and ACT splits 2 + 3 to Planck split 1
         isplit = None if coadd else splitnum // 2
@@ -255,7 +259,9 @@ class ACTBeamHelper:
 
 class PlanckNoiseMetadata:
     
-    def __init__(self, qid, verbose=False):
+    def __init__(self, qid, verbose=False,
+                 config_name="planck_npipe",
+                 subproduct_name="noise_sims"):
         self.qid = qid
 
         qid_dict_config_noise_name = {'p01': '030',
@@ -267,9 +273,30 @@ class PlanckNoiseMetadata:
                                     'p07': '353',
                                     'p08': '547',
                                     'p09': '857'}
+        
+        self.planck_config_name = config_name
+        self.planck_noise_sims_subproduct = subproduct_name
+
         if verbose:
             print(f"Initializing NoiseMetadata with qid: {self.qid}")
         self.qid_freq = qid_dict_config_noise_name[qid]
+
+    # moved Frank's residual noise alm function here...
+    def load_noise_map_hp(self, isplit, index):
+        datamodel = DataModel.from_config(self.planck_noise_sims_config_name)
+        maptag = str(index+200).zfill(4)
+        split_num = "B" if isplit == 1 else "A"
+        return datamodel.read_map(qid=self.qid, coadd=False,
+                                  split_num=split_num,
+                                  subproduct="noise_sims",
+                                  maptag=maptag)
+    
+    def read_in_sim(self, isplit, index, lmax=3000):
+        # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
+        residual_map = self.load_noise_map_hp(isplit, index)
+        return reproject.healpix2map(residual_map, lmax=lmax,
+                                     rot='gal,equ',save_alm=True)*10**6
+
 
 class ACTNoiseMetadata:
     
@@ -433,7 +460,9 @@ class ForegroundHandler:
         if self.args.fg_type == 'sims':
             return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
         elif self.args.fg_type == 'theory':
-            return lambda: self.get_fg_cov(qids)
+            # currently unsupported
+            # return lambda: self.get_fg_cov(qids)
+            raise NotImplementedError
         return None
 
     def generate_cov_fgs(self, fgs_path, lmax):
