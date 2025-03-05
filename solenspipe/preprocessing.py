@@ -282,18 +282,19 @@ class PlanckNoiseMetadata:
         self.qid_freq = qid_dict_config_noise_name[qid]
 
     # moved Frank's residual noise alm function here...
-    def load_noise_map_hp(self, isplit, index):
+    def noise_map_path(self, isplit, index):
         datamodel = DataModel.from_config(self.planck_noise_sims_config_name)
         maptag = str(index+200).zfill(4)
         split_num = "B" if isplit == 1 else "A"
-        return datamodel.read_map(qid=self.qid, coadd=False,
-                                  split_num=split_num,
-                                  subproduct="noise_sims",
-                                  maptag=maptag)
+        return datamodel.get_map_fn(qid=self.qid, coadd=False,
+                                    split_num=split_num,
+                                    subproduct="noise_sims",
+                                    maptag=maptag)
     
     def read_in_sim(self, isplit, index, lmax=3000):
         # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
-        residual_map = self.load_noise_map_hp(isplit, index)
+        residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                   field=(0,1,2))
         return reproject.healpix2map(residual_map, lmax=lmax,
                                      rot='gal,equ',save_alm=True)*10**6
 
