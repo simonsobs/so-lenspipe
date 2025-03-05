@@ -743,7 +743,7 @@ def get_mask_tag(mask_fn, mask_subproduct):
     Extracts and returns the tag from the mask filename.
     """
 
-    assert mask_subproduct == 'lensing_masks', 'mask tag only implemented for lensing masks'
+    assert 'lensing_masks' in mask_subproduct, 'mask tag only implemented for lensing masks'
     # find daynight tag "daydeep", "daywide" o "night"
     daynight = re.search(r'(daydeep|daywide|night)', mask_fn).group(0)
     # find skyfraction. it is 2 digit number. the string between the last "_" and ".fits"
