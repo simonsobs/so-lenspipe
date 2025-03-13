@@ -283,7 +283,7 @@ class PlanckNoiseMetadata:
 
     # moved Frank's residual noise alm function here...
     def noise_map_path(self, isplit, index):
-        datamodel = DataModel.from_config(self.planck_noise_sims_config_name)
+        datamodel = DataModel.from_config(self.planck_config_name)
         maptag = str(index+200).zfill(4)
         split_num = "B" if isplit == 1 else "A"
         return datamodel.get_map_fn(qid=self.qid, coadd=False,
