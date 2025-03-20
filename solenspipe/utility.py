@@ -4,7 +4,7 @@ import numpy as np
 import healpy as hp
 from scipy.optimize import curve_fit
 from orphics import maps
-from falafel.utils import get_cmb_alm
+from falafel.utils import get_cmb_alm, get_theory_dicts
 import pytempura
 
 
@@ -618,17 +618,21 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
 
     return s_i,s_set,noise_seed
 
-def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False,fixed_amp=False):
+def get_beamed_signal(s_i,s_set,beam,shape,wcs,unlensed=False):
     print(s_i,s_set)
     s_i,s_set,_ = convert_seeds((0,s_set,s_i))
     print(f"set:{s_set}")
     print(f"s_i:{s_i}")
-    #cmb_alm = test_cmb_alm(s_i,s_set,unlensed=unlensed,fixed_amp=fixed_amp).astype(np.complex128)
     cmb_alm=get_cmb_alm(s_i,s_set).astype(np.complex128)
     if beam is  not None:
         cmb_alm = cs.almxfl(cmb_alm,lambda x: beam(x)) 
     cmb_map = alm2map(cmb_alm,shape,wcs)
     return cmb_map
+
+def get_signal_alm(s_i,s_set):
+    s_i,s_set,_ = convert_seeds((0,s_set,s_i))
+    cmb_alm=get_cmb_alm(s_i,s_set).astype(np.complex128)
+    return cmb_alm
 
 def bandedcls(cl,_bin_edges):
     ls=np.arange(cl.size)
@@ -916,7 +920,14 @@ def get_Spower(X,U,mask):
     cls = hp.alm2cl(X,U)/w_n(mask,2)
     return cls
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def get_theory_for_response(lmax=9000):
+    
+    # grad Cl, lensed Cl
+    ucls, tcls = get_theory_dicts(nells=None, lmax=lmax, grad=True)
+    lcl=np.array([ucls['TT'], ucls['EE'], ucls['BB'], ucls['TE']])
+    return lcl
+
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Generate beloved dumb N0s for both gradient and curl.
 
     Args:
@@ -949,9 +960,9 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
 
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
+
     if profile is None:
         profile=np.ones(Lmax+1)
     else:
@@ -961,8 +972,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         response=response[:Lmax+1]
 
     D_l=get_Dpower(X,U,mask,m=4)
-    #S_l=get_Spower(coaddX,coaddU,mask)
-    S_l=coaddX
+    S_l=get_Spower(coaddX,coaddU,mask)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
     ocl=ffl
@@ -1081,10 +1091,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,theory,theory_cross,mask,l
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
@@ -1389,7 +1399,7 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MV"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1398,8 +1408,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
   
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     if profile is None:
         profile=np.ones(Lmax+1)
@@ -1543,7 +1552,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
 
 
-def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MVPOL currently no T"""
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
@@ -1552,9 +1561,9 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,theory,theory_cross,mask,lmin,l
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
 
-    lcl=np.array([theory_cross.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
-    fcl=np.array([theory.lCl('TT',ls),theory.lCl('EE',ls),theory.lCl('BB',ls),theory.lCl('TE',ls)])
+    lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
+    
     if profile is None:
         profile=np.ones(Lmax+1)
 

@@ -114,7 +114,7 @@ def split_phi_to_cl(xy,uv,m=4,cross=False,ikalm=None):
     return auto
 
 
-def get_sim_pixelization(lmax,is_healpix,verbose=False):
+def get_sim_pixelization(lmax,is_healpix,dtype=np.float32,verbose=False):
     # Geometry
     if is_healpix:
         nside = futils.closest_nside(lmax)
@@ -125,7 +125,7 @@ def get_sim_pixelization(lmax,is_healpix,verbose=False):
         shape,wcs = enmap.fullsky_geometry(res=np.deg2rad(px_arcmin/60.),proj='car')
         nside = None
         if verbose: print(f"shape,wcs: {shape}, {wcs}")
-    return qe.pixelization(shape=shape,wcs=wcs,nside=nside)
+    return qe.pixelization(shape=shape,wcs=wcs,nside=nside,dtype=dtype)
 
 
 def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax):
@@ -307,6 +307,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
 
     if bh:
+        assert est1 in ['TT','MV'], "bh qfunc only implemented for TT and MV"
         assert est2 in ['SRC','MASK'] # TODO: add mask
         if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
@@ -1512,7 +1513,6 @@ def get_labels():
     return labs
 
 
-# Load signal map, apply beam and add noise
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
