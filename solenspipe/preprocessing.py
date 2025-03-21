@@ -15,10 +15,15 @@ specs_weights = {'QU': ['I','Q','U'],
 nspecs = len(specs_weights['QU'])
 
 def is_planck(qid):
+    return (parse_qid_experiment(qid)=='planck')
+        
+def parse_qid_experiment(qid):
     if qid in ['p01','p02','p03','p04','p05','p06','p07']:
-        return True
+        return 'planck'
+    elif qid[:3]=='sobs_':
+        return 'sobs'
     else:
-        return False
+        return 'act'
 
 # leaving this for archival purposes for now
 # function called in v5 preprocessing is in PlanckNoiseMetadata
@@ -107,7 +112,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     
     meta = bunch.Bunch({})
     assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
-    if is_planck(qid):
+    if parse_qid_experiment(qid)=='planck':
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([0,1])
@@ -126,7 +131,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         # assigning ACT splits 0 + 1 to Planck split 0
         # and ACT splits 2 + 3 to Planck split 1
         isplit = None if coadd else splitnum // 2
-    else:
+    elif parse_qid_experiment(qid)=='act':
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
