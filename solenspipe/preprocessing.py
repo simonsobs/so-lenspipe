@@ -22,7 +22,7 @@ def is_planck(qid):
 
 # leaving this for archival purposes for now
 # function called in v5 preprocessing is in PlanckNoiseMetadata
-def process_residuals_alms(isplit, freq, task):
+def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbond/jiaqu/"):
     """
     Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
     This is done for a given simulation type, frequency, and task number.
@@ -49,7 +49,7 @@ def process_residuals_alms(isplit, freq, task):
     n_index = str(task+200).zfill(4)
     sim_type = 'npipe6v20' + ('B' if isplit == 1 else 'A')
     #TODO (not urgent) Put the path in sofind
-    residual = hp.read_map(f'/gpfs/fs0/project/r/rbond/jiaqu/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
+    residual = hp.read_map(f'{root_path}/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
     #multiply by Planck map factor to convert to uKarcmin
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
