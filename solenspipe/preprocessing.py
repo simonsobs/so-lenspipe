@@ -115,7 +115,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     if parse_qid_experiment(qid)=='planck':
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
-        meta.splits = np.array([0,1])
+        meta.splits = np.array([1,2])
         meta.nsplits = 2
         meta.calibration = 1.0
         meta.pol_eff = 1.0
