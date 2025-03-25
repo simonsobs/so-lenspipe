@@ -52,7 +52,7 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
     """
 
     n_index = str(task+200).zfill(4)
-    sim_type = 'npipe6v20' + ('B' if isplit == 1 else 'A')
+    sim_type = 'npipe6v20' + ('A' if isplit == 1 else 'B')
     #TODO (not urgent) Put the path in sofind
     residual = hp.read_map(f'{root_path}/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
     #multiply by Planck map factor to convert to uKarcmin
@@ -128,9 +128,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
                                               subproduct_name="noise_sims")
-        # assigning ACT splits 0 + 1 to Planck split 0
-        # and ACT splits 2 + 3 to Planck split 1
-        isplit = None if coadd else splitnum // 2
+        # assigning ACT splits 0 + 1 to Planck split 1
+        # and ACT splits 2 + 3 to Planck split 2
+        isplit = None if coadd else (splitnum // 2 + 1)
     elif parse_qid_experiment(qid)=='act':
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
@@ -176,7 +176,7 @@ def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
 def get_data_map(qid, splitnum=0, coadd=False, args=None):
     datamodel = DataModel.from_config(args.config_name)
     if is_planck(qid):
-        splitnum+=1
+        assert splitnum in [1,2], "Planck splits are either 1 or 2"
         maptag='srcfree'
     else:
         maptag='map_srcfree'
@@ -290,7 +290,8 @@ class PlanckNoiseMetadata:
     def noise_map_path(self, isplit, index):
         datamodel = DataModel.from_config(self.planck_config_name)
         maptag = str(index+200).zfill(4)
-        split_num = "B" if isplit == 1 else "A"
+        assert isplit in [1,2], "Planck splits are either 1 or 2"
+        split_num = "A" if isplit == 1 else "B"
         return datamodel.get_map_fn(qid=self.qid, coadd=False,
                                     split_num=split_num,
                                     subproduct="noise_sims",
@@ -400,7 +401,8 @@ class PlanckBeamHelper:
         """
 
         # Determine split letter
-        sl = 'A' if self.isplit == 0 else 'B'
+        assert self.isplit in [1,2], "Planck splits are either 1 or 2"
+        sl = 'A' if self.isplit == 1 else 'B'
 
         # Load and interpolate the beam
         ell_b, bl = self.datamodel.read_beam(self.qid,
