@@ -198,7 +198,12 @@ def process_beam(sofind_beam, norm=True):
     beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
     return beam
 
+
+CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
+POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
+
 class ACTBeamHelper:
+    
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False, daynight='night'):
         self.datamodel = datamodel
@@ -217,6 +222,10 @@ class ACTBeamHelper:
             beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
             beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
 
+            if self.daynight != 'night':
+                beam_T[1] = beam_T[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+                beam_P[1] = beam_P[1] * POL_CORRECTION[self.qid.split('_')[0]]
+
             beam_T = process_beam(beam_T, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
             beam_P = process_beam(beam_P, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
         
@@ -224,8 +233,11 @@ class ACTBeamHelper:
         
         else:
             beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+            
+            if self.daynight != 'night':
+                beam_map[1] = beam_map[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+
             beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
-        
             return beam_map
 
     def get_tf(self):
