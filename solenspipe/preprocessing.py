@@ -19,7 +19,9 @@ def is_planck(qid):
 
 def is_lat_iso(qid):
     return (parse_qid_experiment(qid)=='lat_iso')
-        
+def is_SOsims(qid):
+    return (parse_qid_experiment(qid)=='so_sims')
+
 def parse_qid_experiment(qid):
     if qid in ['p01','p02','p03','p04','p05','p06','p07']:
         return 'planck'
@@ -27,6 +29,8 @@ def parse_qid_experiment(qid):
         return 'sobs'
     elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
         return 'lat_iso'
+    elif qid in ['lfa', 'lfb','mfa','mfb', 'uhfa', 'uhfb']:
+        return 'so_sims'
     else:
         return 'act'
 
@@ -97,6 +101,34 @@ def get_inpaint_mask(args, datamodel):
     else:
         print('not inpainting')
         return None
+def get_inpaint_mask_mss(args, datamodel):
+    
+    '''
+    args.inpaint: bool, if True, you want to inpaint
+    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
+    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+    args.regular_hole: float, radius of hole [arcmin] for regular sources
+    args.large_hole: float, radius of hole [arcmin] for large sources
+    args.shape: tuple, shape of mask
+    args.wcs: wcs object, wcs of mask
+    '''
+    
+    if args.inpaint:
+        print('inpainting MSS')
+        assert args.cat_date is not None, "cat_date must be provided for inpaint"
+
+        # read catalog coordinates
+        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'websky_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs_mss'))
+
+        # Make masks for gapfill
+        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        jmask = mask1 
+        jmask = ~jmask
+        return jmask
+    
+    else:
+        print('not inpainting')
+        return None
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_name 
     """
@@ -116,7 +148,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
     """
     
     meta = bunch.Bunch({})
-    assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
+    assert 0 <= int(splitnum) < 4, "only supporting splits [0,1,2,3]"
     if parse_qid_experiment(qid)=='planck':
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
@@ -184,7 +216,27 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = Beam.get_effective_beam()[1]  #done
         meta.transfer_fells = Beam.get_effective_beam()[2] #done
+    elif parse_qid_experiment(qid)=='so_sims':
+        meta.Name = 'so_lat_mbs_mss0002' ##this should be passed as argument otherwise use default
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        meta.calibration = 1.
+        meta.pol_eff = 1.
 
+        meta.inpaint_mask = get_inpaint_mask_mss(args, meta.dm)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.maptype = 'native'
+        meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        isplit = None if coadd else splitnum
+        
+        Beam = SOsimsBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = Beam.get_effective_beam()[1]  #done
+        meta.transfer_fells = 1.
     return meta, isplit
 
 # The following 2 functions require:
@@ -258,6 +310,39 @@ class SOLATBeamHelper:
         fkbeam[2] = beam
 
         return fkbeam, beam, tf   
+
+class SOsimsBeamHelper:
+    def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.daynight = daynight #not really needed here
+    
+    def get_beam(self):
+        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+        beam_map = process_beam(beam_map,True)
+        return beam_map
+        
+    def get_tf(self):
+        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        #tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam #* tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+
+        return fkbeam, beam #, tf  
         
 class ACTBeamHelper:
 
@@ -407,6 +492,62 @@ class SOLATNoiseMetadata:
         my_sim = my_sim[index].squeeze()
         
         return my_sim           
+class SOsimsNoiseMetadata:
+    
+    def __init__(self, qid, verbose=False):
+        self.qid = qid
+            
+        # noise model qids
+                # noise model qids
+        qid_dict_noise = {'lfa': ['lfa', 'lfb'],
+                    'lfb': ['lfa', 'lfb'],
+                    'mfa': ['mfa', 'mfb'],
+                    'mfb': ['mfa', 'mfb'],
+                    'uhfa': ['uhfa', 'uhfb'],
+                    'uhfb': ['uhfa', 'uhfb']}
+
+        qid_dict_noise_model_name = {'lfa': 'fdw_lf',
+                    'lfb': 'fdw_lf',
+                    'mfa': 'fdw_mf',
+                    'mfb': 'fdw_mf',
+                    'uhfa': 'fdw_uhf',
+                    'uhfb': 'fdw_uhf'}
+
+        qid_dict_config_noise_name = {
+                    'lfa': 'so_lat_mbs_mss0002',
+                    'lfb': 'so_lat_mbs_mss0002',
+                    'mfa': 'so_lat_mbs_mss0002',
+                    'mfb': 'so_lat_mbs_mss0002',
+                    'uhfa': 'so_lat_mbs_mss0002',
+                    'uhfb': 'so_lat_mbs_mss0002'}
+        
+        print(f"Initializing NoiseMetadata with qid: {self.qid}")        
+        self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
+                                        qid_dict_noise_model_name[self.qid],
+                                        *qid_dict_noise[self.qid])
+
+    # def get_noise_fn(sim_num, split_num, lmax=5400, alm=True):
+    #     return tnm.get_sim_fn(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm)
+    
+    def get_index_sim_qid(self,qid):
+
+        # Define a mapping from order to index
+        order_to_index = {'a': 0, 'b': 1}
+        # Extract the order from the qid
+        order = qid.split('mf')[1] #[1] \\ok 
+        # Get the index corresponding to the order
+        index = order_to_index[order]
+
+        return index
+
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True):
+        
+        # grab a sim from disk, fail if does not exist on-disk
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        index = self.get_index_sim_qid(self.qid)
+        my_sim = my_sim[index].squeeze()
+        
+        return my_sim   
 
 class ACTNoiseMetadata:
     
@@ -718,7 +859,7 @@ def preprocess_core(imap, mask,
         imap = enmap.downgrade(imap,dfact)
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-        
+
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
@@ -860,7 +1001,19 @@ def get_mask_tag(mask_fn, mask_subproduct):
     skyfrac  = re.search(r'_(\d{2})(?:_[^_]+)?\.fits$', mask_fn).group(1) # re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
 
     return f'{daynight}_{skyfrac}'
+def get_mask_tag_so(mask_fn, mask_subproduct):
+    ##TBD how to implement this
+    """
+    Extracts and returns the tag from the mask filename.
+    """
 
+    assert mask_subproduct == 'so_lat_mbs_mss0002', 'mask tag only implemented for so_lat_mbs_mss0002 masks'
+    # find daynight tag "daydeep", "daywide" o "night"
+    daynight = re.search(r'(mss0002)', mask_fn).group(0)
+    # find skyfraction. it is the string between the last "_" and ".fits"
+    skyfrac  = re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
+
+    return f'{daynight}_{skyfrac}'
 def read_weights(args):
 
     nqids = len(args.qids)
