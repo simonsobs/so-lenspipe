@@ -17,8 +17,8 @@ nspecs = len(specs_weights['QU'])
 def is_planck(qid):
     return (parse_qid_experiment(qid)=='planck')
 
-def is_lat_iso(qid):
-    return (parse_qid_experiment(qid)=='lat_iso')
+def is_pipe4_BN(qid):
+    return (parse_qid_experiment(qid)=='pipe4_BN')
 def is_SOsims(qid):
     return (parse_qid_experiment(qid)=='so_sims')
 
@@ -28,7 +28,7 @@ def parse_qid_experiment(qid):
     elif qid[:3]=='sobs_':
         return 'sobs'
     elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
-        return 'lat_iso'
+        return 'pipe4_BN'
     elif qid in ['lfa', 'lfb','mfa','mfb', 'uhfa', 'uhfb']:
         return 'so_sims'
     else:
@@ -101,34 +101,6 @@ def get_inpaint_mask(args, datamodel):
     else:
         print('not inpainting')
         return None
-def get_inpaint_mask_mss(args, datamodel):
-    
-    '''
-    args.inpaint: bool, if True, you want to inpaint
-    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
-    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
-    args.regular_hole: float, radius of hole [arcmin] for regular sources
-    args.large_hole: float, radius of hole [arcmin] for large sources
-    args.shape: tuple, shape of mask
-    args.wcs: wcs object, wcs of mask
-    '''
-    
-    if args.inpaint:
-        print('inpainting MSS')
-        assert args.cat_date is not None, "cat_date must be provided for inpaint"
-
-        # read catalog coordinates
-        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'websky_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs_mss'))
-
-        # Make masks for gapfill
-        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-        jmask = mask1 
-        jmask = ~jmask
-        return jmask
-    
-    else:
-        print('not inpainting')
-        return None
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_name 
     """
@@ -148,7 +120,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
     """
     
     meta = bunch.Bunch({})
-    assert 0 <= int(splitnum) < 4, "only supporting splits [0,1,2,3]"
+    # print("splitnum", splitnum)
+    # print(type(splitnum))
+    # assert 0 <= int(splitnum) < 4, "only supporting splits [0,1,2,3]"
     if parse_qid_experiment(qid)=='planck':
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
@@ -195,7 +169,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
         meta.beam_fells = Beam.get_effective_beam()[1]
         meta.transfer_fells = Beam.get_effective_beam()[2]
-    elif parse_qid_experiment(qid)=='lat_iso':
+    elif parse_qid_experiment(qid)=='pipe4_BN':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
@@ -226,7 +200,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         meta.calibration = 1.
         meta.pol_eff = 1.
 
-        meta.inpaint_mask = get_inpaint_mask_mss(args, meta.dm)
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
@@ -256,7 +230,7 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
     if is_planck(qid):
         assert splitnum in [1,2], "Planck splits are either 1 or 2"
         maptag='srcfree'
-    elif is_lat_iso(qid):
+    elif is_pipe4_BN(qid):
         maptag='map'
     else:
         maptag='map_srcfree'
