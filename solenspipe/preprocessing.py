@@ -93,6 +93,8 @@ def get_inpaint_mask(args, datamodel):
         print('not inpainting')
         return None
 
+
+
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
@@ -111,7 +113,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     
     meta = bunch.Bunch({})
-    assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
+    #assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
     if parse_qid_experiment(qid)=='planck':
         meta.Name = 'planck_npipe'
         meta.dm = DataModel.from_config(meta.Name)
@@ -132,6 +134,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         # and ACT splits 2 + 3 to Planck split 2
         isplit = None if coadd else (splitnum // 2 + 1)
     elif parse_qid_experiment(qid)=='act':
+        
+        CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
+        POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
+        POLEFF_CORRECTION = {'pa5a': 1.0, 'pa5b': 1.0001046791583796, 'pa6a': 1.0009239297813366, 'pa6b': 1.0001040474456353}
+
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
@@ -144,8 +151,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
             meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct)
             meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct)
         else:
-            meta.calibration = 1.
-            meta.pol_eff = 1.
+            meta.calibration = CAL_CORRECTION[qid.split('_')[0]]
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct) # 1. #CAL_CORRECTION[qid.split('_')[0]] * POLEFF_CORRECTION[qid.split('_')[0]] * 
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
@@ -155,9 +162,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
         
-        Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
-        meta.beam_fells = Beam.get_effective_beam()[1]
-        meta.transfer_fells = Beam.get_effective_beam()[2]
+        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
 
     return meta, isplit
 
@@ -199,9 +206,6 @@ def process_beam(sofind_beam, norm=True):
     return beam
 
 
-CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
-POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
-
 class ACTBeamHelper:
     
 
@@ -213,6 +217,7 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
+        self.poleff_subproduct = args.poleff_subproduct
         self.daynight = daynight
 
     def get_beam(self):
@@ -222,9 +227,10 @@ class ACTBeamHelper:
             beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
             beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
 
-            if self.daynight != 'night':
-                beam_T[1] = beam_T[1] * CAL_CORRECTION[self.qid.split('_')[0]]
-                beam_P[1] = beam_P[1] * POL_CORRECTION[self.qid.split('_')[0]]
+            
+            # if self.daynight != 'night':
+            #     beam_T[1] = beam_T[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+            #     beam_P[1] = beam_P[1] * POL_CORRECTION[self.qid.split('_')[0]]
 
             beam_T = process_beam(beam_T, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
             beam_P = process_beam(beam_P, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
@@ -234,15 +240,28 @@ class ACTBeamHelper:
         else:
             beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
             
-            if self.daynight != 'night':
-                beam_map[1] = beam_map[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+            # if self.daynight != 'night':
+            #     print('removing tf from beam --day')
+            #     tf_night = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid.split('_')[0])
+            #     tf = maps.interp(tf_night[0], tf_night[1], fill_value='extrapolate')
+            #     #beam_map_T = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            #     # beam_map[1] *= self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
+            #     beam_map[1] /= tf(np.arange(len(beam_map[0]))) #  / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct))
+            #     beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            # # if self.daynight != 'night':
+            # #     beam_map[1] = beam_map[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+                
+            #     return beam_map # beam_map_T, beam_map_P
 
-            beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
-            return beam_map
-
+            # else:
+            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            
     def get_tf(self):
         
+        #ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid.split('_')[0])
         if self.daynight == 'night':
+            print('why am i here')
+            print(self.daynight)
             ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
         else: 
             ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
@@ -253,23 +272,23 @@ class ACTBeamHelper:
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
         
-        if self.beam_subproduct == 'beams_v4_20230130_snfit':
+        # if self.daynight != 'night': #if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
-            beam_T, beam_P = self.get_beam()
-            beam_T = beam_T(np.arange(self.mlmax+1))
-            beam_P = beam_P(np.arange(self.mlmax+1))
+        #     beam_T, beam_P = self.get_beam()
+        #     beam_T = beam_T(np.arange(self.mlmax+1))
+        #     beam_P = beam_P(np.arange(self.mlmax+1))
             
-            beam = beam_P
-            fkbeam[0] = beam_T
-            fkbeam[1] = beam_P
-            fkbeam[2] = beam_P
+        #     beam = beam_T # beam_P!
+        #     fkbeam[0] = beam_T
+        #     fkbeam[1] = beam_P
+        #     fkbeam[2] = beam_P
             
-        else:
-            beam = self.get_beam()(np.arange(self.mlmax+1))
-            
-            fkbeam[0] = beam * tf
-            fkbeam[1] = beam
-            fkbeam[2] = beam
+        # else:
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
+        fkbeam[2] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
 
         return fkbeam, beam, tf
 
