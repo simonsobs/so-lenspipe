@@ -16,12 +16,17 @@ nspecs = len(specs_weights['QU'])
 
 def is_planck(qid):
     return (parse_qid_experiment(qid)=='planck')
+
+def is_lat_iso(qid):
+    return (parse_qid_experiment(qid)=='lat_iso')
         
 def parse_qid_experiment(qid):
     if qid in ['p01','p02','p03','p04','p05','p06','p07']:
         return 'planck'
     elif qid[:3]=='sobs_':
         return 'sobs'
+    elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
+        return 'lat_iso'
     else:
         return 'act'
 
@@ -121,9 +126,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nsplits = 2
         meta.calibration = 1.0
         meta.pol_eff = 1.0
-        Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
-        meta.beam_fells = Beam.get_effective_beam()[1]
-        meta.transfer_fells = Beam.get_effective_beam()[2]
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
@@ -165,6 +170,29 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
+        
+    elif parse_qid_experiment(qid)=='lat_iso':
+        meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        meta.calibration = 1.
+        meta.pol_eff = 1.
+
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.maptype = 'native'
+        meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        isplit = None if coadd else splitnum
+        
+        meta.Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]  #done
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
+
 
     return meta, isplit
 
@@ -185,6 +213,8 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
     if is_planck(qid):
         assert splitnum in [1,2], "Planck splits are either 1 or 2"
         maptag='srcfree'
+    elif is_lat_iso(qid):
+        maptag='map'
     else:
         maptag='map_srcfree'
     return datamodel.read_map(qid=qid, coadd=coadd,
@@ -205,7 +235,39 @@ def process_beam(sofind_beam, norm=True):
     beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
     return beam
 
+class SOLATBeamHelper:
+    def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.daynight = daynight #not really needed here
+    
+    def get_beam(self):
+        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+        beam_map = process_beam(beam_map,True)
+        return beam_map
+        
+    def get_tf(self):
+        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
 
+        return fkbeam, beam, tf   
+        
 class ACTBeamHelper:
     
 
@@ -335,6 +397,48 @@ class PlanckNoiseMetadata:
         return reproject.healpix2map(residual_map, lmax=lmax,
                                      rot='gal,equ',save_alm=True)*10**6
 
+
+class SOLATNoiseMetadata:
+    def __init__(self, qid, verbose=False):
+        self.qid = qid
+        
+        qid_dict_noise = {'ot_i1_f090': ["ot_i1_f090", "ot_i1_f150"],
+                          'ot_i1_f150': ["ot_i1_f090", "ot_i1_f150"],
+                          'ot_i3_f090': ["ot_i3_f090", "ot_i3_f150"],
+                          'ot_i3_f150': ["ot_i3_f090", "ot_i3_f150"],
+                          'ot_i4_f090': ["ot_i4_f090", "ot_i4_f150"],
+                          'ot_i4_f150': ["ot_i4_f090", "ot_i4_f150"],
+                          'ot_i6_f090': ["ot_i6_f090", "ot_i6_f150"],
+                          'ot_i6_f150': ["ot_i6_f090", "ot_i6_f150"],
+                          }
+        config_name="so_lat_pipe4_BN"
+        noise_model_name="tile_cmbmask"
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+            
+        self.tnm = nm.BaseNoiseModel.from_config(config_name,
+                                                 noise_model_name,
+                                                 *qid_dict_noise[self.qid])
+        
+    def get_index_sim_qid(self,qid):
+
+        # Define a mapping from order to index
+        order_to_index = {'f090': 0, 'f150': 1}
+        # Extract the order from the qid
+        order = qid.split('_')[-1]
+        # Get the index corresponding to the order
+        index = order_to_index[order]
+
+        return index
+
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True):
+        
+        # grab a sim from disk, fail if does not exist on-disk
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        index = self.get_index_sim_qid(self.qid)
+        my_sim = my_sim[index].squeeze()
+        
+        return my_sim           
 
 class ACTNoiseMetadata:
     
