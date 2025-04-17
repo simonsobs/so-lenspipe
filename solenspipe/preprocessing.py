@@ -140,9 +140,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
     elif parse_qid_experiment(qid)=='act':
         
-        CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
-        POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
-        POLEFF_CORRECTION = {'pa5a': 1.0, 'pa5b': 1.0001046791583796, 'pa6a': 1.0009239297813366, 'pa6b': 1.0001040474456353}
+        # CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
+        # POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
+        # POLEFF_CORRECTION = {'pa5a': 1.0, 'pa5b': 1.0001046791583796, 'pa6a': 1.0009239297813366, 'pa6b': 1.0001040474456353}
+        SIGURD_CAL = {'pa5a': 1.0156, 'pa5b': 0.9851 ,'pa6a': 1.0140, 'pa6b': 0.9686 } #https://phy-act1.princeton.edu/~snaess/actpol/daybeam_cmb/20231103/params/global_dr6_v4_day_and_night.py
 
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
@@ -156,8 +157,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
             meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct)
             meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct)
         else:
-            meta.calibration = CAL_CORRECTION[qid.split('_')[0]]
-            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct) # 1. #CAL_CORRECTION[qid.split('_')[0]] * POLEFF_CORRECTION[qid.split('_')[0]] * 
+            meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct) / SIGURD_CAL[qid.split('_')[0]]
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct)
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
@@ -503,14 +504,27 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, fwhm=1.6, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
         
-        return my_sim        
+        if mask is not None:
+            print('I am re-masking the noisy sim')
+            bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
+            alm_con = cs.almxfl(my_sim,bl)
+        
+            new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
+            new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
+    
+            return new_alm  
+
+        else:
+            return my_sim        
+
+
 
 class PlanckBeamHelper:
 
@@ -841,9 +855,9 @@ def calculate_noise_power(nmap, mask, mlmax, nsplits, pureEB):
     for k in range(nsplits):
 
         if pureEB:
-            Ealm,Balm=simgen.pureEB(nmap[k][1],nmap[k][2],mask,returnMask=0,lmax=mlmax,isHealpix=False)
-            alm_T=cs.map2alm(nmap[k][0],lmax=mlmax)
-            alm_a=np.array([alm_T,Ealm,Balm], dtype=np.complex128)
+            _,Balm=simgen.pureEB(nmap[k][1],nmap[k][2],mask,returnMask=0,lmax=mlmax,isHealpix=False)
+            alm_T, alm_E, _ =cs.map2alm(nmap[k],lmax=mlmax)
+            alm_a=np.array([alm_T,alm_E,Balm], dtype=np.complex128)
             cl_ab.append(cs.alm2cl(alm_a))
         else:
             alm_a = np.array(cs.map2alm(nmap[k],lmax=mlmax), dtype=np.complex128)
