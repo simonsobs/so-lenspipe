@@ -646,8 +646,10 @@ def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
                                  field_names_alpha=None,field_names_beta=None,skip_filter_field_names=False,
                                  split_estimator=split_estimator)
 
-def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
-         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
+              #get_kmap1=None,get_kmap2=None,get_kmap3=None,
+              qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, 
+              use_mpi=True, verbose=True, skip_rd=False,shear=False,power_mcn0=None):
     """
     This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
 
@@ -671,13 +673,11 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
         A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
 
     """
-    
-         
+
     i_set,start=sim_set
     qa = phifunc 
     qf1 = qfunc1
     qf2=qfunc2
-    
 
     mcn0evals = []
     if not(skip_rd): 
@@ -695,10 +695,10 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
     for i in my_tasks:
         i=i+start
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
-        Xs  = get_kmap((0,i_set,i))
-        Xs1= get_kmap1((0,i_set,i))
-        Xs2= get_kmap2((0,i_set,i))
-        Xs3= get_kmap3((0,i_set,i))
+        Xs  = get_kmap((0,i_set,i), split=0)
+        Xs1 = get_kmap((0,i_set,i), split=1)
+        Xs2 = get_kmap((0,i_set,i), split=2)
+        Xs3 = get_kmap((0,i_set,i), split=3)
 
 
         if not(skip_rd): 
@@ -717,10 +717,10 @@ def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_
                 rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
                         + power(qaXsX,qbXsX) 
 
-        Xsp = get_kmap((0,i_set,i+1)) 
-        Xsp1 = get_kmap1((0,i_set,i+1)) 
-        Xsp2 = get_kmap2((0,i_set,i+1)) 
-        Xsp3 = get_kmap3((0,i_set,i+1)) 
+        Xsp  = get_kmap((0,i_set,i+1), split=0) 
+        Xsp1 = get_kmap((0,i_set,i+1), split=1) 
+        Xsp2 = get_kmap((0,i_set,i+1), split=2) 
+        Xsp3 = get_kmap((0,i_set,i+1), split=3) 
 
 
         if power_mcn0 is None:
