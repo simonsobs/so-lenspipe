@@ -480,9 +480,15 @@ def pixellWrapperSpinS(alm2map,alm,mp12,spin):
     return SP-1j*SM
 
 
-def pureEB(Q,U,mask_0,returnMask=0,lmax=None,isHealpix=True):
+def pureEB(Q,U,mask_0,masked_on_input=True, returnMask=0,lmax=None,isHealpix=True):
     #code by Will Coulton
     #from pixell import sharp
+    
+    if masked_on_input:
+        Q = Q / mask_0
+        U = U / mask_0
+        Q[~np.isfinite(Q)] = 0
+        U[~np.isfinite(U)] = 0
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
