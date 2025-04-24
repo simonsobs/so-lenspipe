@@ -1410,13 +1410,16 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
   
     lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
-    if profile is None:
-        profile=np.ones(Lmax+1)
-    else:
-        profile=profile[:Lmax+1]
-        nlpp=nlpp[:ls.size]
-        nlss=nlss[:ls.size]
-        response=response[:ls.size]
+    print("Profile in utility=", profile)
+    # if profile is None:
+    #     print("Profile is none", profile)
+    #     profile=np.ones(Lmax+1)
+    # else:
+    #     print("Profile is NOT none", profile)
+    #     profile=profile[:Lmax+1]
+    #     nlpp=nlpp[:ls.size]
+    #     nlss=nlss[:ls.size]
+    #     response=response[:ls.size]
 
     #ocl= noise+fcl
     ocl=ffl

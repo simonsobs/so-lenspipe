@@ -101,7 +101,35 @@ def get_inpaint_mask(args, datamodel):
     else:
         print('not inpainting')
         return None
+def get_inpaint_mask_mss(args, datamodel):
+    
+    '''
+    args.inpaint: bool, if True, you want to inpaint
+    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
+    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+    args.regular_hole: float, radius of hole [arcmin] for regular sources
+    args.large_hole: float, radius of hole [arcmin] for large sources
+    args.shape: tuple, shape of mask
+    args.wcs: wcs object, wcs of mask
+    '''
+    
+    if args.inpaint:
+        print('inpainting MSS')
+        assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
+        # read catalog coordinates
+        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'websky_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs_mss'))
+
+        # Make masks for gapfill
+        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        jmask = mask1 
+        jmask = ~jmask
+        return jmask
+    
+    else:
+        print('not inpainting')
+        return None
+    
 def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_name 
     """
     SOFind-aware function to get map metadata
@@ -170,6 +198,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         meta.beam_fells = Beam.get_effective_beam()[1]
         meta.transfer_fells = Beam.get_effective_beam()[2]
     elif parse_qid_experiment(qid)=='pipe4_BN':
+        print("Pipe4 BN")
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
@@ -188,6 +217,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         isplit = None if coadd else splitnum
         
         Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.fkbeam_fells = Beam.get_effective_beam()[0]  #done
         meta.beam_fells = Beam.get_effective_beam()[1]  #done
         meta.transfer_fells = Beam.get_effective_beam()[2] #done
     elif parse_qid_experiment(qid)=='so_sims':
@@ -200,7 +230,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):  #add args.config_nam
         meta.calibration = 1.
         meta.pol_eff = 1.
 
-        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.inpaint_mask = get_inpaint_mask_mss(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
@@ -981,13 +1011,13 @@ def get_mask_tag_so(mask_fn, mask_subproduct):
     Extracts and returns the tag from the mask filename.
     """
 
-    assert mask_subproduct == 'so_lat_mbs_mss0002', 'mask tag only implemented for so_lat_mbs_mss0002 masks'
+    # assert mask_subproduct == 'so_lat_mbs_mss0002', 'mask tag only implemented for so_lat_mbs_mss0002 masks'
     # find daynight tag "daydeep", "daywide" o "night"
-    daynight = re.search(r'(mss0002)', mask_fn).group(0)
+    # daynight = re.search(r'(pipe4_bn)', mask_fn).group(0)
     # find skyfraction. it is the string between the last "_" and ".fits"
     skyfrac  = re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
 
-    return f'{daynight}_{skyfrac}'
+    return f'{skyfrac}'
 def read_weights(args):
 
     nqids = len(args.qids)
