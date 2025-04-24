@@ -485,10 +485,11 @@ def pureEB(Q,U,mask_0,masked_on_input=True, returnMask=0,lmax=None,isHealpix=Tru
     #from pixell import sharp
     
     if masked_on_input:
-        Q = Q / mask_0
-        U = U / mask_0
-        Q[~np.isfinite(Q)] = 0
-        U[~np.isfinite(U)] = 0
+        mask = mask_0 != 0
+        Q = np.divide(Q, mask_0, where=mask)
+        U = np.divide(U, mask_0, where=mask) # U / mask_0
+        Q[~mask] = 0.
+        U[~mask] = 0. # U[~np.isfinite(U)] = 0
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
