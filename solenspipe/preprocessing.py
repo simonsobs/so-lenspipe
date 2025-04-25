@@ -200,7 +200,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
 
     elif parse_qid_experiment(qid)=='so_mss2':
-        meta.Name = 'so_lat_mss0002' ##this should be passed as argument otherwise use default
+        meta.Name = 'so_lat_mbs_mss0002' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
@@ -209,7 +209,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.calibration = 1.
         meta.pol_eff = 1.
 
-        meta.inpaint_mask = get_inpaint_mask_mss(args, meta.dm)
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
