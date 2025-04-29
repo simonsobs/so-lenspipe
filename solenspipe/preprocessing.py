@@ -10,9 +10,9 @@ import healpy as hp
 from scipy import interpolate
 import re
 
-specs_weights = {'QU': ['I','Q','U'],
-        'EB': ['I','E','B']}
-nspecs = len(specs_weights['QU'])
+specs_weights = {'EpureB': ['T','E','pureB'],
+        'EB': ['T','E','B']}
+nspecs = len(specs_weights['EB'])
 
 def is_planck(qid):
     return (parse_qid_experiment(qid)=='planck')
@@ -92,6 +92,18 @@ def get_inpaint_mask(args, datamodel):
         jmask = mask1 & mask2
         jmask = ~jmask
         
+        # if args.not_srcfree:
+        #     print('adding srcfull mask')
+        #     planck70 = datamodel.read_mask(mask_fn='dr6v4_lensing_20240918_planck_galactic_mask_70.fits', subproduct=args.mask_subproduct)
+        #     planck70 = enmap.extract( enmap.downgrade(planck70,2), args.shape, args.wcs)
+            
+        #     inpaint_mask = datamodel.read_mask(mask_fn='source_mask_15mJy_and_dust_rad5.fits', subproduct=args.mask_subproduct)
+        #     inpaint_mask = enmap.enmap(enmap.downgrade(inpaint_mask,2), dtype=bool)
+        #     inpaint_mask = ~inpaint_mask
+
+        #     final_mask = enmap.enmap((~jmask & ~inpaint_mask) * planck70, dtype=bool)
+        #     return final_mask
+        
         return jmask
     
     else:
@@ -165,7 +177,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
-        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
         
         meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
@@ -280,7 +292,7 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
-        self.poleff_subproduct = args.poleff_subproduct
+        #self.poleff_subproduct = args.poleff_subproduct
         self.daynight = daynight
 
     def get_beam(self):
@@ -504,25 +516,26 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, fwhm=1.6, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, fwhm=1.6):#, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
+        return my_sim
         
-        if mask is not None:
-            print('I am re-masking the noisy sim')
-            bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
-            alm_con = cs.almxfl(my_sim,bl)
+        # if mask is not None:
+        #     print('I am re-masking the noisy sim')
+        #     bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
+        #     alm_con = cs.almxfl(my_sim,bl)
         
-            new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
-            new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
+        #     new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
+        #     new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
     
-            return new_alm  
+        #     return new_alm  
 
-        else:
-            return my_sim        
+        # else:
+        #     return my_sim        
 
 
 
@@ -913,9 +926,9 @@ def read_weights(args):
     noise_specs = np.zeros((nspecs, nqids, args.mlmax+1), dtype=np.float64)
 
     if args.pureEB:
-        specs = specs_weights['EB']
+        specs = specs_weights['EpureB']
     else:
-        specs = specs_weights['QU']
+        specs = specs_weights['EB']
 
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
