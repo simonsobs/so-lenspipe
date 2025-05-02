@@ -8,57 +8,74 @@ from solenspipe import utility as simgen
 import os
 import healpy as hp
 from scipy import interpolate
+import re
 
-specs_weights = {'QU': ['I','Q','U'],
-        'EB': ['I','E','B']}
-nspecs = len(specs_weights['QU'])
+specs_weights = {'EpureB': ['T','E','pureB'],
+        'EB': ['T','E','B']}
+nspecs = len(specs_weights['EB'])
 
 def is_planck(qid):
-    if qid in ['p01','p02','p03','p04','p05', 'p06', 'p07']:
-        return True
-    else:
-        return False
+    return (parse_qid_experiment(qid)=='planck')
 
-def process_residuals_alms(split, freq, task):
+def is_lat_iso(qid):
+    return (parse_qid_experiment(qid)=='lat_iso')
+
+def is_mss2(qid):
+    return (parse_qid_experiment(qid)=='so_mss2')
+          
+def parse_qid_experiment(qid):
+    if qid in ['p01','p02','p03','p04','p05','p06','p07']:
+        return 'planck'
+    elif qid[:3]=='sobs_':
+        return 'sobs'
+    elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
+        return 'lat_iso'
+    elif qid in ['lfa', 'lfb','mfa','mfb', 'uhfa', 'uhfb']:
+        return 'so_mss2'
+    else:
+        return 'act'
+
+# leaving this for archival purposes for now
+# function called in v5 preprocessing is in PlanckNoiseMetadata
+def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbond/jiaqu/"):
     """
     Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
     This is done for a given simulation type, frequency, and task number.
 
     Parameters
     ----------
-    split : int
-        The split that the residual corresponds to 0 or 1 =='npipe6v20A', 2 or 3=='npipe6v20B'
+    isplit : int
+        The Planck split that the residual corresponds to, 0 for 'npipe6v20A', 1 for 'npipe6v20B'
+        (This format is automatically compatible with the Planck metadata format from get_metadata)
 
     freq : int
         The frequency (in GHz) of the data to be processed, used to select the 
-        corresponding residual files.
+        corresponding residual files. Can be provided using:
+        metadata.noisemodel.qid_dict_config_noise_name[qid]
 
     task : int
         The task identifier for the simulation. This is used to generate a unique index 
         for identifying the residual files. +200 is added to the task number to match the simulation label of Planck simulations
-
 
     output_path : str
         The directory path where the processed enmap residual files will be saved.
     """
 
     n_index = str(task+200).zfill(4)
-    if split==0 or split==1:
-        sim_type = 'npipe6v20A'
-    elif split==2 or split==3:
-        sim_type = 'npipe6v20B'
+    sim_type = 'npipe6v20' + ('A' if isplit == 1 else 'B')
     #TODO (not urgent) Put the path in sofind
-    residual = hp.read_map(f'/gpfs/fs0/project/r/rbond/jiaqu/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
+    residual = hp.read_map(f'{root_path}/{sim_type}_sim/{n_index}/residual/residual_{sim_type}_{freq}_{n_index}.fits', field=(0,1,2))
     #multiply by Planck map factor to convert to uKarcmin
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
 
 
 
-def get_inpaint_mask(args):
+def get_inpaint_mask(args, datamodel):
     
     '''
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
+    args.inpaint: bool, if True, you want to inpaint
+    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -66,25 +83,44 @@ def get_inpaint_mask(args):
     args.wcs: wcs object, wcs of mask
     '''
     
-    datamodel = DataModel.from_config(args.config_name)
-    
-    # read catalog coordinates
-    rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
-    ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+    if args.inpaint:
+        print('inpainting')
+        assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
-    # Make masks for gapfill
-    mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-    mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
-    jmask = mask1 & mask2
-    jmask = ~jmask
+        # read catalog coordinates
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+
+        # Make masks for gapfill
+        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+        jmask = mask1 & mask2
+        jmask = ~jmask
+        
+        # if args.not_srcfree:
+        #     print('adding srcfull mask')
+        #     planck70 = datamodel.read_mask(mask_fn='dr6v4_lensing_20240918_planck_galactic_mask_70.fits', subproduct=args.mask_subproduct)
+        #     planck70 = enmap.extract( enmap.downgrade(planck70,2), args.shape, args.wcs)
+            
+        #     inpaint_mask = datamodel.read_mask(mask_fn='source_mask_15mJy_and_dust_rad5.fits', subproduct=args.mask_subproduct)
+        #     inpaint_mask = enmap.enmap(enmap.downgrade(inpaint_mask,2), dtype=bool)
+        #     inpaint_mask = ~inpaint_mask
+
+        #     final_mask = enmap.enmap((~jmask & ~inpaint_mask) * planck70, dtype=bool)
+        #     return final_mask
+        
+        return jmask
     
-    return jmask
+    else:
+        print('not inpainting')
+        return None
+
+
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     SOFind-aware function to get map metadata
     
-    args.config_name: str, sofind datamodel, e.g. 'act_dr6v4'
     args.cat_date: str, date of inpaint catalog, e.g. '20241002'
     args.regular_hole: float, radius of hole [arcmin] for regular sources
     args.large_hole: float, radius of hole [arcmin] for large sources
@@ -98,41 +134,105 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     args.kvfilter: int, vertical fourier strip width
     """
     
-    
     meta = bunch.Bunch({})
-    if is_planck(qid):
-        beam_helper = PlanckBeamHelper(path=args.planck_beam_path)
-        meta.beam_fells = beam_helper.get_beam(qid=qid, splitnum=splitnum, pixwin=True)
-        meta.transfer_fells = 1.0
+    #assert 0 <= splitnum < 4, "only supporting splits [0,1,2,3]"
+    if parse_qid_experiment(qid)=='planck':
+        meta.Name = 'planck_npipe'
+        meta.dm = DataModel.from_config(meta.Name)
+        meta.splits = np.array([1,2])
+        meta.nsplits = 2
         meta.calibration = 1.0
         meta.pol_eff = 1.0
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
-        meta.nsplits = 2
-        meta.nspecs = nspecs
-        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
-        meta.noisemodel = PlanckNoiseMetadata(qid)
-        if splitnum==0 or splitnum==1:
-            isplit = 0
-        elif splitnum==2 or splitnum==3:
-            isplit = 1
-
-    else:
-        dm = DataModel.from_config(args.config_name)
+        meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
+                                              config_name=meta.Name,
+                                              subproduct_name="noise_sims")
+        # assigning ACT splits 0 + 1 to Planck split 1
+        # and ACT splits 2 + 3 to Planck split 2
+        isplit = None if coadd else (splitnum // 2 + 1)
+    elif parse_qid_experiment(qid)=='act':
         
-        meta.beam_fells = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split=splitnum, coadd=coadd)
-        meta.transfer_fells = dm.read_tf(qid, subproduct = args.tf_subproduct)
-        meta.calibration = dm.read_calibration(qid, subproduct=args.cal_subproduct)
-        meta.pol_eff = dm.read_calibration(qid, subproduct=args.poleff_subproduct)
-        meta.inpaint_mask = get_inpaint_mask(args)
+        # CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
+        # POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
+        # POLEFF_CORRECTION = {'pa5a': 1.0, 'pa5b': 1.0001046791583796, 'pa6a': 1.0009239297813366, 'pa6b': 1.0001040474456353}
+        SIGURD_CAL = {'pa5a': 1.0156, 'pa5b': 0.9851 ,'pa6a': 1.0140, 'pa6b': 0.9686 } #https://phy-act1.princeton.edu/~snaess/actpol/daybeam_cmb/20231103/params/global_dr6_v4_day_and_night.py
+
+        meta.Name = 'act_dr6v4'
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        meta.daynight = qid_dict['daynight']
+   
+        if meta.daynight == 'night':
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct)
+            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct)
+        else:
+            meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct) / SIGURD_CAL[qid.split('_')[0]]
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct)
+
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
-        meta.nsplits = dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)['num_splits']
-        meta.noisemodel = ACTNoiseMetadata(qid)
+        meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
+        isplit = None if coadd else splitnum
+        
+        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
+        
+    elif parse_qid_experiment(qid)=='lat_iso':
+        meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        meta.calibration = 1.
+        meta.pol_eff = 1.
+
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.maptype = 'native'
+        meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
         meta.nspecs = nspecs
         meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
         isplit = None if coadd else splitnum
+        
+        meta.Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]  #done
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
+
+    elif parse_qid_experiment(qid)=='so_mss2':
+        meta.Name = 'so_lat_mbs_mss0002' ##this should be passed as argument otherwise use default
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        meta.calibration = 1.
+        meta.pol_eff = 1.
+
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.maptype = 'native'
+        meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        isplit = None if coadd else splitnum
+        
+        meta.Beam = SOsimsBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]  #done
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
+
 
     return meta, isplit
 
@@ -151,8 +251,10 @@ def get_data_ivar(qid, splitnum=0, coadd=False, args=None):
 def get_data_map(qid, splitnum=0, coadd=False, args=None):
     datamodel = DataModel.from_config(args.config_name)
     if is_planck(qid):
-        splitnum+=1
+        assert splitnum in [1,2], "Planck splits are either 1 or 2"
         maptag='srcfree'
+    elif is_lat_iso(qid):
+        maptag='map'
     else:
         maptag='map_srcfree'
     return datamodel.read_map(qid=qid, coadd=coadd,
@@ -173,41 +275,162 @@ def process_beam(sofind_beam, norm=True):
     beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
     return beam
 
-class EffectiveBeam:
-
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+class SOLATBeamHelper:
+    def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
         self.datamodel = datamodel
         self.mlmax = args.mlmax
-        self.beam_subproduct = args.beam_subproduct
-        self.tf_subproduct = args.tf_subproduct
         self.qid = qid
         self.isplit = isplit
         self.coadd = coadd
-
-
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.daynight = daynight #not really needed here
+    
     def get_beam(self):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
-        beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        beam_map = process_beam(beam_map,True)
         return beam_map
-
+        
     def get_tf(self):
         ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
         return maps.interp(ells_tf, tf, fill_value='extrapolate')
-
+    
     def get_effective_beam(self):
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
-        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
         tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        beam = self.get_beam()(np.arange(self.mlmax+1))
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam
         fkbeam[2] = beam
+
+        return fkbeam, beam, tf   
+class SOsimsBeamHelper:
+    def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        self.daynight = daynight #not really needed here
+    
+    def get_beam(self):
+        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+        beam_map = process_beam(beam_map,True)
+        return beam_map
+        
+    def get_tf(self):
+        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+
+        return fkbeam, beam, tf           
+class ACTBeamHelper:
+    
+
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False, daynight='night'):
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        #self.poleff_subproduct = args.poleff_subproduct
+        self.daynight = daynight
+
+    def get_beam(self):
+        
+        if self.beam_subproduct == 'beams_v4_20230130_snfit':
+            
+            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
+            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
+
+            
+            # if self.daynight != 'night':
+            #     beam_T[1] = beam_T[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+            #     beam_P[1] = beam_P[1] * POL_CORRECTION[self.qid.split('_')[0]]
+
+            beam_T = process_beam(beam_T, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            beam_P = process_beam(beam_P, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+        
+            return beam_T, beam_P
+        
+        else:
+            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+            
+            # if self.daynight != 'night':
+            #     print('removing tf from beam --day')
+            #     tf_night = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid.split('_')[0])
+            #     tf = maps.interp(tf_night[0], tf_night[1], fill_value='extrapolate')
+            #     #beam_map_T = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            #     # beam_map[1] *= self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
+            #     beam_map[1] /= tf(np.arange(len(beam_map[0]))) #  / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct))
+            #     beam_map = process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            # # if self.daynight != 'night':
+            # #     beam_map[1] = beam_map[1] * CAL_CORRECTION[self.qid.split('_')[0]]
+                
+            #     return beam_map # beam_map_T, beam_map_P
+
+            # else:
+            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            
+    def get_tf(self):
+        
+        #ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid.split('_')[0])
+        if self.daynight == 'night':
+            print('why am i here')
+            print(self.daynight)
+            ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
+        else: 
+            ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+
+    def get_effective_beam(self):
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        
+        # if self.daynight != 'night': #if self.beam_subproduct == 'beams_v4_20230130_snfit':
+            
+        #     beam_T, beam_P = self.get_beam()
+        #     beam_T = beam_T(np.arange(self.mlmax+1))
+        #     beam_P = beam_P(np.arange(self.mlmax+1))
+            
+        #     beam = beam_T # beam_P!
+        #     fkbeam[0] = beam_T
+        #     fkbeam[1] = beam_P
+        #     fkbeam[2] = beam_P
+            
+        # else:
+        beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
+        fkbeam[2] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
+
         return fkbeam, beam, tf
 
 
 class PlanckNoiseMetadata:
     
-    def __init__(self, qid):
+    def __init__(self, qid, verbose=False,
+                 config_name="planck_npipe",
+                 subproduct_name="noise_sims"):
         self.qid = qid
 
         qid_dict_config_noise_name = {'p01': '030',
@@ -220,12 +443,158 @@ class PlanckNoiseMetadata:
                                     'p08': '547',
                                     'p09': '857'}
         
+        self.planck_config_name = config_name
+        self.planck_noise_sims_subproduct = subproduct_name
 
-                                   
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+        self.qid_freq = qid_dict_config_noise_name[qid]
+
+    # moved Frank's residual noise alm function here...
+    def noise_map_path(self, isplit, index):
+        datamodel = DataModel.from_config(self.planck_config_name)
+        maptag = str(index+200).zfill(4)
+        assert isplit in [1,2], "Planck splits are either 1 or 2"
+        split_num = "A" if isplit == 1 else "B"
+        return datamodel.get_map_fn(qid=self.qid, coadd=False,
+                                    split_num=split_num,
+                                    subproduct="noise_sims",
+                                    maptag=maptag)
+    
+    def read_in_sim(self, isplit, index, lmax=3000):
+        # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
+        residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                   field=(0,1,2))
+        return reproject.healpix2map(residual_map, lmax=lmax,
+                                     rot='gal,equ',save_alm=True)*10**6
+
+
+class SOLATNoiseMetadata:
+    def __init__(self, qid, verbose=False):
+        self.qid = qid
         
+        qid_dict_noise = {'ot_i1_f090': ["ot_i1_f090", "ot_i1_f150"],
+                          'ot_i1_f150': ["ot_i1_f090", "ot_i1_f150"],
+                          'ot_i3_f090': ["ot_i3_f090", "ot_i3_f150"],
+                          'ot_i3_f150': ["ot_i3_f090", "ot_i3_f150"],
+                          'ot_i4_f090': ["ot_i4_f090", "ot_i4_f150"],
+                          'ot_i4_f150': ["ot_i4_f090", "ot_i4_f150"],
+                          'ot_i6_f090': ["ot_i6_f090", "ot_i6_f150"],
+                          'ot_i6_f150': ["ot_i6_f090", "ot_i6_f150"],
+                          }
+        config_name="so_lat_pipe4_BN"
+        noise_model_name="tile_cmbmask"
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+            
+        self.tnm = nm.BaseNoiseModel.from_config(config_name,
+                                                 noise_model_name,
+                                                 *qid_dict_noise[self.qid])
+        
+    def get_index_sim_qid(self,qid):
+
+        # Define a mapping from order to index
+        order_to_index = {'f090': 0, 'f150': 1}
+        # Extract the order from the qid
+        order = qid.split('_')[-1]
+        # Get the index corresponding to the order
+        index = order_to_index[order]
+
+        return index
+
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6,  mask=None):
+        
+        # grab a sim from disk, fail if does not exist on-disk
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        index = self.get_index_sim_qid(self.qid)
+        my_sim = my_sim[index].squeeze()
+
+        if mask is not None:
+            print('I am re-masking the noisy sim')
+            bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
+            alm_con = cs.almxfl(my_sim,bl)
+        
+            new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
+            new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
+    
+            return new_alm  
+
+        else:
+            return my_sim 
+                 
+
+class SOsimsNoiseMetadata:
+    
+    def __init__(self, qid, verbose=False):
+        self.qid = qid
+            
+        # noise model qids
+                # noise model qids
+        qid_dict_noise = {'lfa': ['lfa', 'lfb'],
+                    'lfb': ['lfa', 'lfb'],
+                    'mfa': ['mfa', 'mfb'],
+                    'mfb': ['mfa', 'mfb'],
+                    'uhfa': ['uhfa', 'uhfb'],
+                    'uhfb': ['uhfa', 'uhfb']}
+
+        qid_dict_noise_model_name = {'lfa': 'fdw_lf',
+                    'lfb': 'fdw_lf',
+                    'mfa': 'fdw_mf',
+                    'mfb': 'fdw_mf',
+                    'uhfa': 'fdw_uhf',
+                    'uhfb': 'fdw_uhf'}
+
+        qid_dict_config_noise_name = {
+                    'lfa': 'so_lat_mbs_mss0002',
+                    'lfb': 'so_lat_mbs_mss0002',
+                    'mfa': 'so_lat_mbs_mss0002',
+                    'mfb': 'so_lat_mbs_mss0002',
+                    'uhfa': 'so_lat_mbs_mss0002',
+                    'uhfb': 'so_lat_mbs_mss0002'}
+        
+        print(f"Initializing NoiseMetadata with qid: {self.qid}")        
+        self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
+                                        qid_dict_noise_model_name[self.qid],
+                                        *qid_dict_noise[self.qid])
+
+    # def get_noise_fn(sim_num, split_num, lmax=5400, alm=True):
+    #     return tnm.get_sim_fn(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm)
+    
+    def get_index_sim_qid(self,qid):
+
+        # Define a mapping from order to index
+        order_to_index = {'a': 0, 'b': 1}
+        # Extract the order from the qid
+        order = qid.split('mf')[1] #[1] \\ok 
+        # Get the index corresponding to the order
+        index = order_to_index[order]
+
+        return index
+
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6, mask=None):
+        
+        # grab a sim from disk, fail if does not exist on-disk
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        index = self.get_index_sim_qid(self.qid)
+        my_sim = my_sim[index].squeeze()
+
+        if mask is not None:
+            print('I am re-masking the noisy sim')
+            bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
+            alm_con = cs.almxfl(my_sim,bl)
+        
+            new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
+            new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
+    
+            return new_alm  
+
+        else:
+            return my_sim   
+        
+    
 class ACTNoiseMetadata:
     
-    def __init__(self, qid):
+    def __init__(self, qid, verbose=False):
         self.qid = qid
             
         # noise model qids
@@ -265,8 +634,9 @@ class ACTNoiseMetadata:
                                     'pa6b_dd': 'act_dr6v4_day',
                                     'pa5a_dw': 'act_dr6v4_day',
                                     'pa5b_dw': 'act_dr6v4_day'}
-        
-        print(f"Initializing NoiseMetadata with qid: {self.qid}")        
+        if verbose:
+            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+
         self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
                                         qid_dict_noise_model_name[self.qid],
                                         *qid_dict_noise[self.qid])
@@ -285,70 +655,85 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, fwhm=1.6):#, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
+        return my_sim
         
-        return my_sim        
+        # if mask is not None:
+        #     print('I am re-masking the noisy sim')
+        #     bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
+        #     alm_con = cs.almxfl(my_sim,bl)
+        
+        #     new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
+        #     new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
+    
+        #     return new_alm  
+
+        # else:
+        #     return my_sim        
+
+
 
 class PlanckBeamHelper:
-    DEFAULT_QID_DICT = {
-        'p01': '030',
-        'p02': '044',
-        'p03': '070',
-        'p04': '100',
-        'p05': '143',
-        'p06': '217',
-        'p07': '353',
-        'p08': '547',
-        'p09': '857'
-    }
 
-    def __init__(self, path, qid_dict=None):
+    def __init__(self, datamodel, args, qid, isplit):
         """
         Initialize the PlanckBeamHelper.
-
-        Parameters:
-        - path (str): Base path to the Planck beam data files.
-        - qid_dict (dict, optional): Override the default QID-to-frequency mapping.
         """
-        self.qid_dict = qid_dict or self.DEFAULT_QID_DICT
-        self.path = path
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.beam_subproduct = args.beam_subproduct
 
-    def get_beam(self, qid, splitnum, pixwin=True):
+    def get_beam(self, pixwin=True):
         """
         Retrieve the Planck beam for a given QID and split number.
 
         Parameters:
-        - qid (str): QID identifier (e.g., 'p04').
-        - splitnum (int): Split number (1 for 'A', otherwise 'B').
         - pixwin (bool): Apply pixel window function if True.
 
         Returns:
         - np.ndarray: The beam function array.
         """
-        # Get the frequency associated with the QID
-        freq = self.qid_dict.get(qid)
-        if not freq:
-            raise ValueError(f"Invalid QID: {qid}. Unable to find corresponding frequency.")
 
         # Determine split letter
-        sl = 'A' if splitnum == 1 else 'B'
+        assert self.isplit in [1,2], "Planck splits are either 1 or 2"
+        sl = 'A' if self.isplit == 1 else 'B'
 
         # Load and interpolate the beam
-        file_path = f"{self.path}/npipe_DR6_{sl}x{sl}/bl_T_npipe_DR6_{sl}x{sl}_{freq}{sl}x{freq}{sl}.dat"
-        ell_b, bl = np.loadtxt(file_path, unpack=True)
-        beam_f = interpolate.interp1d(ell_b, bl, kind='linear', bounds_error=False, fill_value=0)
+        ell_b, bl = self.datamodel.read_beam(self.qid,
+                        subproduct=self.beam_subproduct,
+                        split_num=sl)
+        beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
 
         # Generate the beam function values
-        beam_fells = beam_f(np.arange(5000))
+        beam_fells = beam_f(np.arange(self.mlmax+1))
         if pixwin:
-            beam_fells *= hp.pixwin(2048)[:5000]
+            beam_fells *= hp.pixwin(2048)[:self.mlmax+1]
 
         return beam_fells
+    
+    def get_tf(self):
+        ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        beam = self.get_beam()[np.arange(self.mlmax+1)]
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+
+        return fkbeam, beam, tf
     
     def planck_processed_beam(self, qid, splitnum, pixwin=True):
         b_ell=self.get_beam(qid, splitnum, pixwin=pixwin)
@@ -357,6 +742,98 @@ class PlanckBeamHelper:
         beam=process_beam(sofind_beam, norm=True)
         return beam
 
+
+class ForegroundHandler:
+    '''generates foregrounds'''
+
+    def __init__(self, datamodel, args):
+        
+        '''
+        datamodel: DataModel, sofind datamodel
+        args.fg_type: str, type of foregrounds, 'sims' or 'theory'
+        args.fgs_path: str, path to foreground sims
+        args.is_noiseless: bool, if True, no foregrounds are generated
+        args.lmax_signal: int, maximum ell of signal sims
+        args.maps_subproduct: str, subproduct name for maps
+        '''
+
+        self.datamodel = datamodel
+        self.args = args
+        assert self.args.fg_type in ['sims', 'theory'] # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        self.fgcov_func = self._define_fgcov_func()
+
+    def _define_fgcov_func(self):
+        ''' load foreground covariance matrix (power spectra)'''
+        if self.args.is_noiseless:
+            return None
+        if self.args.fg_type == 'sims':
+            return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
+        elif self.args.fg_type == 'theory':
+            # currently unsupported
+            # return lambda: self.get_fg_cov(qids)
+            raise NotImplementedError
+        return None
+
+    def generate_cov_fgs(self, fgs_path, lmax):
+        
+        '''
+        returns the foreground covariance matrix (power spectrum) for the given lmax 
+        at two frequencies (90 and 150 GHz) and their cross-spectrum
+        
+        fgs_path: str, path to foreground sims
+        lmax: int, maximum ell of fg power spectrum
+        '''
+        
+        w_2_foreground = 0.27
+
+        # Load foreground alms
+        foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
+        foreground_alms_150 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0145.fits')
+
+        # Generate foreground Cls and smooth them
+        cls_90 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_93)/ w_2_foreground, N=10) 
+        cls_150 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_150)/ w_2_foreground, N=10) 
+        cls_150x90 = simgen.smooth_rolling_cls(cs.alm2cl(foreground_alms_93, foreground_alms_150) / w_2_foreground, N=10)
+
+        # Initialize the covariance matrix of the map (a.k.a. power spectrum)
+        cov_matrix = np.zeros((2, 2, lmax + 1))
+
+        # Assign values to the covariance matrix
+        # 0 == f150, 1 == f090
+        cov_matrix[0, 0] = cls_150[:lmax + 1]
+        cov_matrix[0, 1] = cls_150x90[:lmax + 1]
+        cov_matrix[1, 0] = cov_matrix[0, 1]
+        cov_matrix[1, 1] = cls_90[:lmax + 1]
+
+        return cov_matrix
+
+    def get_fg_cov(self, qid):
+        raise NotImplementedError
+
+    def get_map_fgs(self, qid, alms_f):
+        '''
+        qid of the map (frequency it corresponds to) is mapped to component of alms_f
+        '''
+        qid_freq_dict = {'f150': 0, 'f090': 1}
+        qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=self.args.maps_subproduct, qid=qid)
+        index_fg = qid_freq_dict[qid_dict['freq']]
+        return alms_f[index_fg]
+
+    def get_fg_alms(self, fgcov, qid, cmb_set, sim_indices):
+        '''
+        generate alm from cl
+        
+        fgcov: np.ndarray, foreground covariance matrix (2pt)
+        qid: str, qid of the map
+        cmb_set: int, set of cmb sim (for seed)
+        sim_indices: int, index of the sim (for seed)
+        '''
+        if self.args.fg_type == 'sims':
+            alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
+            return self.get_map_fgs(qid, alms_f)
+        elif self.args.fg_type == 'theory':
+            return cs.rand_alm(fgcov)
+        return None
 
 """
 Some subtleties when applying this to different experiments:
@@ -441,7 +918,9 @@ def preprocess_core(imap, mask,
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
     if inpaint_mask is not None:
+        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+
 
     #for Planck, assert that we extract the RA DEC of the ACT footprint only
     if imap[0].shape != mask.shape:
@@ -457,6 +936,7 @@ def preprocess_core(imap, mask,
         
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
+
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
     
@@ -464,10 +944,8 @@ def preprocess_core(imap, mask,
         ivar = ivar / calibration**2.
         ivar[1:] = ivar[1:] * pol_eff**2.
     
-    if ivar is not None:
-        return imap, ivar
-    else:
-        return imap
+    return imap, ivar # ivar will be none if nothing happened to it
+
 
 
 def get_sim_core(shape,wcs,signal_alms,
@@ -503,20 +981,23 @@ def get_sim_core(shape,wcs,signal_alms,
         raise ValueError        
 
     if noise_alms is not None:
-        if noise_mask:
+        if noise_mask is not None:
             lstitch = noise_lmax - 200
             mlmax = noise_lmax + 600
             nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
                                        lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
         else:
-            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
+            nmap[~np.isfinite(nmap)] = 0.
     else:
         nmap = 0.
-        
-    omap = omap + nmap
+    
     # notice how these are inverse of what's in preprocess
+    # not applied to nmap because it is already based on data (which includes them)
     omap = omap / calibration  
     omap[1:] = omap[1:] * pol_eff
+    
+    omap = omap + nmap
     return omap
 
 
@@ -526,9 +1007,9 @@ def calculate_noise_power(nmap, mask, mlmax, nsplits, pureEB):
     for k in range(nsplits):
 
         if pureEB:
-            Ealm,Balm=simgen.pureEB(nmap[k][1],nmap[k][2],mask,returnMask=0,lmax=mlmax,isHealpix=False)
-            alm_T=cs.map2alm(nmap[k][0],lmax=mlmax)
-            alm_a=np.array([alm_T,Ealm,Balm], dtype=np.complex128)
+            _,Balm=simgen.pureEB(nmap[k][1],nmap[k][2],mask,returnMask=0,lmax=mlmax,isHealpix=False)
+            alm_T, alm_E, _ =cs.map2alm(nmap[k],lmax=mlmax)
+            alm_a=np.array([alm_T,alm_E,Balm], dtype=np.complex128)
             cl_ab.append(cs.alm2cl(alm_a))
         else:
             alm_a = np.array(cs.map2alm(nmap[k],lmax=mlmax), dtype=np.complex128)
@@ -545,13 +1026,16 @@ def get_name_weights(qid, spec):
 
     return f'noise_{qid}_{spec}'
 
-def get_name_cluster_fgmap(qid):
+def get_name_cluster_fgmap(qid, isplit=1, coadd=False):
     
-    return f'{qid}_nemo'
+    if coadd:
+        return f'{qid}_nemo' # !!!
+    else:
+        return f'{qid}_split{isplit}_nemo'
 
 def get_name_run(args, split=None, coadd=False):
 
-    name_run = f'{"_".join(args.qids)}_mnemo{args.cluster_subtraction}'
+    name_run = f'{"_".join(args.qids)}_mnemo{args.cluster_subtraction}_{args.mask_tag}'
     
     if split is not None:
         name_run += f'_split{split}'
@@ -561,15 +1045,29 @@ def get_name_run(args, split=None, coadd=False):
 
     return name_run
 
+def get_mask_tag(mask_fn, mask_subproduct):
+
+    """
+    Extracts and returns the tag from the mask filename.
+    """
+
+    assert 'lensing_masks' in mask_subproduct, 'mask tag only implemented for lensing masks'
+    # find daynight tag "daydeep", "daywide" o "night"
+    daynight = re.search(r'(daydeep|daywide|night|pipe4|mss0002)', mask_fn).group(0)
+    # find skyfraction. it is 2 digit number. the string between the last "_" and ".fits"
+    skyfrac  = re.search(r'_(\d{2})(?:_[^_]+)?\.fits$', mask_fn).group(1) # re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
+
+    return f'{daynight}_{skyfrac}'
+
 def read_weights(args):
 
     nqids = len(args.qids)
     noise_specs = np.zeros((nspecs, nqids, args.mlmax+1), dtype=np.float64)
 
     if args.pureEB:
-        specs = specs_weights['EB']
+        specs = specs_weights['EpureB']
     else:
-        specs = specs_weights['QU']
+        specs = specs_weights['EB']
 
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
@@ -613,6 +1111,13 @@ def get_fout_name(fname, args, stage, tag=None):
             folder = 'stage_kspace_coadd_sims/'
         else:
             folder = 'stage_kspace_coadd/'
+
+    elif stage == 'nilc_coadd':
+        fname  = 'nilc_coadd_' + fname + '.fits'
+        if tag == 'sim':
+            folder = 'stage_nilc_coadd_sims/'
+        else:
+            folder = 'stage_nilc_coadd'
 
     # elif stage == 'noiseless_sims':
     #     fname += '.fits'

@@ -73,7 +73,6 @@ with bench.show("NORM"):
             bh = True
     if bh:
         est_norm_list.append('src')
-        est_norm_list.append('TT')
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     Als = pytempura.get_norms(est_norm_list,ucls,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     ls = np.arange(Als[args.est1][0].size)
@@ -111,34 +110,13 @@ binner = stats.bin1D(bin_edges)
 bin = lambda x: binner.bin(ells,x)[1]
 cents = binner.cents
 
-def get_bh_qfunc(est):
-    if est=='TT':
-        return solenspipe.get_qfunc(px,ucls,mlmax,est,Al1=Als[est],est2='SRC',Al2=Als['src'],R12=R_src_tt)
-    elif est=='MV':
-        def retfunc(X,Y):
-            ukmv = get_nobh_qfunc('MV',norm=False)
-            uktt = get_nobh_qfunc('TT',norm=False)
-            kbhtt = get_bh_qfunc('TT')
-            Alinv = 1./Als['TT']
-            Alinv[:,ls<=2] = 0
-            rkbhtt = kbhtt(X,Y)
-            rukmv = ukmv(X,Y)
-            ruktt = uktt(X,Y)
-            g = cs.almxfl(cs.almxfl(rkbhtt[0],Alinv[0]) + rukmv[0] - ruktt[0] ,Als['MV'][0])
-            c = cs.almxfl(cs.almxfl(rkbhtt[1],Alinv[1]) + rukmv[1] - ruktt[1] ,Als['MV'][1])
-            return np.asarray((g,c))
-        return retfunc
-
-def get_nobh_qfunc(est,norm=True):
-    return solenspipe.get_qfunc(px,ucls,mlmax,est,Al1=Als[est] if norm else None,est2=None,Al2=None,R12=None)
-
 with bench.show("QFUNC"):
     # These are the qfunc lambda functions we will use with RDN0 and MCN1
-    q_nobh_1 = get_nobh_qfunc(e1)
-    q_nobh_2 = get_nobh_qfunc(e2)
+    q_nobh_1 = solenspipe.get_qfunc(px,ucls,mlmax,e1,Al1=Als[e1],est2=None,Al2=None,R12=None)
+    q_nobh_2 = solenspipe.get_qfunc(px,ucls,mlmax,e2,Al1=Als[e2],est2=None,Al2=None,R12=None)
     if bh:
-        q_bh_1 = get_bh_qfunc(e1) if e1 in ['TT','MV'] else q_nobh_1
-        q_bh_2 = get_bh_qfunc(e2) if e2 in ['TT','MV'] else q_nobh_2
+        q_bh_1 = solenspipe.get_qfunc(px,ucls,mlmax,e1,Al1=Als[e1],est2='SRC',Al2=Als['src'],R12=R_src_tt) if e1 in ['TT','MV'] else q_nobh_1
+        q_bh_2 = solenspipe.get_qfunc(px,ucls,mlmax,e2,Al1=Als[e2],est2='SRC',Al2=Als['src'],R12=R_src_tt) if e2 in ['TT','MV'] else q_nobh_2
 
 
 # This is the filtered map loading function that RDN0 and MCN1 will use
@@ -147,7 +125,6 @@ def get_kmap(seed):
     dalm = solenspipe.get_cmb_alm(s_i,s_set)
     return utils.isotropic_filter(dalm,tcls,lmin,lmax,ignore_te=True)
 
-rcorr_curls = []
 uicls = []
 uxcls_nobh_1 = []
 uxcls_nobh_2 = []
@@ -189,14 +166,9 @@ for task in my_tasks:
             uxcl_bh_1 = cs.alm2cl(r_bh_1[0],ikalm)
             uxcl_bh_2 = cs.alm2cl(r_bh_2[0],ikalm)
             uacl_bh = cs.alm2cl(r_bh_1[0],r_bh_2[0])
-
-
-            rcorr_curl = cs.alm2cl(r_bh_1[1],r_nobh_1[1]) / np.sqrt(cs.alm2cl(r_nobh_1[1],r_nobh_1[1]) * cs.alm2cl(r_bh_1[1],r_bh_1[1])) 
-
             uxcls_bh_1.append(uxcl_bh_1)
             uxcls_bh_2.append(uxcl_bh_2)
             uacls_bh.append(uacl_bh)
-            rcorr_curls.append(rcorr_curl)
 
 
 
@@ -209,7 +181,6 @@ with bench.show("MPI Gather"):
         uxcls_bh_1 = putils.allgatherv(uxcls_bh_1,comm)
         uxcls_bh_2 = putils.allgatherv(uxcls_bh_2,comm)
         uacls_bh = putils.allgatherv(uacls_bh,comm)
-        rcorr_curls = putils.allgatherv(rcorr_curls,comm)
 
 if rank==0:
 
@@ -226,7 +197,6 @@ if rank==0:
             suxcls_bh_1 = stats.get_stats(uxcls_bh_1)
             suxcls_bh_2 = stats.get_stats(uxcls_bh_2)
             suacls_bh = stats.get_stats(uacls_bh)
-            srcorr_curls = stats.get_stats(rcorr_curls)
 
     with bench.show("Save"):
         np.save(f'{solenspipe.opath}mean_uicls_{e1}_{e2}.npy',uicls)
@@ -248,7 +218,6 @@ if rank==0:
             uxcls_bh_1 = suxcls_bh_1['mean']
             uxcls_bh_2 = suxcls_bh_2['mean']
             uacls_bh = suacls_bh['mean']
-            rcorr_curl = srcorr_curls['mean']
 
 
         icls = bin(uicls)
@@ -259,7 +228,6 @@ if rank==0:
             xcls_bh_1 = bin(uxcls_bh_1)
             xcls_bh_2 = bin(uxcls_bh_2)
             acls_bh = bin(uacls_bh)
-            rcorr_curl = bin(rcorr_curl)
 
 
     with bench.show("Plot"):
@@ -288,20 +256,4 @@ if rank==0:
             pl.legend('outside')
             pl.done(f'{solenspipe.opath}cross_verify_bh_{e1}_{e2}.png')
 
-            pl = io.Plotter('rCL',xyscale='loglin')
-            pl.add(cents,(xcls_bh_1-icls)/icls,marker='o',label='bh xcl1')
-            # pl.add(cents,(xcls_bh_2-icls)/icls,marker='o',label=labs.xcl)
-            pl.add(cents,(xcls_nobh_1-icls)/icls,marker='o',label='no bh xcl1')
-            # pl.add(cents,(xcls_nobh_2-icls)/icls,marker='o',label=labs.xcl)
-            pl.hline(y=0)
-            pl._ax.set_ylim(-0.2,0.2)
-            pl.legend('outside')
-            pl.done(f'{solenspipe.opath}crossdiff_verify_bh_{e1}_{e2}.png')
 
-
-            pl = io.Plotter('rCL',xyscale='loglin')
-            pl.add(cents,rcorr_curl,marker='o',label='bh xcl1')
-            pl.hline(y=1)
-            pl._ax.set_ylim(0.9,1.1)
-            pl.legend('outside')
-            pl.done(f'{solenspipe.opath}curlrcorr_verify_bh_{e1}_{e2}.png')
