@@ -88,8 +88,8 @@ def get_inpaint_mask(args, datamodel):
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
         # read catalog coordinates
-        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
-        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = 'inpaint_catalogs'))
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
 
         # Make masks for gapfill
         mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
@@ -141,8 +141,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([1,2])
         meta.nsplits = 2
-        meta.calibration = 1.0
-        meta.pol_eff = 1.0
+        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
@@ -157,11 +157,6 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
     elif parse_qid_experiment(qid)=='act':
         
-        # CAL_CORRECTION = {'pa5a': 0.9936490744387554, 'pa5b': 1.0018678306770887, 'pa6a': 0.9930966469428006, 'pa6b': 1.0019615940532727}
-        # POL_CORRECTION = {'pa5a': 0.9936490744387554,  'pa5b': 1.0019727053584115, 'pa6a': 0.9940141985106568, 'pa6b': 1.0020658455977587}
-        # POLEFF_CORRECTION = {'pa5a': 1.0, 'pa5b': 1.0001046791583796, 'pa6a': 1.0009239297813366, 'pa6b': 1.0001040474456353}
-        SIGURD_CAL = {'pa5a': 1.0156, 'pa5b': 0.9851 ,'pa6a': 1.0140, 'pa6b': 0.9686 } #https://phy-act1.princeton.edu/~snaess/actpol/daybeam_cmb/20231103/params/global_dr6_v4_day_and_night.py
-
         meta.Name = 'act_dr6v4'
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
@@ -170,12 +165,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        if meta.daynight == 'night':
-            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct)
-            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct)
-        else:
-            meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct) / SIGURD_CAL[qid.split('_')[0]]
-            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct)
+        meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct, which='cals')
+        meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
+        
+        if meta.daynight != 'night':
+            meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
@@ -185,7 +179,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
         
-        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, daynight=meta.daynight)
+        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
@@ -196,15 +190,16 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.nsplits = qid_dict['num_splits']
         meta.splits = np.arange(meta.nsplits)
-        meta.calibration = 1.
-        meta.pol_eff = 1.
+        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+       
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
         meta.nspecs = nspecs
-        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
         
         meta.Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
@@ -218,15 +213,16 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.nsplits = qid_dict['num_splits']
         meta.splits = np.arange(meta.nsplits)
-        meta.calibration = 1.
-        meta.pol_eff = 1.
+        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+       
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOsimsNoiseMetadata(qid, verbose=True) 
         meta.nspecs = nspecs
-        meta.specs = specs_weights['EB'] if args.pureEB else specs_weights['QU']
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
         
         meta.Beam = SOsimsBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
@@ -340,9 +336,17 @@ class SOsimsBeamHelper:
 
         return fkbeam, beam, tf           
 class ACTBeamHelper:
-    
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False, daynight='night'):
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+        
+        default_values = {'tf_subproduct': 'dummy_tf',
+                          'beam_subproduct': 'dummy_beams',
+                          'mlmax': 4000}
+        for key, value in default_values.items():
+            if not hasattr(args, key):
+                print(f"Setting default value for '{key}': {value}")
+            setattr(args, key, getattr(args, key, value))
+
         self.datamodel = datamodel
         self.mlmax = args.mlmax
         self.qid = qid
@@ -350,8 +354,6 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
-        #self.poleff_subproduct = args.poleff_subproduct
-        self.daynight = daynight
 
     def get_beam(self):
         
@@ -390,14 +392,7 @@ class ACTBeamHelper:
             return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
             
     def get_tf(self):
-        
-        #ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid.split('_')[0])
-        if self.daynight == 'night':
-            print('why am i here')
-            print(self.daynight)
-            ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
-        else: 
-            ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
+        ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
         return maps.interp(ells_tf, tf, fill_value='extrapolate')
 
     def get_effective_beam(self):
