@@ -74,13 +74,18 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
 def get_inpaint_mask(args, datamodel):
     
     '''
-    args.inpaint: bool, if True, you want to inpaint
-    args.Name: str, sofind datamodel, e.g. 'act_dr6v4', for catalog
-    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
-    args.regular_hole: float, radius of hole [arcmin] for regular sources
-    args.large_hole: float, radius of hole [arcmin] for large sources
-    args.shape: tuple, shape of mask
-    args.wcs: wcs object, wcs of mask
+    Generates a mask where to inpaint the map.
+    
+    ### Parameters:
+    - datamodel: DataModel object, used to read sofind products
+    - args: argparse.Namespace(), must contain the following attributes: 
+        args.inpaint: bool, if True, you want to inpaint
+        args.inpaint_subproduct: str, subproduct name for inpainting catalog
+        args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+        args.regular_hole: float, radius of hole [arcmin] for regular sources
+        args.large_hole: float, radius of hole [arcmin] for large sources
+        args.shape: tuple, shape of mask
+        args.wcs: wcs object, wcs of mask
     '''
     
     if args.inpaint:
@@ -119,19 +124,21 @@ def get_inpaint_mask(args, datamodel):
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
-    SOFind-aware function to get map metadata
+    Retrieves metadata for a specific qid (split/coadd).
     
-    args.cat_date: str, date of inpaint catalog, e.g. '20241002'
-    args.regular_hole: float, radius of hole [arcmin] for regular sources
-    args.large_hole: float, radius of hole [arcmin] for large sources
-    args.shape: tuple, shape of mask
-    args.wcs: wcs object, wcs of mask
-    args.beam_subproduct: str, subproduct name for beam
-    args.tf_subproduct: str, subproduct name for transfer function
-    args.cal_subproduct: str, subproduct name for calibration
-    args.poleff_subproduct: str, subproduct name for polarization efficiency
-    args.khfilter: int, horizontal fourier strip width
-    args.kvfilter: int, vertical fourier strip width
+    ### Paramters:
+    - qid: str, unique identifier for the data (must be in sofind)
+    - splitnum: int, split of data to be used, will be ignored if coadd is True
+    - coadd: bool, if True, coadd the data (ignore splitnum)
+    - args: argparse.Namespace(), must contain the following attributes:
+        * args needed for get_inpaint_mask()
+        * args.maps_subproduct: str, subproduct name for maps (e.g. 'maps_srcfree', 'maps)
+        * args.cal_subproduct: str, subproduct name for calibration
+        * args.poleff_subproduct: str, subproduct name for polarization efficiency
+        * args needed for BeamHelper()
+        * args needed for NoiseMetadata()
+        * args.khfilter: int, horizontal fourier strip width [used for ground-pickup removal]
+        * args.kvfilter: int, vertical fourier strip width [used for ground-pickup removal]     
     """
     
     meta = bunch.Bunch({})
@@ -336,6 +343,26 @@ class SOsimsBeamHelper:
 
         return fkbeam, beam, tf           
 class ACTBeamHelper:
+    
+    """
+    Helper class to read and process the beam and transfer function for ACT data.
+    
+    ### Parameters:
+    - datamodel: DataModel object, used to read sofind products
+    - args: argparse.Namespace(), must contain the following attributes:
+        * args.mlmax: int, maximum multipole for the beam. Will use default (4000) if unset.
+        * args.beam_subproduct: str, subproduct name for beam (e.g. 'beams_v4_20230902'). Will use default ('dummy_beams') if unset.
+        * args.tf_subproduct: str, subproduct name for transfer function (e.g. 'tf_v4_20230902'). Will use default ('dummy_tf') if unset.
+    - qid: str, unique identifier for the data (must be in sofind)
+    - isplit: int, split of data to be used, will be ignored if coadd is True
+    - coadd: bool, if True, coadd the data (ignore splitnum)    
+    
+    ### Methods:
+    
+    - get_beam(): returns the beam 
+    - get_tf(): returns the transfer function 
+    - get_effective_beam(): returns the effective beam (effective beam, beam, transfer function)
+    """
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
         
@@ -589,6 +616,21 @@ class SOsimsNoiseMetadata:
     
 class ACTNoiseMetadata:
     
+    '''
+    A class to handle the noise metadata for ACT
+    
+    ### Initialization paramters:
+    - qid: str, unique identifier for the data (must be in sofind)
+    - verbose: bool, if True, print additional information during initialization
+
+    ### Methods:
+    - read_in_sim(split_num, sim_num, lmax=5400, alm=True): 
+        Reads in a simulated noise realization (alm) for the given split and simulation number.
+    - get_index_sim_qid(qid): 
+        mnms sims from the same array (e.g. 'pa5a_pa5b') are stored in the same file.
+        depending on the qid, it will return the corresponding component (e.g. 'pa5a' or 'pa5b').
+    '''
+    
     def __init__(self, qid, verbose=False):
         self.qid = qid
             
@@ -635,9 +677,6 @@ class ACTNoiseMetadata:
         self.tnm = nm.BaseNoiseModel.from_config(qid_dict_config_noise_name[self.qid],
                                         qid_dict_noise_model_name[self.qid],
                                         *qid_dict_noise[self.qid])
-
-    # def get_noise_fn(sim_num, split_num, lmax=5400, alm=True):
-    #     return tnm.get_sim_fn(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm)
     
     def get_index_sim_qid(self,qid):
 
@@ -650,7 +689,7 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, fwhm=1.6):#, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True): #, fwhm=1.6, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
@@ -739,7 +778,26 @@ class PlanckBeamHelper:
 
 
 class ForegroundHandler:
-    '''generates foregrounds'''
+    '''
+    A class to handle the generation and management of foregrounds for simulations
+    
+    ### Initialization parameters:
+    - datamodel: DataModel object, used to read sofind products
+    - args: argparse.Namespace(), must contain the following attributes:
+        * args.fg_type: str, type of foregrounds, 'sims' or 'theory'
+        * args.fgs_path: str, path to foreground sims
+        * args.is_noiseless: bool, if True, no foregrounds are generated
+        * args.lmax_signal: int, maximum ell of signal sims
+    
+    ### Methods:
+    - generate_cov_fgs(fgs_path, lmax): 
+        Generates the foreground covariance matrix (power spectrum) for the given lmax 
+        at two frequencies (90 and 150 GHz) and their cross-spectrum.
+    - get_map_fgs(qid, alms_f):
+        Returns the foreground map corresponding to the given qid and alms_f. qid informs whether to use f150 or f090 from alms_f.
+    - get_fg_alms(fgcov, qid, cmb_set, sim_indices):
+        Generates alm from cl for the given qid, cmb_set, and sim_indices (the latter 2 are used in the seed).
+    '''
 
     def __init__(self, datamodel, args):
         
@@ -941,8 +999,6 @@ def preprocess_core(imap, mask,
     
     return imap, ivar # ivar will be none if nothing happened to it
 
-
-
 def get_sim_core(shape,wcs,signal_alms,
                  beam_fells, transfer_fells,
                  calibration,pol_eff,
@@ -998,6 +1054,10 @@ def get_sim_core(shape,wcs,signal_alms,
 
 def calculate_noise_power(nmap, mask, mlmax, nsplits, pureEB):    
     
+    ''' 
+    equation (9) Qu+24 paper
+    '''
+    
     cl_ab = []
     for k in range(nsplits):
 
@@ -1022,6 +1082,12 @@ def get_name_weights(qid, spec):
     return f'noise_{qid}_{spec}'
 
 def get_name_cluster_fgmap(qid, isplit=1, coadd=False):
+    
+    '''
+    the cluster finding algorithm has a corresponding beam.
+    we take that beam out and apply in the beam of the experiment. 
+    this could be the beam for the exact qid and split or all splits with the same (coadd) beam, hence the two options
+    '''
     
     if coadd:
         return f'{qid}_nemo' # !!!
@@ -1055,6 +1121,10 @@ def get_mask_tag(mask_fn, mask_subproduct):
     return f'{daynight}_{skyfrac}'
 
 def read_weights(args):
+    
+    '''
+    reads in the fcoadd weights
+    '''
 
     nqids = len(args.qids)
     noise_specs = np.zeros((nspecs, nqids, args.mlmax+1), dtype=np.float64)
@@ -1074,23 +1144,12 @@ def get_fout_name(fname, args, stage, tag=None):
 
     '''
     fname: name of file to be saved
-    args: argparse object including args.output_dir
+    args: argparse object containing args.output_dir
     stage: str
-        ['inpaint', 'cluster_subtraction']
+        ['weights', 'cluster_fgmap', 'kspace_coadd', 'nilc_coadd']
+    tag: optional, used in kspace_coadd and nilc_coadd to distinguish between sim (tag='sim') and data (tag=None), because we store them in different folders
     '''
     fname = fname.split('.fits')[0]
-
-    # if stage == 'inpaint':
-    #     fname += '_d2_gapfill.fits' # dowgranded (dfact 2) and inpainted
-    #     folder = 'stage_inpaint/'
-
-    # elif stage == 'cluster_subtraction':
-    #     fname += '_mnemo.fits'
-    #     folder = 'stage_cluster_subtraction/'
-
-    # elif stage == 'preprocessing':
-    #     fname += '_preproccesed_alms.npy'
-    #     folder = 'stage_preprocessing/'
 
     if stage == 'weights':
         fname += '_weights.txt'
@@ -1114,52 +1173,9 @@ def get_fout_name(fname, args, stage, tag=None):
         else:
             folder = 'stage_nilc_coadd'
 
-    # elif stage == 'noiseless_sims':
-    #     fname += '.fits'
-    #     folder = 'stage_noiseless_sims/'
-
     output_dir = os.path.join(args.output_dir, f'../{folder}')
     # create output folder if it does not exist
     os.makedirs(output_dir, exist_ok=True)
 
     return os.path.join(output_dir, fname)
 
-# orphics.maps.kspace_coadd_alms
-# pure E,B:   Q, U maps and a mask -> E, B alms
-# kspace_coadd:  T, E, B alms and noise spectra -> T, E, B alms
-
-"""
-kspace_coadd_sims:
-
-for qid in qids:
-  sim = get_sim(qid)
-  psim = preprocess_core(sim)
-  kmaps = map2alm(psim)  OR  pure_eb(psim)
-
-"""
-
-
-
-"""
-    # load geometry
-    shape,wcs # non-downgraded : get from sofind
-    # load alex alms
-    alm_file # get from sofind
-    alms = hp.read_alm(alm_file,hdu=(1,2,3))
-    signal_alms = alms + fg_power_alms_qid
-
-    beam_fells
-    transfer_fells # get from sofind?
-    nalms = enmap.read_map(noise_map_alm_file,seed_noise) # get from sofind?
-    
-    return get_sim_core(shape,wcs,signal_alms,noise_alms,
-                        beam_fells, transfer_fells,
-                        calibration,pol_eff,
-                        dfact,
-                        apod_y_arcmin = 0.,
-                        apod_x_arcmin = 10.,
-                        noise_mask=None,
-                        noise_lmax = 5400,
-                        **kwargs)
-    
-"""
