@@ -148,9 +148,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([1,2])
         meta.nsplits = 2
+        isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
@@ -161,7 +162,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
                                               subproduct_name="noise_sims")
         # assigning ACT splits 0 + 1 to Planck split 1
         # and ACT splits 2 + 3 to Planck split 2
-        isplit = None if coadd else (splitnum // 2 + 1)
+        
     elif parse_qid_experiment(qid)=='act':
         
         meta.Name = 'act_dr6v4'
