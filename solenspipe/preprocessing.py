@@ -24,7 +24,7 @@ def is_mss2(qid):
     return (parse_qid_experiment(qid)=='so_mss2')
           
 def parse_qid_experiment(qid):
-    if qid in ['p01','p02','p03','p04','p05','p06','p07']:
+    if qid in ['p01','p02','p03','p04','p05','p06','p07','p08','p09']:
         return 'planck'
     elif qid[:3]=='sobs_':
         return 'sobs'
