@@ -24,7 +24,7 @@ def is_mss2(qid):
     return (parse_qid_experiment(qid)=='so_mss2')
           
 def parse_qid_experiment(qid):
-    if qid in ['p01','p02','p03','p04','p05','p06','p07']:
+    if qid in ['p01','p02','p03','p04','p05','p06','p07','p08','p09']:
         return 'planck'
     elif qid[:3]=='sobs_':
         return 'sobs'
@@ -1017,11 +1017,11 @@ def get_sim_core(shape,wcs,signal_alms,
     beam_fells and transfer_fells should be same size and go from ell=0 to beyond relevant ells
 
     """
-    
-    signal_alms[0] = cs.almxfl(signal_alms[0],beam_fells * transfer_fells)
-    signal_alms[1] = cs.almxfl(signal_alms[1],beam_fells)
-    signal_alms[2] = cs.almxfl(signal_alms[2],beam_fells)
-    omap = cs.alm2map(signal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+    isignal_alms = signal_alms.copy()
+    isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
+    isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
+    isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
+    omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     if maptype=='native':
         if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
             res = maps.resolution(shape,wcs) / u.arcmin
