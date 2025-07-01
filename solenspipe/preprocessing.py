@@ -173,11 +173,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct, which='cals')
+        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
         
-        if meta.daynight != 'night':
-            meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
+        # if meta.daynight != 'night':
+        #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
@@ -1151,30 +1151,32 @@ def get_fout_name(fname, args, stage, tag=None):
     tag: optional, used in kspace_coadd and nilc_coadd to distinguish between sim (tag='sim') and data (tag=None), because we store them in different folders
     '''
     fname = fname.split('.fits')[0]
+    
+    fcoadd_folder = f'{args.mask_tag}_fcoadd'
 
     if stage == 'weights':
         fname += '_weights.txt'
-        folder = 'stage_compute_weights/'
+        folder = f'../../{fcoadd_folder}/stage_compute_weights/'
     
     elif stage == 'cluster_fgmap':
         fname += '_cluster_fgmap.fits'
-        folder = 'stage_cluster_fgmap/'
+        folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = 'stage_kspace_coadd_sims/'
+            folder = '../stage_kspace_coadd_sims/'
         else:
-            folder = 'stage_kspace_coadd/'
+            folder = '../stage_kspace_coadd/'
 
     elif stage == 'nilc_coadd':
         fname  = 'nilc_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = 'stage_nilc_coadd_sims/'
+            folder = '../stage_nilc_coadd_sims/'
         else:
-            folder = 'stage_nilc_coadd'
+            folder = '../stage_nilc_coadd'
 
-    output_dir = os.path.join(args.output_dir, f'../{folder}')
+    output_dir = os.path.join(args.output_dir, folder)
     # create output folder if it does not exist
     os.makedirs(output_dir, exist_ok=True)
 
