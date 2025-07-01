@@ -1028,16 +1028,16 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
                 print("finished bh")
 
         elif est1=='TE':
-            AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+            AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:], lcl[3,:], ocl[0,:],ocl[1,:])
             #dxd
             cl=ocl**2/(d_ocl)
-            AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+            AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], cl[0,:],cl[1,:])
             AgTE0[np.where(AgTE0==0)] = 1e30
             AcTE0[np.where(AcTE0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+            AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
             AgTE1[np.where(AgTE1==0)] = 1e30
             AcTE1[np.where(AcTE1==0)] = 1e30
 
@@ -1064,15 +1064,15 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
             nc = AcEE**2*(1./AcEE0-1/AcEE1)
 
         elif est1=='TB':
-            AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+            AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], ocl[0,:],ocl[2,:])
             cl=ocl**2/(d_ocl)
-            AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:] )
+            AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
             AgTB0[np.where(AgTB0==0)] = 1e30
             AcTB0[np.where(AcTB0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+            AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
             AgTB1[np.where(AgTB1==0)] = 1e30
             AcTB1[np.where(AcTB1==0)] = 1e30
 
@@ -1556,7 +1556,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     mvdumbN0g=mvdumbN0g/sumcg
     mvdumbN0c=mvdumbN0c/sumcc
     
-    return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
+    return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25 #, dumbn0g, dumbn0c, weights_deng, weights_denc, weights_NUMg, weights_NUMc
 
 
 def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
