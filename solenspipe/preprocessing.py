@@ -1152,7 +1152,10 @@ def get_fout_name(fname, args, stage, tag=None):
     '''
     fname = fname.split('.fits')[0]
     
-    fcoadd_folder = f'{args.mask_tag}_fcoadd'
+    try:
+        fcoadd_folder = f'{args.mask_tag}_fcoadd'
+    except AttributeError:
+        fcoadd_folder = "default_fcoadd"
 
     if stage == 'weights':
         fname += '_weights.txt'
