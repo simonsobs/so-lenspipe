@@ -197,8 +197,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.nsplits = qid_dict['num_splits']
         meta.splits = np.arange(meta.nsplits)
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+        meta.calibration = 1. #meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        meta.pol_eff = 1. #meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
        
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
@@ -524,7 +524,7 @@ class SOLATNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6,  mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.4,  mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
@@ -535,10 +535,8 @@ class SOLATNoiseMetadata:
             print('I am re-masking the noisy sim')
             bl = maps.gauss_beam(np.arange(lmax+1), fwhm)
             alm_con = cs.almxfl(my_sim,bl)
-        
             new_map = cs.alm2map(alm_con, enmap.empty((3,) + mask.shape, mask.wcs)) * mask
             new_alm = cs.almxfl(cs.map2alm(new_map, lmax=lmax), 1/bl)
-    
             return new_alm  
 
         else:

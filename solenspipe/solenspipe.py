@@ -1515,8 +1515,8 @@ def get_labels():
 
 class LensingSandbox(object):
     def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
-                 lmin,lmax,mlmax,ests, # reconstruction
-                 add_noise = False, mask = None,
+                 lmin,lmax, mlmax,ests, # reconstruction
+                 add_noise = False, mask = None, lmin_pol = None, lmax_pol = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
         self.fwhm = fwhm_arcmin
         self.noise = noise_uk
@@ -1542,7 +1542,7 @@ class LensingSandbox(object):
             print(f"W4 factor: {self.w4:.5f}")
 
         self.ucls,self.tcls = futils.get_theory_dicts_white_noise(self.fwhm,self.noise,grad=True)
-        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax)
+        self.Als = pytempura.get_norms(ests, self.ucls, self.ucls, self.tcls, lmin, lmax, lmin_pol = lmin_pol, lmax_pol=lmax_pol) #for testing lmax in polarization
         ls = np.arange(self.Als[ests[0]][0].size)
         self.Nls = {}
         px = qe.pixelization(self.shape,self.wcs)
@@ -1555,6 +1555,8 @@ class LensingSandbox(object):
         self.mlmax = mlmax
         self.lmin = lmin
         self.lmax = lmax
+        self.lmin_pol = lmin_pol
+        self.lmax_pol = lmax_pol
         self.add_noise = add_noise
         self.mask = mask
 
@@ -1604,7 +1606,7 @@ class LensingSandbox(object):
         alm = cs.map2alm(omap,lmax=self.mlmax,spin=[0,2])
         with np.errstate(divide='ignore', invalid='ignore'):
             alm = cs.almxfl(alm,lambda x: 1./maps.gauss_beam(self.fwhm,x))
-        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax)
+        ftalm,fealm,fbalm = futils.isotropic_filter(alm,self.tcls,self.lmin,self.lmax, lmin_pol=self.lmin_pol, lmax_pol=self.lmax_pol) ##adding new functionality. Use (pol_lmax_test branch in falafel)
         return [ftalm,fealm,fbalm]
         
     def reconstruct(self,omap,est):
