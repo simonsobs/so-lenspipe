@@ -1419,6 +1419,8 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     if profile is None:
         profile=np.ones(Lmax+1)
+    elif (profile ==np.ones(Lmax+1)).all():
+        pass
     else:
         profile=profile[:Lmax+1]
         nlpp=nlpp[:ls.size]
