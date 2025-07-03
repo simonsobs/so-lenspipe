@@ -1000,6 +1000,62 @@ def preprocess_core(imap, mask,
     
     return imap, ivar # ivar will be none if nothing happened to it
 
+def get_signal_sim_core(shape,wcs,signal_alms,
+                 beam_fells, transfer_fells,
+                 calibration,pol_eff,
+                 maptype='native'):
+    """
+    This needs to only be called once if the beam, transfer, cal, poleff, etc. are the same for each split.
+    """
+    
+    isignal_alms = signal_alms.copy()
+    isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
+    isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
+    isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
+    omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+    if maptype=='native':
+        if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
+            res = maps.resolution(shape,wcs) / u.arcmin
+            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
+        omap = enmap.apply_window(omap,pow=1)
+    elif maptype=='reprojected':
+        pass
+    else:
+        raise ValueError
+
+    # notice how these are inverse of what's in preprocess
+    # not applied to nmap because it is already based on data (which includes them)
+    omap = omap / calibration  
+    omap[1:] = omap[1:] * pol_eff
+    
+    return omap
+    
+def get_noise_sim_core(shape,wcs,
+                       noise_alms=None,
+                       apod_y_arcmin = 0.,
+                       apod_x_arcmin = 0.,
+                       noise_mask=None,
+                       rms_uk_arcmin=None,
+                       noise_lmax = 5400,
+                       lcosine=80):
+    """
+    This needs to be called each time for each split.
+    """
+    
+    if noise_alms is not None:
+        if noise_mask is not None:
+            lstitch = noise_lmax - 200
+            mlmax = noise_lmax + 600
+            nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
+                                       lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
+        else:
+            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
+            nmap[~np.isfinite(nmap)] = 0.
+    else:
+        nmap = 0.
+
+    return nmap
+    
 def get_sim_core(shape,wcs,signal_alms,
                  beam_fells, transfer_fells,
                  calibration,pol_eff,
@@ -1016,39 +1072,21 @@ def get_sim_core(shape,wcs,signal_alms,
     shape,wcs should ideally correspond to native ACT/SO pixelization of 0.5 arcmin
     beam_fells and transfer_fells should be same size and go from ell=0 to beyond relevant ells
 
-    """
-    isignal_alms = signal_alms.copy()
-    isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
-    isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
-    isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
-    omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
-    if maptype=='native':
-        if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
-            res = maps.resolution(shape,wcs) / u.arcmin
-            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
-        omap = enmap.apply_window(omap,pow=1)
-    elif maptype=='reprojected':
-        pass
-    else:
-        raise ValueError        
+    You probably shouldn't be calling this function since it is wasteful when doing splits.
 
-    if noise_alms is not None:
-        if noise_mask is not None:
-            lstitch = noise_lmax - 200
-            mlmax = noise_lmax + 600
-            nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
-                                       lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
-        else:
-            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
-            nmap[~np.isfinite(nmap)] = 0.
-    else:
-        nmap = 0.
-    
-    # notice how these are inverse of what's in preprocess
-    # not applied to nmap because it is already based on data (which includes them)
-    omap = omap / calibration  
-    omap[1:] = omap[1:] * pol_eff
-    
+    """
+    omap = get_signal_sim_core(shape,wcs,signal_alms,
+                               beam_fells, transfer_fells,
+                               calibration,pol_eff,
+                               maptype)
+    nmap = get_noise_sim_core(shape,wcs,
+                       noise_alms,
+                       apod_y_arcmin,
+                       apod_x_arcmin,
+                       noise_mask,
+                       rms_uk_arcmin,
+                       noise_lmax,
+                       lcosine)
     omap = omap + nmap
     return omap
 
