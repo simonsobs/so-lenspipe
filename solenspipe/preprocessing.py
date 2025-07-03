@@ -736,14 +736,14 @@ class PlanckBeamHelper:
         - np.ndarray: The beam function array.
         """
 
-        # Determine split letter
-        assert self.isplit in [1,2], "Planck splits are either 1 or 2"
+        # Determine split letter (coadd case doesn't matter)
         sl = 'A' if self.isplit == 1 else 'B'
 
         # Load and interpolate the beam
         ell_b, bl = self.datamodel.read_beam(self.qid,
                         subproduct=self.beam_subproduct,
-                        split_num=sl)
+                        split_num=sl,
+                        coadd=(self.isplit is None))
         beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
 
         # Generate the beam function values
