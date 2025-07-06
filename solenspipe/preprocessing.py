@@ -1001,9 +1001,10 @@ def preprocess_core(imap, mask,
     return imap, ivar # ivar will be none if nothing happened to it
 
 def get_signal_sim_core(shape,wcs,signal_alms,
-                 beam_fells, transfer_fells,
-                 calibration,pol_eff,
-                 maptype='native'):
+                        beam_fells,transfer_fells,
+                        calibration,pol_eff,
+                        apod_y_arcmin = 0.,apod_x_arcmin = 0.,
+                        maptype='native'):
     """
     This needs to only be called once if the beam, transfer, cal, poleff, etc. are the same for each split.
     """
@@ -1032,8 +1033,6 @@ def get_signal_sim_core(shape,wcs,signal_alms,
     
 def get_noise_sim_core(shape,wcs,
                        noise_alms=None,
-                       apod_y_arcmin = 0.,
-                       apod_x_arcmin = 0.,
                        noise_mask=None,
                        rms_uk_arcmin=None,
                        noise_lmax = 5400,
@@ -1077,12 +1076,11 @@ def get_sim_core(shape,wcs,signal_alms,
     """
     omap = get_signal_sim_core(shape,wcs,signal_alms,
                                beam_fells, transfer_fells,
-                               calibration,pol_eff,
+                               calibration, pol_eff,
+                               apod_y_arcmin, apod_x_arcmin,
                                maptype)
     nmap = get_noise_sim_core(shape,wcs,
                        noise_alms,
-                       apod_y_arcmin,
-                       apod_x_arcmin,
                        noise_mask,
                        rms_uk_arcmin,
                        noise_lmax,
