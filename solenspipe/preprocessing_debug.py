@@ -8,6 +8,7 @@ from solenspipe import utility as simgen
 import os
 import healpy as hp
 from scipy import interpolate
+from enlib import bench
 import re
 
 specs_weights = {'EpureB': ['T','E','pureB'],
@@ -149,17 +150,21 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.array([1,2])
         meta.nsplits = 2
         isplit = None if coadd else (splitnum // 2 + 1)
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
-        meta.beam_fells = meta.Beam.get_effective_beam()[1]
-        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
+        with bench.show("read calibration (get_metadata)"):
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        with bench.show("read poleff (get_metadata)"):
+            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+        with bench.show("set up beam (get_metadata)"):
+            meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
+            meta.beam_fells = meta.Beam.get_effective_beam()[1]
+            meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
         meta.kspace_mask = None
         meta.maptype = 'reprojected'
-        meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
-                                              config_name=meta.Name,
-                                              subproduct_name="noise_sims")
+        with bench.show("set up noise metadata/model (get_metadata)"):
+            meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
+                                                config_name=meta.Name,
+                                                subproduct_name="noise_sims")
         # assigning ACT splits 0 + 1 to Planck split 1
         # and ACT splits 2 + 3 to Planck split 2
         
@@ -173,8 +178,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
+        with bench.show("read calibration (get_metadata)"):
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        with bench.show("read poleff (get_metadata)"):
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
@@ -182,14 +189,15 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
-        meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
+        with bench.show("set up noise metadata/model (get_metadata)"):
+            meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
-        
-        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
-        meta.beam_fells = meta.Beam.get_effective_beam()[1]
-        meta.transfer_fells = meta.Beam.get_effective_beam()[2]
+        with bench.show("set up beam (get_metadata)"):
+            meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+            meta.beam_fells = meta.Beam.get_effective_beam()[1]
+            meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
@@ -930,7 +938,8 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     (2) is done if the map was downgraded
 
     """
-    wy1, wx1 = enmap.calc_window(imap.shape)
+    with bench.show("calc window (depix_map)"):
+        wy1, wx1 = enmap.calc_window(imap.shape)
     if maptype=='native':
         wy2 = wx2 = 1
     elif maptype=='reprojected':
@@ -938,15 +947,18 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
             if kspace_mask is None: return imap
             wy2 = wx2 = wy1 = wx1 = 1
         else:
-            wy2, wx2 = enmap.calc_window(imap.shape, scale=dfact)
+            with bench.show("calc window 2 (depix_map)"):
+                wy2, wx2 = enmap.calc_window(imap.shape, scale=dfact)
     else:
         raise ValueError
-    fmap = enmap.fft(imap)
+    with bench.show("fft (depix_map)"):
+        fmap = enmap.fft(imap)
     fmap *= (wy2/wy1)[:,None]
     fmap *= (wx2/wx1)
     if kspace_mask is not None:
         fmap[:,~kspace_mask] = 0
-    imap = enmap.ifft(fmap).real
+    with bench.show("ifft (depix_map)"):
+        imap = enmap.ifft(fmap).real
     return imap
 
 
@@ -967,29 +979,36 @@ def preprocess_core(imap, mask,
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
     if dfact!=1 and (dfact is not None):
-        imap = enmap.downgrade(imap,dfact)
+        with bench.show("dg (preprocess_core)"):
+            imap = enmap.downgrade(imap,dfact)
         if ivar is not None:
-            ivar = enmap.downgrade(ivar,dfact,op=np.sum)
+            with bench.show("dg2 (preprocess_core)"):
+                ivar = enmap.downgrade(ivar,dfact,op=np.sum)
         
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        with bench.show("inpaint (preprocess_core)"):
+            imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
 
     #for Planck, assert that we extract the RA DEC of the ACT footprint only
     if imap[0].shape != mask.shape:
-        imap = enmap.extract(imap, (3,)+mask.shape, mask.wcs)
+        with bench.show("enmap.extract (preprocess_core)"):
+            imap = enmap.extract(imap, (3,)+mask.shape, mask.wcs)
         if ivar is not None:
-            ivar = enmap.extract(ivar, (3,)+mask.shape, mask.wcs)
+            with bench.show("enmap.extract 2 (preprocess_core)"):
+                ivar = enmap.extract(ivar, (3,)+mask.shape, mask.wcs)
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
 
     if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster        
+        with bench.show("subtract clusters (preprocess_core)"):
+            imap[0] = imap[0] - foreground_cluster        
         
     imap = imap * mask
-    imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
+    with bench.show("depix_map (preprocess_core)"):
+        imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration
     imap[1:] = imap[1:] / pol_eff
@@ -1001,24 +1020,29 @@ def preprocess_core(imap, mask,
     return imap, ivar # ivar will be none if nothing happened to it
 
 def get_signal_sim_core(shape,wcs,signal_alms,
-                        beam_fells,transfer_fells,
-                        calibration,pol_eff,
-                        apod_y_arcmin = 0.,apod_x_arcmin = 0.,
-                        maptype='native'):
+                 beam_fells, transfer_fells,
+                 calibration,pol_eff,
+                 apod_y_arcmin = 0.,
+                 apod_x_arcmin = 0.,
+                 maptype='native'):
     """
     This needs to only be called once if the beam, transfer, cal, poleff, etc. are the same for each split.
     """
     
     isignal_alms = signal_alms.copy()
-    isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
-    isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
-    isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
-    omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+    with bench.show("almxfl with beam (signal_sim_core)"):
+        isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
+        isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
+        isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
+    with bench.show("alm2map, 0.5 arcmin (signal_sim_core)"):
+        omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
     if maptype=='native':
         if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
             res = maps.resolution(shape,wcs) / u.arcmin
-            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
-        omap = enmap.apply_window(omap,pow=1)
+            with bench.show("enmap.apod (signal_sim_core)"):
+                omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
+        with bench.show("apply window (signal_sim_core)"):
+            omap = enmap.apply_window(omap,pow=1)
     elif maptype=='reprojected':
         pass
     else:
@@ -1048,7 +1072,8 @@ def get_noise_sim_core(shape,wcs,
             nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
                                        lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
         else:
-            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
+            with bench.show("alm2map (noise_sim_core)"):
+                nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
             nmap[~np.isfinite(nmap)] = 0.
     else:
         nmap = 0.
@@ -1074,17 +1099,19 @@ def get_sim_core(shape,wcs,signal_alms,
     You probably shouldn't be calling this function since it is wasteful when doing splits.
 
     """
-    omap = get_signal_sim_core(shape,wcs,signal_alms,
-                               beam_fells, transfer_fells,
-                               calibration, pol_eff,
-                               apod_y_arcmin, apod_x_arcmin,
-                               maptype)
-    nmap = get_noise_sim_core(shape,wcs,
-                       noise_alms,
-                       noise_mask,
-                       rms_uk_arcmin,
-                       noise_lmax,
-                       lcosine)
+    with bench.show("signal_sim_core (get_sim_core)"):
+        omap = get_signal_sim_core(shape,wcs,signal_alms,
+                                beam_fells, transfer_fells,
+                                calibration,pol_eff,
+                                apod_y_arcmin, apod_x_arcmin,
+                                maptype)
+    with bench.show("noise_sim_core (get_sim_core)"):
+        nmap = get_noise_sim_core(shape,wcs,
+                        noise_alms,
+                        noise_mask,
+                        rms_uk_arcmin,
+                        noise_lmax,
+                        lcosine)
     omap = omap + nmap
     return omap
 
