@@ -485,11 +485,12 @@ def pureEB(Q,U,mask_0,masked_on_input=True, returnMask=0,lmax=None,isHealpix=Tru
     #from pixell import sharp
     
     if masked_on_input:
-        mask = mask_0 != 0
-        Q = np.divide(Q, mask_0, where=mask)
-        U = np.divide(U, mask_0, where=mask) # U / mask_0
-        Q[~mask] = 0.
-        U[~mask] = 0. # U[~np.isfinite(U)] = 0
+        print('skipping')
+        # mask = mask_0 != 0
+        # Q = np.divide(Q, mask_0, where=mask)
+        # U = np.divide(U, mask_0, where=mask) # U / mask_0
+        # Q[~mask] = 0.
+        # U[~mask] = 0. # U[~np.isfinite(U)] = 0
 
     if isHealpix:
         nside=int((len(mask_0)/12.)**.5)
@@ -934,7 +935,7 @@ def get_theory_for_response(lmax=9000):
     lcl=np.array([ucls['TT'], ucls['EE'], ucls['BB'], ucls['TE']])
     return lcl
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Generate beloved dumb N0s for both gradient and curl.
 
     Args:
@@ -960,7 +961,11 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
     Returns:
         _type_: _description_
     """
-    Lmax = lmax       # maximum multipole of output normalization
+    if mlmax is not None:
+        Lmax = mlmax
+    else:
+        Lmax = lmax
+    # Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
     rlmax = lmax      # reconstruction multipole range
     ls = np.arange(0,Lmax+1)
@@ -992,13 +997,13 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
 
             #dxd
             cl=ocl**2/(d_ocl)
-            AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
+            AgTT0,AcTT0=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
             AgTT0[np.where(AgTT0==0)] = 1e30
             AcTT0[np.where(AcTT0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
+            AgTT1,AcTT1=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
             AgTT1[np.where(AgTT1==0)] = 1e30
             AcTT1[np.where(AcTT1==0)] = 1e30
             ng = AgTT**2*(1./AgTT0-1/AgTT1)
@@ -1018,26 +1023,26 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
                 n0TTs = AsTT**2*(1./AsTT0-1./AsTT1)*(AgTT*response)**2
                 #get the cross term
                 cl=ffl**2/(d_ocl*profile)
-                AxTT0=pytempura.norm_lens.stt(lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
+                AxTT0=pytempura.norm_lens.stt(Lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
                 #(data-sim) x (data-sim)
                 cl=ffl**2/((s_ocl-d_ocl)*profile)
-                AxTT1=pytempura.norm_lens.stt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
+                AxTT1=pytempura.norm_lens.stt(Lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
                 n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
                 prefactor=1/(1-nlpp*nlss*response**2)**2
                 ng=prefactor*(ng+n0TTs+n0TTx)
                 print("finished bh")
 
         elif est1=='TE':
-            AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:], lcl[3,:], ocl[0,:],ocl[1,:])
+            AgTE,AcTE=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:], lcl[3,:], ocl[0,:],ocl[1,:])
             #dxd
             cl=ocl**2/(d_ocl)
-            AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], cl[0,:],cl[1,:])
+            AgTE0,AcTE0=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], cl[0,:],cl[1,:])
             AgTE0[np.where(AgTE0==0)] = 1e30
             AcTE0[np.where(AcTE0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
+            AgTE1,AcTE1=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
             AgTE1[np.where(AgTE1==0)] = 1e30
             AcTE1[np.where(AcTE1==0)] = 1e30
 
@@ -1046,17 +1051,17 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
 
         elif est1=='EE':
             print("using EE")
-            AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+            AgEE,AcEE=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
             #prepare the data total power spectrum
             #dxd
             cl=ocl**2/(d_ocl)
-            AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
+            AgEE0,AcEE0=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
             AgEE0[np.where(AgEE0==0)] = 1e30
             AcEE0[np.where(AcEE0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+            AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
             AgEE1[np.where(AgEE1==0)] = 1e30
             AcEE1[np.where(AcEE1==0)] = 1e30
 
@@ -1064,15 +1069,15 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
             nc = AcEE**2*(1./AcEE0-1/AcEE1)
 
         elif est1=='TB':
-            AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], ocl[0,:],ocl[2,:])
+            AgTB,AcTB=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:], ocl[0,:],ocl[2,:])
             cl=ocl**2/(d_ocl)
-            AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
+            AgTB0,AcTB0=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
             AgTB0[np.where(AgTB0==0)] = 1e30
             AcTB0[np.where(AcTB0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
+            AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
             AgTB1[np.where(AgTB1==0)] = 1e30
             AcTB1[np.where(AcTB1==0)] = 1e30
 
@@ -1080,16 +1085,16 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
             nc = AcTB**2*(1./AcTB0-1/AcTB1)
 
         elif est1=='EB':
-            AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+            AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
             #dxd
             cl=ocl**2/(d_ocl)
-            AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+            AgEB0,AcEB0=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
             AgEB0[np.where(AgEB0==0)] = 1e30
             AcEB0[np.where(AcEB0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+            AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
             AgEB1[np.where(AgEB1==0)] = 1e30
             AcEB1[np.where(AcEB1==0)] = 1e30
 
@@ -1098,47 +1103,47 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
 
             AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-            AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])   
+            AgTE,AcTE=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])   
             #dxd
             cl=ocl**2/(d_ocl)
-            AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
+            AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
             #AgTTTE0[np.where(AgTTTE0==0)] = 1e30
             #AcTTTE0[np.where(AcTTTE0==0)] = 1e30
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
             #AgTTTE1[np.where(AgTTTE1==0)] = 1e30
             #AcTTTE1[np.where(AcTTTE1==0)] = 1e30
             ng=AgTT*AgTE*(AgTTTE0+AgTTTE1)
             nc=AcTT*AcTE*(AcTTTE0+AcTTTE1)
         elif est1=='TT' and est2=='EE':
             AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-            AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+            AgEE,AcEE=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
             cl=ocl**2/(d_ocl)
-            AgTTEE0,AcTTEE0=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], d_ocl[3,:])
+            AgTTEE0,AcTTEE0=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], d_ocl[3,:])
             cl=ocl**2/(s_ocl-d_ocl)
-            AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
+            AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
             ng=AgTT*AgEE*(AgTTEE0+AgTTEE1)
             nc=AcTT*AcEE*(AcTTEE0+AcTTEE1)
         elif (est1 == 'TB') and (est2 == 'EB'):
-            AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-            AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+            AgTB,AcTB=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+            AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
             cl=ocl**2/(d_ocl)
-            AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
+            AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
             AgTBEB0[np.where(AgTBEB0==0)] = 1e30
             AcTBEB0[np.where(AcTBEB0==0)] = 1e30            
             cl=ocl**2/(s_ocl-d_ocl)
-            AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
+            AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
             AgTBEB1[np.where(AgTBEB1==0)] = 1e30
             AcTBEB1[np.where(AcTBEB1==0)] = 1e30
             ng=AgTB*AgEB*(AgTBEB0+AgTBEB1)
@@ -1167,7 +1172,7 @@ def diagonal_RDN0_TE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTE,AcTE=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])
     #prepare the data total power spectrum
     D_l=get_Dpower(X,U,m=4)
     S_l=get_Spower(coaddX,coaddU)
@@ -1176,13 +1181,13 @@ def diagonal_RDN0_TE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTE0,AcTE0=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
     AgTE0[np.where(AgTE0==0)] = 1e30
     AcTE0[np.where(AcTE0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
+    AgTE1,AcTE1=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[1,:])
     AgTE1[np.where(AgTE1==0)] = 1e30
     AcTE1[np.where(AcTE1==0)] = 1e30
 
@@ -1212,7 +1217,7 @@ def diagonal_RDN0_EE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:])
     #prepare the data total power spectrum
     D_l=get_Dpower(X,U,mask,m=4)
     S_l=get_Spower(coaddX,coaddU,mask)
@@ -1221,13 +1226,13 @@ def diagonal_RDN0_EE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
+    AgEE0,AcEE0=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:] )
     AgEE0[np.where(AgEE0==0)] = 1e30
     AcEE0[np.where(AcEE0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
     AgEE1[np.where(AgEE1==0)] = 1e30
     AcEE1[np.where(AcEE1==0)] = 1e30
 
@@ -1255,7 +1260,7 @@ def diagonal_RDN0_TB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
     #prepare the data total power spectrum
     D_l=get_Dpower(X,U,m=4)
     S_l=get_Spower(coaddX,coaddU)
@@ -1264,13 +1269,13 @@ def diagonal_RDN0_TB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:] )
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:] )
     AgTB0[np.where(AgTB0==0)] = 1e30
     AcTB0[np.where(AcTB0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],cl[0,:],cl[2,:])
     AgTB1[np.where(AgTB1==0)] = 1e30
     AcTB1[np.where(AcTB1==0)] = 1e30
 
@@ -1299,7 +1304,7 @@ def diagonal_RDN0_EB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
     #prepare the data total power spectrum
     D_l=get_Dpower(X,U,m=4)
     S_l=get_Spower(coaddX,coaddU)
@@ -1308,13 +1313,13 @@ def diagonal_RDN0_EB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin,l
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     AgEB0[np.where(AgEB0==0)] = 1e30
     AcEB0[np.where(AcEB0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
     AgEB1[np.where(AgEB1==0)] = 1e30
     AcEB1[np.where(AcEB1==0)] = 1e30
 
@@ -1343,7 +1348,7 @@ def diagonal_RDN0_TTTE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
     AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],ocl[0,:])
-    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])    #prepare the data total power spectrum
+    AgTE,AcTE=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[1,:])    #prepare the data total power spectrum
     D_l=get_Dpower(X,U,m=4)
     S_l=get_Spower(coaddX,coaddU)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
@@ -1351,13 +1356,13 @@ def diagonal_RDN0_TTTE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
+    AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
     #AgTTTE0[np.where(AgTTTE0==0)] = 1e30
     #AcTTTE0[np.where(AcTTTE0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
     n0TTTEg=AgTT*AgTE*(AgTTTE0+AgTTTE1)
     n0TTTEc=AcTT*AcTE*(AcTTTE0+AcTTTE1)
 
@@ -1383,8 +1388,8 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
     ocl= fcl+noise
     ocl[np.where(ocl==0)] = 1e30
-    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],ocl[1,:],ocl[2,:])
     D_l=get_Dpower(X,U,m=4)
     S_l=get_Spower(coaddX,coaddU)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
@@ -1392,13 +1397,13 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
     ocl=ffl
     #dxd
     cl=ocl**2/(d_ocl)
-    AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
+    AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
     AgTBEB0[np.where(AgTBEB0==0)] = 1e30
     AcTBEB0[np.where(AcTBEB0==0)] = 1e30
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
+    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
     AgTBEB1[np.where(AgTBEB1==0)] = 1e30
     AcTBEB1[np.where(AcTBEB1==0)] = 1e30
     n0TBEBg=AgTB*AgEB*(AgTBEB0+AgTBEB1)
@@ -1406,9 +1411,13 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MV"""
-    Lmax = lmax       # maximum multipole of output normalization
+    if mlmax is not None:
+        Lmax = mlmax
+    else:
+        Lmax = lmax
+    # Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
     rlmax = lmax      # reconstruction multipole range
     ls = np.arange(0,Lmax+1)
@@ -1429,10 +1438,10 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
     AgTT,AcTT=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],ocl[0,:])
-    AgTE,AcTE=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTB,AcTB=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTE,AcTE=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTB,AcTB=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     ocl=ffl
 
@@ -1445,29 +1454,29 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     #dataxdata
 
     cl=ocl**2/(d_ocl)
-    AgTT0,AcTT0=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
-    AgTE0,AcTE0=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
-    AgTB0,AcTB0=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
-    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
-    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
+    AgTT0,AcTT0=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
+    AgTE0,AcTE0=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
+    AgTB0,AcTB0=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:] )
+    AgEE0,AcEE0=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
 
-    AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
-    AgTTEE0,AcTTEE0=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], d_ocl[3,:])
-    AgTEEE0,AcTEEE0=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*d_ocl[1,:]/ocl[1,:], cl[1,:], d_ocl[3,:])
-    AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
+    AgTTTE0,AcTTTE0=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], ocl[1,:]*d_ocl[0,:]/ocl[0,:],d_ocl[3,:])
+    AgTTEE0,AcTTEE0=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], d_ocl[3,:])
+    AgTEEE0,AcTEEE0=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], ocl[0,:]*d_ocl[1,:]/ocl[1,:], cl[1,:], d_ocl[3,:])
+    AgTBEB0,AcTBEB0=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], d_ocl[3,:])
 
 
 
     cl=ocl**2/(s_ocl-d_ocl)
-    AgTT1,AcTT1=pytempura.norm_lens.qtt(lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
-    AgTE1,AcTE1=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
-    AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
-    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
-    AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
-    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
-    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
+    AgTT1,AcTT1=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
+    AgTE1,AcTE1=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
+    AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+    AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
+    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
+    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
 
     nlist=[AgTT0,AgTT1,AgEE0,AgEE1,AgEB0,AgEB1,AgTE0,AgTE1,AgTTTE0,AgTTTE1,AgTTEE0,AgTTEE1,AgTEEE0,AgTEEE1,AgTBEB0,AgTBEB1]
     for i in range(len(nlist)):
@@ -1508,11 +1517,11 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
 
         #get the cross term
         cl=ffl**2/(d_ocl*profile)
-        AxTT0=pytempura.norm_lens.stt(lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
+        AxTT0=pytempura.norm_lens.stt(Lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
         #need see and ste if possible
         #(data-sim) x (data-sim)
         cl=ffl**2/((s_ocl-d_ocl)*profile)
-        AxTT1=pytempura.norm_lens.stt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
+        AxTT1=pytempura.norm_lens.stt(Lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
         n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
         prefactor=1/(1-nlpp*nlss*response**2)**2
         n0TTg=prefactor*(n0TTg+n0TTs+n0TTx)
@@ -1529,10 +1538,10 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     dumbn0c=[n0TTc,n0TEc,n0TBc,n0EBc,n0EEc,n0TTTEc,n0TTEEc,n0TEEEc,n0TBEBc]
 
     AgTTf,AcTTf=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],ocl[0,:])
-    AgTEf,AcTEf=pytempura.norm_lens.qte(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
-    AgTBf,AcTBf=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
-    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
-    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
+    AgTEf,AcTEf=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[1,:])
+    AgTBf,AcTBf=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],ocl[0,:],ocl[2,:])
+    AgEEf,AcEEf=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEBf,AcEBf=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     weights_NUMg=[1/AgTTf**2,1/AgTEf**2,1/AgTBf**2,1/AgEBf**2,1/AgEEf**2,2/(AgTTf*AgTEf),2/(AgTTf*AgEEf),2/(AgTEf*AgEEf),2/(AgTBf*AgEBf)]
     weights_NUMc=[1/AcTTf**2,1/AcTEf**2,1/AcTBf**2,1/AcEBf**2,1/AcEEf**2,2/(AcTTf*AcTEf),2/(AcTTf*AcEEf),2/(AcTEf*AcEEf),2/(AcTBf*AcEBf)]
@@ -1559,9 +1568,13 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25 #, dumbn0g, dumbn0c, weights_deng, weights_denc, weights_NUMg, weights_NUMc
 
 
-def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
     """Curvedsky dumb N0 for MVPOL currently no T"""
-    Lmax = lmax       # maximum multipole of output normalization
+    if mlmax is not None:
+        Lmax = mlmax
+    else:
+        Lmax = lmax
+    # Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
     rlmax = lmax      # reconstruction multipole range
     ls = np.arange(0,Lmax+1)
@@ -1579,8 +1592,8 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=Fa
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
 
-    AgEE,AcEE=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:])
-    AgEB,AcEB=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:],ocl[2,:])
+    AgEE,AcEE=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:])
+    AgEB,AcEB=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[1,:],ocl[1,:],ocl[2,:])
 
     ocl=ffl
 
@@ -1593,12 +1606,12 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=Fa
     #dataxdata
 
     cl=ocl**2/(d_ocl)
-    AgEE0,AcEE0=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
-    AgEB0,AcEB0=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
+    AgEE0,AcEE0=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
+    AgEB0,AcEB0=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
 
     cl=ocl**2/(s_ocl-d_ocl)
-    AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
-    AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
+    AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
+    AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
 
 
     nlist=[AgEE0,AgEE1,AgEB0,AgEB1]
@@ -1616,8 +1629,8 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=Fa
     dumbn0g=[n0EBg,n0EEg]
     dumbn0c=[n0EBc,n0EEc]
 
-    AgEEf,AcEEf=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
-    AgEBf,AcEBf=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
+    AgEEf,AcEEf=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:])
+    AgEBf,AcEBf=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],ocl[1,:],ocl[2,:])
 
     weights_NUMg=[1/AgEBf**2,1/AgEEf**2]
     weights_NUMc=[1/AcEBf**2,1/AcEEf**2]
