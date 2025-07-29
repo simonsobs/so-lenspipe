@@ -484,10 +484,18 @@ class PlanckNoiseMetadata:
                                     subproduct="noise_sims",
                                     maptag=maptag)
     
-    def read_in_sim(self, isplit, index, lmax=3000):
+    def read_in_sim(self, isplit, index, lmax=4000):
         # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
-        residual_map = hp.read_map(self.noise_map_path(isplit, index),
-                                   field=(0,1,2))
+        try:
+            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                       field=(0,1,2))
+        except IndexError:
+            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                       field=(0))
+            print("No pol found, setting E/B to 0.")
+            residual_map = np.array([residual_map,
+                                     residual_map*0.,
+                                     residual_map*0.])
         return reproject.healpix2map(residual_map, lmax=lmax,
                                      rot='gal,equ',save_alm=True)*10**6
 
