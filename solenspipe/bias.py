@@ -694,7 +694,7 @@ def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_km
                     qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
                     qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
                     mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
-        elif "tau" in coup:
+        elif "tau" in coup or "rot" in coup:
             if power_mcn0 is None:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
@@ -720,7 +720,7 @@ def mcrdn0_s4(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_km
 
 
 def mcrdn0_s41(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
-         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None,coup=["lens"]):
          
     
     qa = phifunc 
@@ -771,21 +771,36 @@ def mcrdn0_s41(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_k
         Xsp2 = get_kmap2((icov,0,i+1)) 
         Xsp3 = get_kmap3((icov,0,i+1)) 
 
-        if shear:
-            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
-            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
-        else:
+        if "lens" in coup:
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
+                if power_mcn0 is None:
+                    qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                    qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                    mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+                else:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                    mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        elif "tau" in coup or "rot" in coup:
             if power_mcn0 is None:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
                 mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
             else:
-                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
-                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                qaXsXsp = qf1(Xs,Xsp) #split1 
+                qbXsXsp = qf2(Xs,Xsp) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qf2(Xsp,Xs) if qf2 is not None else qf1(Xsp,Xs) #this is not present
                 mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        else:
+            print("Not implemented yet.")
+        
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 
@@ -798,7 +813,7 @@ def mcrdn0_s41(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_k
 
 
 def mcrdn0_s42(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
-         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None,coup=["lens"]):
          
     
     qa = phifunc 
@@ -849,21 +864,36 @@ def mcrdn0_s42(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_k
         Xsp2 = get_kmap2((icov,0,i+1)) 
         Xsp3 = get_kmap3((icov,0,i+1)) 
 
-        if shear:
-            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
-            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
-        else:
+        if "lens" in coup:
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
+                if power_mcn0 is None:
+                    qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                    qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                    mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+                else:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                    mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        elif "tau" in coup or "rot" in coup:
             if power_mcn0 is None:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
                 mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
             else:
-                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
-                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                qaXsXsp = qf1(Xs,Xsp) #split1 
+                qbXsXsp = qf2(Xs,Xsp) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qf2(Xsp,Xs) if qf2 is not None else qf1(Xsp,Xs) #this is not present
                 mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        else:
+            print("Not implemented yet.")
+
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 
@@ -876,7 +906,7 @@ def mcrdn0_s42(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_k
 
 
 def mcrdn0_s43(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
-         verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None, coup=["lens"]):
          
     
     qa = phifunc 
@@ -926,22 +956,37 @@ def mcrdn0_s43(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_k
         Xsp1 = get_kmap1((icov,1,i+1)) 
         Xsp2 = get_kmap2((icov,1,i+1)) 
         Xsp3 = get_kmap3((icov,1,i+1)) 
-
-        if shear:
-            qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
-            qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-            qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
-        else:
+        
+        if "lens" in coup:
+            if shear:
+                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+            else:
+                if power_mcn0 is None:
+                    qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                    qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                    mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+                else:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                    mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        elif "tau" in coup or "rot" in coup:
             if power_mcn0 is None:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
                 mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
             else:
-                qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
-                qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                qaXsXsp = qf1(Xs,Xsp) #split1 
+                qbXsXsp = qf2(Xs,Xsp) if qf2 is not None else qaXsXsp #split2
+                qbXspXs = qf2(Xsp,Xs) if qf2 is not None else qf1(Xsp,Xs) #this is not present
                 mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+        else:
+            print("Not implemented yet.")
+
         mcn0evals.append(mcn0_term.copy())
         if not(skip_rd):  rdn0evals.append(rdn0_only_term - mcn0_term)
 

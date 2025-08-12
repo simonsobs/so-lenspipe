@@ -106,7 +106,7 @@ def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
 
 def four_split_tau(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
     """Return tau_alms combinations required for the 4cross estimator in Eq. 38 of arXiv:2011.02475v1.
-    No phi_to_kappa conversion, only TT alms passed in.
+    No phi_to_kappa conversion. Use for rot as well.
 
     Args:
         Xdat_0 (array): filtered alms from split 0
@@ -332,7 +332,7 @@ def get_tempura_norms(est1,est2,ucls,tcls,lmin,lmax,mlmax,coup=['lens']):
         
 
 
-def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None, coup=["lens"]):
+def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,profile=None,coup=["lens"]):
     """
     Prepares a qfunc lambda function for an estimator est1. Optionally,
     normalize it with Al1. Optionally, bias harden it (which
@@ -421,20 +421,20 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
         qfunc1 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
                                     fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
                                     estimators=[est1],
-                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1]
+                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1] ### What are these hardcoded indices? T E and B
         
     elif "TAU" in coup:
         if est1=="TT":
             qfunc1 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y,xfTalm=X)
         elif est1=="EB":
-            qfunc1 = lambda X,Y: qe.qe_tau_pol(px,ucls,mlmax,fEalms=X, fBalms=Y)
+            qfunc1 = lambda X,Y: qe.qe_tau_pol(px,ucls,mlmax,fEalms=Y[1],fBalms=X[2])
         else:
             print("Not implemented for tau yet.")
 
 
     elif "ROT" in coup:
         if est1=="EB":
-            qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y,fBalms=X)
+            qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y[1],fBalms=X[2]) # added these indices on March 31, 2025.
         else:
             print("Not implemented for rot.")
 
@@ -515,6 +515,12 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     return np.asarray((cs.almxfl(recon[0],Al1[0]),cs.almxfl(recon[1],Al1[1])))
                 return retfunc
             elif "TAU" in coup:
+                def retfunc(X,Y):
+                    recon = qfunc1(X,Y)
+#               e      print("shape of Al1 = "+str(np.shape(Al1)))
+                    return np.asarray((cs.almxfl(recon,Al1)))
+                return retfunc
+            elif "ROT" in coup: # added this section on March 31 2025
                 def retfunc(X,Y):
                     recon = qfunc1(X,Y)
 #                     print("shape of Al1 = "+str(np.shape(Al1)))
