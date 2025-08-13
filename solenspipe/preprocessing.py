@@ -35,6 +35,138 @@ def parse_qid_experiment(qid):
     else:
         return 'act'
 
+class MetadataUnifier(object):
+    """
+    This class provides a binding between a YAML file
+    and SOFind, providing seamless easily extensible
+    access to data products under a unified interface.
+
+    The following will be needed:
+    1. maps (srcfull, srcfree, ivar)
+    2. effective beams (beam * transfer * leakage * heapix_pixwin)
+    3. calibration
+    4. pol. eff.
+    """
+    def __init__(self,yaml_file='metadata.yaml'):
+        self.c = io.config_from_yaml(yaml_file)
+
+    def _get_class(self,qid):
+        config_dict = self.c
+        found = []
+        for key in config_dict.keys():
+            if qid in config_dict[key]['possible_qids']:
+                found.append(key)
+        if len(found)>1: raise ValueError(f"{qid} found in more than 1 class")
+        if len(found)==0: raise ValueError(f"{qid} found in no class")
+        return found[0]
+
+    def _get_args(self,qid):
+        return bunch.Bunch(self.c[self._get_class(qid)])
+
+    def get_cal(self,qid):
+        dm = DataModel.from_config(args.dm_name)
+        args = self._get_args(qid)
+        # Calibration for T,Q,U. A single number.
+        if args.cal_subproduct is None:
+            return 1.
+        else:
+            return dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+
+    def get_poleff(self,qid):
+        dm = DataModel.from_config(args.dm_name)
+        args = self._get_args(qid)
+        # Pol eff. for Q,U. A single number.
+        if args.poleff_subproduct is None:
+            return 1.
+        else:
+            return dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+        
+    def get_map_fname(self,qid,map_type='srcfree', # srcfull, srcfree, ivar
+                      coadd=True,split_num=None):
+        dm = DataModel.from_config(args.dm_name)
+        args = self._get_args(qid)
+        if coadd and split_num: raise ValueError
+        if map_type=='srcfree':
+            maptag = args.srcfree_name
+        elif map_type=='srcfull':
+            maptag = 'map'
+        else:
+            maptag = map_type
+            
+        f = dm.get_map_fn(qid=qid,
+                      coadd=coadd,
+                      split_num=(split_num+args.split_start) if not(coadd) else None,
+                      subproduct=args.maps_subproduct,
+                      maptag=maptag)
+
+        if not(os.path.exists(f)): print(f"File {f} not found.")
+
+    def get_effective_beam(self,qid,
+                           simulation=False, # if this is for a simulation, skip sanitization of beam
+                           ells=None,
+                           get_breakdown=False):
+        #if coadd and split_num: raise ValueError # TODO: Implement splits
+        args = self._get_args(qid)
+        dm = DataModel.from_config(args.dm_name)
+
+        # TODO: Handle daytime
+        lbeam,vbeam = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=None, coadd=True)
+        # The following normalizes the beam, and then "sanitizes" it if this is not a simulation
+        if ells is not None:
+            obeam = maps.sanitize_beam(ells,maps.interp(lbeam,vbeam)(ells),sval=1e-3 if not(simulation) else None,verbose=True)
+        else:
+            ells = lbeam.copy()
+            obeam = maps.sanitize_beam(ells,vbeam,sval=1e-3 if not(simulation) else None,verbose=True)
+
+        final_beam = np.ones((3,obeam.size))
+        final_beam[0] = obeam.copy()
+        final_beam[1] = obeam.copy()
+        final_beam[2] = obeam.copy()
+
+        if get_breakdown:
+            breakdown = {}
+            breakdown['raw'] = final_beam.copy()
+            
+        if args.tf_subproduct is not None:
+            ltf,vtf = dm.read_tf(subproduct=args.tf_subproduct, qid=qid)
+            # TODO: Multiply by tf
+            otf = maps.interp(ltf,vtf,bounds_error=False,fill_value=1.0)(ells)
+            final_beam[0] = final_beam[0] * otf
+            if get_breakdown:
+                breakdown['tf'] = otf.copy()
+            
+        else:
+            pass
+            
+
+        try:
+            pwin_nside = args.hp_pixwin_nside
+            pwT,pwP = hp.pixwin(pwin_nside, pol=True, lmax=None)
+            pls = np.arange(pwT.size)
+            opwT = maps.interp(pls,pwT,bounds_error=False,fill_value=1.0)(ells)
+            opwP = maps.interp(pls,pwP,bounds_error=False,fill_value=1.0)(ells)
+            final_beam[0] = final_beam[0] * opwT
+            final_beam[1] = final_beam[1] * opwP
+            final_beam[2] = final_beam[2] * opwP
+            if get_breakdown:
+                breakdown['pwin_T'] = opwT.copy()
+                breakdown['pwin_P'] = opwP.copy()
+
+            # TODO: Add additional checks to make sure this really is Planck
+            
+        except AttributeError:
+            pass
+
+        # set monopole and dipole to 1
+        final_beam[:,:2] = 1.0
+        
+        if get_breakdown:
+            return ells,final_beam, breakdown
+        else:
+            return ells,final_beam
+
+    
+
 # leaving this for archival purposes for now
 # function called in v5 preprocessing is in PlanckNoiseMetadata
 def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbond/jiaqu/"):
@@ -239,6 +371,9 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
 
 
     return meta, isplit
+
+
+
 
 # The following 2 functions require:
 # args.config_name: str, config name of the datamodel, e.g. "act_dr6v4"
