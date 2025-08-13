@@ -806,9 +806,17 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
         i=i+start
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
         Xs  = get_kmap((0,i_set,i), split=0)
-        Xs1 = get_kmap((0,i_set,i), split=1)
-        Xs2 = get_kmap((0,i_set,i), split=2)
-        Xs3 = get_kmap((0,i_set,i), split=3)
+        
+        if power_mcn0 is not None:
+            print('noiseless as input, duplicating Xs')
+            Xs1 = Xs
+            Xs2 = Xs
+            Xs3 = Xs
+            
+        else:
+            Xs1 = get_kmap((0,i_set,i), split=1)
+            Xs2 = get_kmap((0,i_set,i), split=2)
+            Xs3 = get_kmap((0,i_set,i), split=3)
 
 
         if not(skip_rd): 

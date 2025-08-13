@@ -323,6 +323,13 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
+        meta.leakage_matrix = None
+        meta.deconvolve_beam = False
+        if args.deconvolve_beam:
+            meta.deconvolve_beam = True
+            if args.leakage_corr:
+                meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
+        
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
@@ -401,7 +408,7 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
                               subproduct=args.maps_subproduct,
                               maptag=maptag)
 
-def process_beam(sofind_beam, norm=True):
+def process_beam(sofind_beam, norm=True, interp=True):
     '''
     normalized beam if required and then interpolate
     '''
@@ -410,9 +417,11 @@ def process_beam(sofind_beam, norm=True):
 
     if norm:
         bells /= bells[0]
-
-    beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
-    return beam
+        
+    if interp:
+        return maps.interp(ell_bells, bells, fill_value='extrapolate')
+    else:
+        return ell_bells, bells
 
 class SOLATBeamHelper:
     def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
@@ -502,8 +511,8 @@ class ACTBeamHelper:
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
         
-        default_values = {'tf_subproduct': 'dummy_tf',
-                          'beam_subproduct': 'dummy_beams',
+        default_values = {'tf_subproduct': 'dummy',
+                          'beam_subproduct': 'dummy',
                           'mlmax': 4000}
         for key, value in default_values.items():
             if not hasattr(args, key):
@@ -518,7 +527,7 @@ class ACTBeamHelper:
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
 
-    def get_beam(self):
+    def get_beam(self, interp=True):
         
         if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
@@ -552,7 +561,7 @@ class ACTBeamHelper:
             #     return beam_map # beam_map_T, beam_map_P
 
             # else:
-            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct), interp=interp)
             
     def get_tf(self):
         ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
@@ -583,6 +592,35 @@ class ACTBeamHelper:
 
         return fkbeam, beam, tf
 
+    def get_invleakage_matrix(self):
+        
+        te = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='e')
+        ell = te[0]
+        te = te[1]
+        tb = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='b')
+        assert np.all(tb[0] == ell)
+        tb = tb[1]
+                
+        # assert self.coadd is False
+        
+        sbeam = self.get_beam(interp=False)
+        assert np.all(sbeam[0] == ell)
+        sbeam = sbeam[1]
+        
+        self.coadd = True
+        cbeam = self.get_beam(interp=False)
+        self.coadd = False
+        assert np.all(cbeam[0] == ell)
+        cbeam = cbeam[1]
+        
+        array0 = np.zeros(len(ell))
+        
+        beam_matrix = np.array([[sbeam, array0, array0],
+                                [te * cbeam * sbeam, sbeam, array0],
+                                [tb * cbeam * sbeam,  array0, sbeam]])
+        invmatrix = (np.linalg.inv(beam_matrix.T)).T
+        
+        return invmatrix
 
 class PlanckNoiseMetadata:
     
@@ -1099,13 +1137,16 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None):
+                    foreground_cluster=None, deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
     For simulations ivar processing is redundant, we should probably set ivar as an optional argument
+
+    pass deconv_beam = True if you wanna do deconvolution
+    Leakage is the inverse variance leakage matrix that needs to be applied to the alms
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
@@ -1129,8 +1170,12 @@ def preprocess_core(imap, mask,
     imap[~np.isfinite(imap)] = 0
 
     if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster        
+        imap[0] = imap[0] - foreground_cluster
         
+    if deconvolve_beam_bool:
+        print('deconv beam')
+        imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
+
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
@@ -1142,6 +1187,25 @@ def preprocess_core(imap, mask,
         ivar[1:] = ivar[1:] * pol_eff**2.
     
     return imap, ivar # ivar will be none if nothing happened to it
+
+def deconvolve_beam(imap, mask, mlmax, beam=None, leakage=None):
+    
+    alm_a = cs.map2alm(imap * mask, lmax = mlmax)
+        
+    if leakage is not None:
+        info = cs.alm_info(nalm=alm_a.shape[-1])
+        print('taking into account leakage')
+        alm_T = info.lmul(alm_a[0], leakage[0,0,:])
+        alm_E = info.lmul(alm_a[0], leakage[1,0,:]) + info.lmul(alm_a[1], leakage[1,1,:])
+        alm_B = info.lmul(alm_a[0], leakage[2,0,:]) + info.lmul(alm_a[2], leakage[2,2,:])
+        deconv = np.array([alm_T, alm_E, alm_B], dtype=np.complex128)
+
+    else: 
+        assert beam is not None
+        deconv = cs.almxfl(alm_a, 1/beam) 
+
+    imap = cs.alm2map(deconv, enmap.empty((3,) + mask.shape,mask.wcs))
+    return imap
 
 def get_signal_sim_core(shape,wcs,signal_alms,
                         beam_fells,transfer_fells,

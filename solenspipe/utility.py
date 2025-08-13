@@ -480,12 +480,13 @@ def pixellWrapperSpinS(alm2map,alm,mp12,spin):
     return SP-1j*SM
 
 
-def pureEB(Q,U,mask_0,masked_on_input=True, returnMask=0,lmax=None,isHealpix=True):
+def pureEB(Q,U,mask_0,masked_on_input=False, returnMask=0,lmax=None,isHealpix=True):
     #code by Will Coulton
     #from pixell import sharp
     
     if masked_on_input:
         print('skipping')
+        # TODO: implement thresholding here suggested by MatM
         # mask = mask_0 != 0
         # Q = np.divide(Q, mask_0, where=mask)
         # U = np.divide(U, mask_0, where=mask) # U / mask_0
