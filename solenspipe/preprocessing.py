@@ -60,12 +60,12 @@ class MetadataUnifier(object):
         if len(found)==0: raise ValueError(f"{qid} found in no class")
         return found[0]
 
-    def _get_args(self,qid):
+    def get_args(self,qid):
         return bunch.Bunch(self.c[self._get_class(qid)])
 
     def get_cal(self,qid):
+        args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
-        args = self._get_args(qid)
         # Calibration for T,Q,U. A single number.
         if args.cal_subproduct is None:
             return 1.
@@ -73,8 +73,8 @@ class MetadataUnifier(object):
             return dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
 
     def get_poleff(self,qid):
+        args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
-        args = self._get_args(qid)
         # Pol eff. for Q,U. A single number.
         if args.poleff_subproduct is None:
             return 1.
@@ -83,8 +83,8 @@ class MetadataUnifier(object):
         
     def get_map_fname(self,qid,map_type='srcfree', # srcfull, srcfree, ivar
                       coadd=True,split_num=None):
+        args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
-        args = self._get_args(qid)
         if coadd and split_num: raise ValueError
         if map_type=='srcfree':
             maptag = args.srcfree_name
@@ -100,13 +100,23 @@ class MetadataUnifier(object):
                       maptag=maptag)
 
         if not(os.path.exists(f)): print(f"File {f} not found.")
+        return f
 
+    def get_map(self,qid,map_type='srcfree', # srcfull, srcfree, ivar
+                coadd=True,split_num=None,pol=True,
+                oshape=None,owcs=None):
+        # TODO: To complete this function (use fname function for now)
+        raise NotImplementedError
+        return enmap.read_map(self.get_map_fname(qid,map_type=map_type,
+                                          coadd=coadd,split_num=split_num),sel=sel)
+        
+    
     def get_effective_beam(self,qid,
                            simulation=False, # if this is for a simulation, skip sanitization of beam
                            ells=None,
                            get_breakdown=False):
         #if coadd and split_num: raise ValueError # TODO: Implement splits
-        args = self._get_args(qid)
+        args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
 
         # TODO: Handle daytime
@@ -129,7 +139,6 @@ class MetadataUnifier(object):
             
         if args.tf_subproduct is not None:
             ltf,vtf = dm.read_tf(subproduct=args.tf_subproduct, qid=qid)
-            # TODO: Multiply by tf
             otf = maps.interp(ltf,vtf,bounds_error=False,fill_value=1.0)(ells)
             final_beam[0] = final_beam[0] * otf
             if get_breakdown:
