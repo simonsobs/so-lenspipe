@@ -61,7 +61,13 @@ class MetadataUnifier(object):
         return found[0]
 
     def get_args(self,qid):
-        return bunch.Bunch(self.c[self._get_class(qid)])
+        args = bunch.Bunch(self.c[self._get_class(qid)])
+        dm = DataModel.from_config(args.dm_name)
+        args.freq = dm.qids[qid]['freq']
+        args.cfreq = float(args.freq[-3:])
+        if not(args.cfreq>1. and args.cfreq<1000.): raise ValueError("Central frequency does not seem to be between 1 and 1000 GHz.")
+        return args
+
 
     def get_cal(self,qid):
         args = self.get_args(qid)
@@ -114,7 +120,9 @@ class MetadataUnifier(object):
     def get_effective_beam(self,qid,
                            simulation=False, # if this is for a simulation, skip sanitization of beam
                            ells=None,
-                           get_breakdown=False):
+                           get_breakdown=False,
+                           transfer=True,
+                           pixwin=True):
         #if coadd and split_num: raise ValueError # TODO: Implement splits
         args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
@@ -136,35 +144,37 @@ class MetadataUnifier(object):
         if get_breakdown:
             breakdown = {}
             breakdown['raw'] = final_beam.copy()
-            
-        if args.tf_subproduct is not None:
-            ltf,vtf = dm.read_tf(subproduct=args.tf_subproduct, qid=qid)
-            otf = maps.interp(ltf,vtf,bounds_error=False,fill_value=1.0)(ells)
-            final_beam[0] = final_beam[0] * otf
-            if get_breakdown:
-                breakdown['tf'] = otf.copy()
-            
-        else:
-            pass
+
+        if transfer:
+            if args.tf_subproduct is not None:
+                ltf,vtf = dm.read_tf(subproduct=args.tf_subproduct, qid=qid)
+                otf = maps.interp(ltf,vtf,bounds_error=False,fill_value=1.0)(ells)
+                final_beam[0] = final_beam[0] * otf
+                if get_breakdown:
+                    breakdown['tf'] = otf.copy()
+
+            else:
+                pass
             
 
-        try:
-            pwin_nside = args.hp_pixwin_nside
-            pwT,pwP = hp.pixwin(pwin_nside, pol=True, lmax=None)
-            pls = np.arange(pwT.size)
-            opwT = maps.interp(pls,pwT,bounds_error=False,fill_value=1.0)(ells)
-            opwP = maps.interp(pls,pwP,bounds_error=False,fill_value=1.0)(ells)
-            final_beam[0] = final_beam[0] * opwT
-            final_beam[1] = final_beam[1] * opwP
-            final_beam[2] = final_beam[2] * opwP
-            if get_breakdown:
-                breakdown['pwin_T'] = opwT.copy()
-                breakdown['pwin_P'] = opwP.copy()
+        if pixwin:
+            try:
+                pwin_nside = args.hp_pixwin_nside
+                pwT,pwP = hp.pixwin(pwin_nside, pol=True, lmax=None)
+                pls = np.arange(pwT.size)
+                opwT = maps.interp(pls,pwT,bounds_error=False,fill_value=1.0)(ells)
+                opwP = maps.interp(pls,pwP,bounds_error=False,fill_value=1.0)(ells)
+                final_beam[0] = final_beam[0] * opwT
+                final_beam[1] = final_beam[1] * opwP
+                final_beam[2] = final_beam[2] * opwP
+                if get_breakdown:
+                    breakdown['pwin_T'] = opwT.copy()
+                    breakdown['pwin_P'] = opwP.copy()
 
-            # TODO: Add additional checks to make sure this really is Planck
-            
-        except AttributeError:
-            pass
+                # TODO: Add additional checks to make sure this really is Planck
+
+            except AttributeError:
+                pass
 
         # set monopole and dipole to 1
         final_beam[:,:2] = 1.0
@@ -241,6 +251,7 @@ def get_inpaint_mask(args, datamodel):
         mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
         mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
         jmask = mask1 & mask2
+        if jmask.dtype!=np.bool_: raise ValueError
         jmask = ~jmask
         
         # if args.not_srcfree:
@@ -1120,6 +1131,9 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     (2) is done if the map was downgraded
 
     """
+    if kspace_mask is not None:
+        if kspace_mask.dtype != np.bool_: raise ValueError("kspace mask must be boolean.")
+
     wy1, wx1 = enmap.calc_window(imap.shape)
     if maptype=='native':
         wy2 = wx2 = 1
@@ -1132,10 +1146,15 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     else:
         raise ValueError
     fmap = enmap.fft(imap)
+    
     fmap *= (wy2/wy1)[:,None]
     fmap *= (wx2/wx1)
     if kspace_mask is not None:
-        fmap[:,~kspace_mask] = 0
+        if imap.ndim==3:
+            fmap[:,~kspace_mask] = 0
+        else:
+            fmap[~kspace_mask] = 0
+
     imap = enmap.ifft(fmap).real
     return imap
 
@@ -1170,16 +1189,21 @@ def preprocess_core(imap, mask,
 
 
     #for Planck, assert that we extract the RA DEC of the ACT footprint only
+    oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:
-        imap = enmap.extract(imap, (3,)+mask.shape, mask.wcs)
+        imap = enmap.extract(imap, oshape, mask.wcs)
         if ivar is not None:
-            ivar = enmap.extract(ivar, (3,)+mask.shape, mask.wcs)
+            ivar = enmap.extract(ivar, oshape, mask.wcs)
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
 
     if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster
+        if imap.ndim==3:
+            imap[0] = imap[0] - foreground_cluster
+        else:
+            imap = imap - foreground_cluster
+        
         
     if deconvolve_beam_bool:
         print('deconv beam')
@@ -1189,11 +1213,13 @@ def preprocess_core(imap, mask,
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration
-    imap[1:] = imap[1:] / pol_eff
+    if imap.ndim==3:
+        imap[1:] = imap[1:] / pol_eff
     
     if ivar is not None:
         ivar = ivar / calibration**2.
-        ivar[1:] = ivar[1:] * pol_eff**2.
+        if imap.ndim==3:
+            ivar[1:] = ivar[1:] * pol_eff**2.
     
     return imap, ivar # ivar will be none if nothing happened to it
 
