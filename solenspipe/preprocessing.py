@@ -49,7 +49,18 @@ class MetadataUnifier(object):
     """
     def __init__(self,yaml_file='metadata.yaml'):
         self.c = io.config_from_yaml(yaml_file)
-
+        self._rmsdict = {}
+        for key in self.c.keys():
+            try:
+                rms = self.c[key]['rms_uk_approx']
+            except KeyError:
+                pass
+            self._rmsdict[key] = dict(zip(self.c[key]['possible_qids'], rms))
+        
+    def get_rms(self,qid):
+        cls = self._get_class(qid)
+        return self._rmsdict[cls][qid]
+    
     def _get_class(self,qid):
         config_dict = self.c
         found = []
