@@ -9,6 +9,7 @@ import os
 import healpy as hp
 from scipy import interpolate
 import re
+from pathlib import Path
 
 specs_weights = {'EpureB': ['T','E','pureB'],
         'EB': ['T','E','B']}
@@ -1653,6 +1654,7 @@ def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmet
     >>> np.all(C[..., :2] == 0)
     True
     """
+    if len(qids)==0: raise ValueError("No qids provided")
     qids = list(map(str, qids))
     ncomp = len(qids)
     alias = dict(qid_aliases) if qid_aliases is not None else {}
