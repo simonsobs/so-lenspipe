@@ -1015,7 +1015,7 @@ class ForegroundHandler:
         Generates alm from cl for the given qid, cmb_set, and sim_indices (the latter 2 are used in the seed).
     '''
 
-    def __init__(self, datamodel, args):
+    def __init__(self, datamodel, args, debug=False):
         
         '''
         datamodel: DataModel, sofind datamodel
@@ -1024,23 +1024,42 @@ class ForegroundHandler:
         args.is_noiseless: bool, if True, no foregrounds are generated
         args.lmax_signal: int, maximum ell of signal sims
         args.maps_subproduct: str, subproduct name for maps
+        args.qids: str, qids delimited by spaces, e.g., "pa5a pa5b pa6a pa6b"
+        debug: bool, print foreground debug messages
         '''
 
         self.datamodel = datamodel
         self.args = args
-        assert self.args.fg_type in ['sims', 'theory'] # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        # 'sims_actplanck' loads from expanded foreground 2pt covariance estimated from ACT+Planck fits
+        assert self.args.fg_type in ['sims', 'theory', 'sims_actplanck'] 
+        self.debug = debug
         self.fgcov_func = self._define_fgcov_func()
+        # defined from compute_fg_alms(), but set to None by default 
+        self.alms_f = None
 
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
         if self.args.is_noiseless:
             return None
+        # lmax conditioned by max ell of signal sims (van Engelen)
         if self.args.fg_type == 'sims':
-            return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
+            return lambda: self.generate_cov_fgs(self.args.fgs_path,
+                                                 self.args.lmax_signal)
         elif self.args.fg_type == 'theory':
             # currently unsupported
-            # return lambda: self.get_fg_cov(qids)
             raise NotImplementedError
+        elif self.args.fg_type == 'sims_actplanck':
+            assert self.args.fgs_path.endswith(".npz"), \
+                   "Unsupported format for fgs file (should be <filename>.npz)"
+            # may be more generalized?
+            qids_split = self.args.qids.split(" ")
+            if self.debug: print("qids_split: ", qids_split)
+            qid_aliases = { qid: qid[:-3] for qid in qids_split
+                                          if '_dw' in qid or '_dd' in qid }
+            if self.debug: print("qid_aliases: ", qid_aliases)
+            return lambda: fg_covariance_cube(self.args.fgs_path, qids_split,
+                                              qid_aliases=qid_aliases)
         return None
 
     def generate_cov_fgs(self, fgs_path, lmax):
@@ -1076,34 +1095,56 @@ class ForegroundHandler:
 
         return cov_matrix
 
-    def get_fg_cov(self, qid):
-        raise NotImplementedError
-
     def get_map_fgs(self, qid, alms_f):
         '''
         qid of the map (frequency it corresponds to) is mapped to component of alms_f
+        if type is "sims_actplanck", generalize beyond [f150, f090] and use the order
+        provided in the qids parameter
         '''
-        qid_freq_dict = {'f150': 0, 'f090': 1}
-        qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=self.args.maps_subproduct, qid=qid)
-        index_fg = qid_freq_dict[qid_dict['freq']]
-        return alms_f[index_fg]
+        if self.args.type == "sims":
+            qid_freq_dict = {'f150': 0, 'f090': 1}
+            qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', qid=qid,
+                                                                   subproduct=self.args.maps_subproduct)
+            index_fg = qid_freq_dict[qid_dict['freq']]
+            return alms_f[index_fg]
+        else:
+            qids_split = self.args.qids.split(" ")
+            return alms_f[qids_split.index(qid)]
 
-    def get_fg_alms(self, fgcov, qid, cmb_set, sim_indices):
+    def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
         '''
-        generate alm from cl
+        generate alm from cl and store in object
         
         fgcov: np.ndarray, foreground covariance matrix (2pt)
         qid: str, qid of the map
-        cmb_set: int, set of cmb sim (for seed)
-        sim_indices: int, index of the sim (for seed)
+        cmb_set: int, set of cmb sim (for seed, optional)
+        sim_indices: int, index of the sim (for seed, optional)
         '''
-        if self.args.fg_type == 'sims':
-            alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
-            return self.get_map_fgs(qid, alms_f)
-        elif self.args.fg_type == 'theory':
-            return cs.rand_alm(fgcov)
+        # no seed info provided or theory fg
+        if None in [cmb_set, sim_indices] or self.args.fg_type == 'theory':
+            self.alms_f = cs.rand_alm(fgcov)
+        else:
+            assert 'sims' in self.args.fg_type, \
+                "need fgcov from sims to generate fg alms with a seed"
+            self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
+
         return None
 
+    def get_fg_alms(self, fgcov, qid, cmb_set=None,
+                    sim_indices=None, rerun=False):
+        '''
+        generate alm from cl (if not generated) and return
+        
+        fgcov: np.ndarray, foreground covariance matrix (2pt)
+        qid: str, qid of the map
+        cmb_set: int, set of cmb sim (for seed, optional)
+        sim_indices: int, index of the sim (for seed, optional)
+        '''
+        if self.alms_f is None or rerun:
+            self.compute_fg_alms(fgcov, cmb_set, sim_indices)
+
+        if self.debug: print("fg alms shape: ", self.alms_f.shape)
+        return self.get_map_fgs(qid, self.alms_f)
 """
 Some subtleties when applying this to different experiments:
 
@@ -1654,6 +1695,7 @@ def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmet
     >>> np.all(C[..., :2] == 0)
     True
     """
+
     if len(qids)==0: raise ValueError("No qids provided")
     qids = list(map(str, qids))
     ncomp = len(qids)
@@ -1686,7 +1728,7 @@ def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmet
                 nell = arr.shape[0]
                 loaded[pair] = arr
                 break
-
+        
         if nell is None:
             if require_all:
                 raise KeyError("None of the requested pair spectra (after aliasing) were found in the file.")
