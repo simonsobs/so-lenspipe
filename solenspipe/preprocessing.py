@@ -1101,7 +1101,7 @@ class ForegroundHandler:
         if type is "sims_actplanck", generalize beyond [f150, f090] and use the order
         provided in the qids parameter
         '''
-        if self.args.type == "sims":
+        if self.args.fg_type == "sims":
             qid_freq_dict = {'f150': 0, 'f090': 1}
             qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', qid=qid,
                                                                    subproduct=self.args.maps_subproduct)
