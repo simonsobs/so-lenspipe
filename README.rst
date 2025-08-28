@@ -57,8 +57,10 @@ To install, first compile the Fortran code with f2py
 
 ::
 
-    python -m numpy.f2py -m _lensing_biases -c LensingBiases.f90 --fcompiler=gfortran --f90flags="-fopenmp -fno-implicit-none -w -O3" -lgomp
-	pip install --editable .
+python -m numpy.f2py -m _lensing_biases -c LensingBiases.f90 --backend meson --fcompiler=gfortran --f90flags="-fopenmp -fno-implicit-none -w -O3" -lgomp
+
+
+pip install --editable .
 
 
 Then copy ``input/config_template.yml`` to ``input/config.yml`` and edit
