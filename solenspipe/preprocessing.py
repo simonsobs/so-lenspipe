@@ -1101,7 +1101,7 @@ class ForegroundHandler:
         if type is "sims_actplanck", generalize beyond [f150, f090] and use the order
         provided in the qids parameter
         '''
-        if self.args.type == "sims":
+        if self.args.fg_type == "sims":
             qid_freq_dict = {'f150': 0, 'f090': 1}
             qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', qid=qid,
                                                                    subproduct=self.args.maps_subproduct)
@@ -1122,11 +1122,12 @@ class ForegroundHandler:
         '''
         # no seed info provided or theory fg
         if None in [cmb_set, sim_indices] or self.args.fg_type == 'theory':
-            self.alms_f = cs.rand_alm(fgcov)
+            self.alms_f = cs.rand_alm(fgcov, lmax=self.args.lmax_signal)
         else:
             assert 'sims' in self.args.fg_type, \
                 "need fgcov from sims to generate fg alms with a seed"
-            self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
+            self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices),
+                                      lmax=self.args.lmax_signal)
 
         return None
 
