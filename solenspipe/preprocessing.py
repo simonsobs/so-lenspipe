@@ -9,6 +9,7 @@ import os
 import healpy as hp
 from scipy import interpolate
 import re
+import yaml
 
 specs_weights = {'EpureB': ['T','E','pureB'],
         'EB': ['T','E','B']}
@@ -69,7 +70,12 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
 
-
+def get_kspace_mask(args):
+    
+    if (args.khfilter is None) and (args.kvfilter is None):
+        return None
+    else:
+        return np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
 
 def get_inpaint_mask(args, datamodel):
     
@@ -180,7 +186,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
-        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
@@ -884,7 +890,11 @@ class ForegroundHandler:
         lmax: int, maximum ell of fg power spectrum
         '''
         
-        w_2_foreground = 0.27
+        wfacs_file= fgs_path + "wfacs.yml"
+        with open(wfacs_file, "rb") as f:
+            wfacs = yaml.load(f, yaml.Loader)
+
+        w_2_foreground = wfacs["w2"]
 
         # Load foreground alms
         foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
@@ -932,7 +942,7 @@ class ForegroundHandler:
             alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
             return self.get_map_fgs(qid, alms_f)
         elif self.args.fg_type == 'theory':
-            return cs.rand_alm(fgcov)
+            return NotImplementedError # cs.rand_alm(fgcov)
         return None
 
 """
