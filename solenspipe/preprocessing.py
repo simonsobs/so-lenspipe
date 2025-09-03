@@ -741,11 +741,12 @@ class SOLATNoiseMetadata:
         return index
 
     def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,
-                    fwhm=1.6, mask=None, generate=False):
+                    fwhm=1.6, mask=None, generate=False, write=False):
         
         # grab a sim from disk, fail if does not exist on-disk (by default)
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
-                                  lmax=lmax, alm=alm, generate=generate)
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
 
@@ -811,10 +812,13 @@ class SOsimsNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,
+                    generate=False, write=False, fwhm=1.6, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
-        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
 
@@ -907,11 +911,13 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True, generate=False): #, fwhm=1.6, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400,
+                    alm=True, generate=False, write=False): #, fwhm=1.6, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk (by default)
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
-                                  lmax=lmax, alm=alm, generate=generate)
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
         return my_sim
