@@ -4,21 +4,19 @@ project(
   version: '0.1.0',                 # Keep in sync with pyproject.toml
   meson_version: '>=1.2.3',         # meson-python on Py3.12+ expects >=1.2.3
   default_options: [
-    'c_std=c99',                     # mirrors your -std=c99
-    'buildtype=release'              # O3 etc. controlled by buildtype/optimization
+    'c_std=c99',     
+    'buildtype=release'
   ],
 )
 
 py = import('python').find_installation(pure: false)
 py_dep    = py.dependency()          # libpython + include path
 
-# --- NumPy include dir -------------------------------------------------
 numpy_inc = run_command(
   py, '-c', 'import numpy,sys;print(numpy.get_include())'
 ).stdout().strip()
 inc_numpy = include_directories(numpy_inc)
 
-# --- locate fortranobject.c correctly ---------------------------------
 fortranobject_c_path = run_command(
   py, '-c',
   '''
@@ -43,7 +41,6 @@ print(pathlib.Path(spec.origin).parent / "src")
 )
 
 
-# ----------  common compile / link flags ----------
 openmp_dep = dependency('openmp', required : true)
 
 # Allow users to override optimisation flags like the old FCFLAGS
@@ -59,7 +56,6 @@ extra_fortran_args = [
 add_project_arguments(extra_fortran_args, language : 'fortran')
 add_project_link_arguments('-fopenmp', language : ['c','fortran'])
 
-# ----------  libalkernel static library ----------
 lb_src = files(
   'fortran/LensingBiases.f90',
 )
@@ -68,7 +64,7 @@ lb_lib = static_library(
   'lensing_biases',
   lb_src,
   dependencies : openmp_dep,
-  install      : false,          # it is only for internal linking
+  install      : false,          
 )
 
 lb_dep = declare_dependency(link_with : lb_lib)
