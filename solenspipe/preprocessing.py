@@ -3,7 +3,7 @@ from pixell import enmap, utils as u, curvedsky as cs, reproject
 import numpy as np
 from mnms import noise_models as nm
 from sofind import DataModel
-from pixell import bunch
+from pixell import bunch, enplot
 from solenspipe import utility as simgen
 import os
 import healpy as hp
@@ -339,8 +339,14 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
+        if hasattr(args, "cal_subproduct_kwargs"):
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct,
+                                                        which='cals', **args.cal_subproduct_kwargs)
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct,
+                                                    which='poleffs', **args.cal_subproduct_kwargs)
+        else:
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
@@ -560,13 +566,21 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
+        if hasattr(args, "beam_subproduct_kwargs"):
+            self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
+        else:
+            self.beam_subproduct_kwargs = {}
 
     def get_beam(self, interp=True):
         
         if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
-            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
-            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
+            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                              split_num=self.isplit, coadd=self.coadd, tpol = 'T',
+                                              **self.beam_subproduct_kwargs)
+            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                              split_num=self.isplit, coadd=self.coadd, tpol = 'POL',
+                                              **self.beam_subproduct_kwargs)
 
             
             # if self.daynight != 'night':
@@ -579,7 +593,9 @@ class ACTBeamHelper:
             return beam_T, beam_P
         
         else:
-            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                                split_num=self.isplit, coadd=self.coadd,
+                                                **self.beam_subproduct_kwargs)
             
             # if self.daynight != 'night':
             #     print('removing tf from beam --day')
@@ -1047,10 +1063,15 @@ class ForegroundHandler:
         # defined from compute_fg_alms(), but set to None by default 
         self.alms_f = None
 
+    def split_qids(self):
+        # may be more generalized?
+        if isinstance(self.args.qids, str):
+            return self.args.qids.split(" ")
+        else:
+            return self.args.qids
+
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
-        if self.args.is_noiseless:
-            return None
         # lmax conditioned by max ell of signal sims (van Engelen)
         if self.args.fg_type == 'sims':
             return lambda: self.generate_cov_fgs(self.args.fgs_path,
@@ -1061,8 +1082,7 @@ class ForegroundHandler:
         elif self.args.fg_type == 'sims_actplanck':
             assert self.args.fgs_path.endswith(".npz"), \
                    "Unsupported format for fgs file (should be <filename>.npz)"
-            # may be more generalized?
-            qids_split = self.args.qids.split(" ")
+            qids_split = self.split_qids()
             if self.debug: print("qids_split: ", qids_split)
             qid_aliases = { qid: qid[:-3] for qid in qids_split
                                           if '_dw' in qid or '_dd' in qid }
@@ -1117,7 +1137,7 @@ class ForegroundHandler:
             index_fg = qid_freq_dict[qid_dict['freq']]
             return alms_f[index_fg]
         else:
-            qids_split = self.args.qids.split(" ")
+            qids_split = self.split_qids()
             return alms_f[qids_split.index(qid)]
 
     def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
@@ -1230,7 +1250,8 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None, deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
+                    foreground_cluster=None, deconvolve_beam_bool=False,
+                    beam=None, leakage=None, mlmax=5000):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -1252,8 +1273,11 @@ def preprocess_core(imap, mask,
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
+    # check if we have any unobserved pixels / NaNs in our footprint mask
+    if not(np.all((np.isfinite(imap[...,mask>1e-3])))):
+        imap[~np.isfinite(imap)] = 0
 
-    #for Planck, assert that we extract the RA DEC of the ACT footprint only
+    # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:
         imap = enmap.extract(imap, oshape, mask.wcs)
@@ -1500,13 +1524,24 @@ def get_fout_name(fname, args, stage, tag=None):
     except AttributeError:
         fcoadd_folder = "default_fcoadd"
 
+    if hasattr(args, "no_fcoadd_folder"):
+        no_fcoadd_folder = args.no_fcoadd_folder
+    else:
+        no_fcoadd_folder = False
+
     if stage == 'weights':
         fname += '_weights.txt'
-        folder = f'../../{fcoadd_folder}/stage_compute_weights/'
+        if no_fcoadd_folder:
+            folder = f'../stage_compute_weights/'
+        else:
+            folder = f'../../{fcoadd_folder}/stage_compute_weights/'
     
     elif stage == 'cluster_fgmap':
         fname += '_cluster_fgmap.fits'
-        folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
+        if no_fcoadd_folder:
+            folder = f'../stage_cluster_fgmap/'
+        else:
+            folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
