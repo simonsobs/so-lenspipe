@@ -9,7 +9,11 @@ import os
 import healpy as hp
 from scipy import interpolate
 import re
+import yaml
+from pathlib import Path
 
+
+print("preprocessing.py loaded brexit")
 specs_weights = {'EpureB': ['T','E','pureB'],
         'EB': ['T','E','B']}
 nspecs = len(specs_weights['EB'])
@@ -24,7 +28,7 @@ def is_mss2(qid):
     return (parse_qid_experiment(qid)=='so_mss2')
           
 def parse_qid_experiment(qid):
-    if qid in ['p01','p02','p03','p04','p05','p06','p07']:
+    if qid in ['p01','p02','p03','p04','p05','p06','p07','p08','p09']:
         return 'planck'
     elif qid[:3]=='sobs_':
         return 'sobs'
@@ -69,7 +73,12 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
 
-
+def get_kspace_mask(args):
+    
+    if (args.khfilter is None) and (args.kvfilter is None):
+        return None
+    else:
+        return np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
 
 def get_inpaint_mask(args, datamodel):
     
@@ -148,9 +157,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([1,2])
         meta.nsplits = 2
+        isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, splitnum)
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
@@ -161,7 +171,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
                                               subproduct_name="noise_sims")
         # assigning ACT splits 0 + 1 to Planck split 1
         # and ACT splits 2 + 3 to Planck split 2
-        isplit = None if coadd else (splitnum // 2 + 1)
+        
     elif parse_qid_experiment(qid)=='act':
         
         meta.Name = 'act_dr6v4'
@@ -172,14 +182,14 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        meta.calibration = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.cal_subproduct, which='cals')
+        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
         
-        if meta.daynight != 'night':
-            meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
+        # if meta.daynight != 'night':
+        #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
-        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
@@ -189,6 +199,13 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
+        
+        meta.leakage_matrix = None
+        meta.deconvolve_beam = False
+        if args.deconvolve_beam:
+            meta.deconvolve_beam = True
+            if args.leakage_corr:
+                meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
         
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
@@ -265,7 +282,7 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
                               subproduct=args.maps_subproduct,
                               maptag=maptag)
 
-def process_beam(sofind_beam, norm=True):
+def process_beam(sofind_beam, norm=True, interp=True):
     '''
     normalized beam if required and then interpolate
     '''
@@ -274,9 +291,11 @@ def process_beam(sofind_beam, norm=True):
 
     if norm:
         bells /= bells[0]
-
-    beam = maps.interp(ell_bells, bells, fill_value='extrapolate')
-    return beam
+        
+    if interp:
+        return maps.interp(ell_bells, bells, fill_value='extrapolate')
+    else:
+        return ell_bells, bells
 
 class SOLATBeamHelper:
     def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
@@ -366,8 +385,8 @@ class ACTBeamHelper:
 
     def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
         
-        default_values = {'tf_subproduct': 'dummy_tf',
-                          'beam_subproduct': 'dummy_beams',
+        default_values = {'tf_subproduct': 'dummy',
+                          'beam_subproduct': 'dummy',
                           'mlmax': 4000}
         for key, value in default_values.items():
             if not hasattr(args, key):
@@ -382,7 +401,7 @@ class ACTBeamHelper:
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
 
-    def get_beam(self):
+    def get_beam(self, interp=True):
         
         if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
@@ -416,7 +435,7 @@ class ACTBeamHelper:
             #     return beam_map # beam_map_T, beam_map_P
 
             # else:
-            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct))
+            return process_beam(beam_map, self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct), interp=interp)
             
     def get_tf(self):
         ells_tf, tf = self.datamodel.read_tf(subproduct=self.tf_subproduct, qid=self.qid)
@@ -447,6 +466,35 @@ class ACTBeamHelper:
 
         return fkbeam, beam, tf
 
+    def get_invleakage_matrix(self):
+        
+        te = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='e')
+        ell = te[0]
+        te = te[1]
+        tb = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='b')
+        assert np.all(tb[0] == ell)
+        tb = tb[1]
+                
+        # assert self.coadd is False
+        
+        sbeam = self.get_beam(interp=False)
+        assert np.all(sbeam[0] == ell)
+        sbeam = sbeam[1]
+        
+        self.coadd = True
+        cbeam = self.get_beam(interp=False)
+        self.coadd = False
+        assert np.all(cbeam[0] == ell)
+        cbeam = cbeam[1]
+        
+        array0 = np.zeros(len(ell))
+        
+        beam_matrix = np.array([[sbeam, array0, array0],
+                                [te * cbeam * sbeam, sbeam, array0],
+                                [tb * cbeam * sbeam,  array0, sbeam]])
+        invmatrix = (np.linalg.inv(beam_matrix.T)).T
+        
+        return invmatrix
 
 class PlanckNoiseMetadata:
     
@@ -483,10 +531,18 @@ class PlanckNoiseMetadata:
                                     subproduct="noise_sims",
                                     maptag=maptag)
     
-    def read_in_sim(self, isplit, index, lmax=3000):
+    def read_in_sim(self, isplit, index, lmax=4000):
         # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
-        residual_map = hp.read_map(self.noise_map_path(isplit, index),
-                                   field=(0,1,2))
+        try:
+            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                       field=(0,1,2))
+        except IndexError:
+            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+                                       field=(0))
+            print("No pol found, setting E/B to 0.")
+            residual_map = np.array([residual_map,
+                                     residual_map*0.,
+                                     residual_map*0.])
         return reproject.healpix2map(residual_map, lmax=lmax,
                                      rot='gal,equ',save_alm=True)*10**6
 
@@ -735,14 +791,14 @@ class PlanckBeamHelper:
         - np.ndarray: The beam function array.
         """
 
-        # Determine split letter
-        assert self.isplit in [1,2], "Planck splits are either 1 or 2"
+        # Determine split letter (coadd case doesn't matter)
         sl = 'A' if self.isplit == 1 else 'B'
 
         # Load and interpolate the beam
         ell_b, bl = self.datamodel.read_beam(self.qid,
                         subproduct=self.beam_subproduct,
-                        split_num=sl)
+                        split_num=sl,
+                        coadd=(self.isplit is None))
         beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
 
         # Generate the beam function values
@@ -837,7 +893,11 @@ class ForegroundHandler:
         lmax: int, maximum ell of fg power spectrum
         '''
         
-        w_2_foreground = 0.27
+        wfacs_file= fgs_path + "wfacs.yml"
+        with open(wfacs_file, "rb") as f:
+            wfacs = yaml.load(f, yaml.Loader)
+
+        w_2_foreground = wfacs["w2"]
 
         # Load foreground alms
         foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
@@ -885,7 +945,7 @@ class ForegroundHandler:
             alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
             return self.get_map_fgs(qid, alms_f)
         elif self.args.fg_type == 'theory':
-            return cs.rand_alm(fgcov)
+            return NotImplementedError # cs.rand_alm(fgcov)
         return None
 
 """
@@ -955,13 +1015,16 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None):
+                    foreground_cluster=None, deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
     For simulations ivar processing is redundant, we should probably set ivar as an optional argument
+
+    pass deconv_beam = True if you wanna do deconvolution
+    Leakage is the inverse variance leakage matrix that needs to be applied to the alms
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
@@ -985,8 +1048,12 @@ def preprocess_core(imap, mask,
     imap[~np.isfinite(imap)] = 0
 
     if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster        
+        imap[0] = imap[0] - foreground_cluster
         
+    if deconvolve_beam_bool:
+        print('deconv beam')
+        imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
+
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
@@ -999,6 +1066,80 @@ def preprocess_core(imap, mask,
     
     return imap, ivar # ivar will be none if nothing happened to it
 
+def deconvolve_beam(imap, mask, mlmax, beam=None, leakage=None):
+    
+    alm_a = cs.map2alm(imap * mask, lmax = mlmax)
+        
+    if leakage is not None:
+        info = cs.alm_info(nalm=alm_a.shape[-1])
+        print('taking into account leakage')
+        alm_T = info.lmul(alm_a[0], leakage[0,0,:])
+        alm_E = info.lmul(alm_a[0], leakage[1,0,:]) + info.lmul(alm_a[1], leakage[1,1,:])
+        alm_B = info.lmul(alm_a[0], leakage[2,0,:]) + info.lmul(alm_a[2], leakage[2,2,:])
+        deconv = np.array([alm_T, alm_E, alm_B], dtype=np.complex128)
+
+    else: 
+        assert beam is not None
+        deconv = cs.almxfl(alm_a, 1/beam) 
+
+    imap = cs.alm2map(deconv, enmap.empty((3,) + mask.shape,mask.wcs))
+    return imap
+
+def get_signal_sim_core(shape,wcs,signal_alms,
+                        beam_fells,transfer_fells,
+                        calibration,pol_eff,
+                        apod_y_arcmin = 0.,apod_x_arcmin = 0.,
+                        maptype='native'):
+    """
+    This needs to only be called once if the beam, transfer, cal, poleff, etc. are the same for each split.
+    """
+    
+    isignal_alms = signal_alms.copy()
+    isignal_alms[0] = cs.almxfl(isignal_alms[0],beam_fells * transfer_fells)
+    isignal_alms[1] = cs.almxfl(isignal_alms[1],beam_fells)
+    isignal_alms[2] = cs.almxfl(isignal_alms[2],beam_fells)
+    omap = cs.alm2map(isignal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
+    if maptype=='native':
+        if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
+            res = maps.resolution(shape,wcs) / u.arcmin
+            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
+        omap = enmap.apply_window(omap,pow=1)
+    elif maptype=='reprojected':
+        pass
+    else:
+        raise ValueError
+
+    # notice how these are inverse of what's in preprocess
+    # not applied to nmap because it is already based on data (which includes them)
+    omap = omap / calibration  
+    omap[1:] = omap[1:] * pol_eff
+    
+    return omap
+    
+def get_noise_sim_core(shape,wcs,
+                       noise_alms=None,
+                       noise_mask=None,
+                       rms_uk_arcmin=None,
+                       noise_lmax = 5400,
+                       lcosine=80):
+    """
+    This needs to be called each time for each split.
+    """
+    
+    if noise_alms is not None:
+        if noise_mask is not None:
+            lstitch = noise_lmax - 200
+            mlmax = noise_lmax + 600
+            nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
+                                       lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
+        else:
+            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
+            nmap[~np.isfinite(nmap)] = 0.
+    else:
+        nmap = 0.
+
+    return nmap
+    
 def get_sim_core(shape,wcs,signal_alms,
                  beam_fells, transfer_fells,
                  calibration,pol_eff,
@@ -1015,39 +1156,20 @@ def get_sim_core(shape,wcs,signal_alms,
     shape,wcs should ideally correspond to native ACT/SO pixelization of 0.5 arcmin
     beam_fells and transfer_fells should be same size and go from ell=0 to beyond relevant ells
 
-    """
-    
-    signal_alms[0] = cs.almxfl(signal_alms[0],beam_fells * transfer_fells)
-    signal_alms[1] = cs.almxfl(signal_alms[1],beam_fells)
-    signal_alms[2] = cs.almxfl(signal_alms[2],beam_fells)
-    omap = cs.alm2map(signal_alms,enmap.empty((3,)+shape,wcs,dtype=np.float32))
-    if maptype=='native':
-        if (apod_y_arcmin>1e-3) or (apod_x_arcmin>1e-3):
-            res = maps.resolution(shape,wcs) / u.arcmin
-            omap = enmap.apod(omap, (apod_y_arcmin/res,apod_x_arcmin/res))
-        omap = enmap.apply_window(omap,pow=1)
-    elif maptype=='reprojected':
-        pass
-    else:
-        raise ValueError        
+    You probably shouldn't be calling this function since it is wasteful when doing splits.
 
-    if noise_alms is not None:
-        if noise_mask is not None:
-            lstitch = noise_lmax - 200
-            mlmax = noise_lmax + 600
-            nmap = maps.stitched_noise(shape,wcs,noise_alms,noise_mask,rms_uk_arcmin=rms_uk_arcmin,
-                                       lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
-        else:
-            nmap = cs.alm2map(noise_alms,enmap.empty((3,)+shape,wcs))
-            nmap[~np.isfinite(nmap)] = 0.
-    else:
-        nmap = 0.
-    
-    # notice how these are inverse of what's in preprocess
-    # not applied to nmap because it is already based on data (which includes them)
-    omap = omap / calibration  
-    omap[1:] = omap[1:] * pol_eff
-    
+    """
+    omap = get_signal_sim_core(shape,wcs,signal_alms,
+                               beam_fells, transfer_fells,
+                               calibration, pol_eff,
+                               apod_y_arcmin, apod_x_arcmin,
+                               maptype)
+    nmap = get_noise_sim_core(shape,wcs,
+                       noise_alms,
+                       noise_mask,
+                       rms_uk_arcmin,
+                       noise_lmax,
+                       lcosine)
     omap = omap + nmap
     return omap
 
@@ -1120,6 +1242,44 @@ def get_mask_tag(mask_fn, mask_subproduct):
 
     return f'{daynight}_{skyfrac}'
 
+def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
+    """
+    Apply an ℓmin taper to a noise power spectrum.
+    
+    Parameters
+    ----------
+    noise : np.ndarray
+        Input noise array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    blowup : float, optional
+        Factor to inflate the noise below cutoff (default=1e10).
+    
+    Returns
+    -------
+    noise_mod : np.ndarray
+        Modified noise array with inflated values below ellmin.
+    """
+    ell = np.arange(len(noise))
+    noise_mod = noise.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        noise_mod[mask] *= blowup
+    else:
+        # Smooth taper from blowup at (ellmin - delta_ell) → normal at (ellmin + delta_ell)
+        x = (ell - (ellmin - delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # effective multiplier: blowup below cutoff, ~1 above
+        mult = blowup * (1 - window) + 1.0 * window
+        noise_mod *= mult
+
+    return noise_mod
+
 def read_weights(args):
     
     '''
@@ -1133,10 +1293,19 @@ def read_weights(args):
         specs = specs_weights['EpureB']
     else:
         specs = specs_weights['EB']
+    print("modifying weights to account for ellmin")
+    ellmin_dict = {
+    "pa5a": 1000,  # PA5 f090
+    "pa5b": 800,   # PA5 f150
+    "pa6a": 1000,  # PA6 f090
+    "pa6b": 600    # PA6 f150}
+    }
 
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
-            noise_specs[ispec, i] = np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise=np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise_cut = apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
+            noise_specs[ispec, i] = noise_cut
     
     return noise_specs
 
@@ -1150,31 +1319,289 @@ def get_fout_name(fname, args, stage, tag=None):
     tag: optional, used in kspace_coadd and nilc_coadd to distinguish between sim (tag='sim') and data (tag=None), because we store them in different folders
     '''
     fname = fname.split('.fits')[0]
+    
+    try:
+        fcoadd_folder = f'{args.mask_tag}_fcoadd'
+    except AttributeError:
+        fcoadd_folder = "default_fcoadd"
 
     if stage == 'weights':
         fname += '_weights.txt'
-        folder = 'stage_compute_weights/'
+        folder = f'../stage_compute_weights/'
     
     elif stage == 'cluster_fgmap':
         fname += '_cluster_fgmap.fits'
-        folder = 'stage_cluster_fgmap/'
+        folder = f'../stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = 'stage_kspace_coadd_sims/'
+            folder = '../stage_kspace_coadd_sims/'
         else:
-            folder = 'stage_kspace_coadd/'
+            folder = '../stage_kspace_coadd/'
 
     elif stage == 'nilc_coadd':
         fname  = 'nilc_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = 'stage_nilc_coadd_sims/'
+            folder = '../stage_nilc_coadd_sims/'
         else:
-            folder = 'stage_nilc_coadd'
+            folder = '../stage_nilc_coadd'
 
-    output_dir = os.path.join(args.output_dir, f'../{folder}')
+    output_dir = os.path.join(args.output_dir, folder)
     # create output folder if it does not exist
     os.makedirs(output_dir, exist_ok=True)
 
     return os.path.join(output_dir, fname)
+
+
+
+
+
+"""
+Utilities for saving/loading foreground cross-spectra and
+assembling covariance cubes.
+
+Conventions
+-----------
+- Each 1-D spectrum is indexed by multipole ell starting at 0 with step 1.
+- Entries with ell < 2 are forcibly set to zero (on save and on assembly).
+- Covariance arrays have shape (ncomp, ncomp, nell), i.e. (i, j, ell).
+"""
+
+
+# small helpers
+def _normalize_pair(p):
+    a, b = str(p[0]), str(p[1])
+    return (a, b) if a <= b else (b, a)
+
+
+def _pair_to_key(qid1, qid2, sep="|"):
+    qlo, qhi = _normalize_pair((qid1, qid2))
+    if sep in qlo or sep in qhi:
+        raise ValueError(f"qids must not contain the separator {sep!r}: got {qlo!r}, {qhi!r}")
+    return f"{qlo}{sep}{qhi}"
+
+
+def _key_to_pair(key, sep="|"):
+    parts = key.split(sep)
+    if len(parts) != 2:
+        raise ValueError(f"Invalid stored pair key {key!r}")
+    return _normalize_pair(parts)
+
+
+def _check_all_same_length(arrs):
+    n = None
+    for a in arrs:
+        a = np.asarray(a)
+        if a.ndim != 1:
+            raise ValueError("All cross-spectra must be 1-D arrays")
+        if n is None:
+            n = a.shape[0]
+        elif a.shape[0] != n:
+            raise ValueError("All cross-spectra must have the same length")
+    if n is None:
+        raise ValueError("No cross-spectra provided")
+    return int(n)
+
+
+def _zero_low_ells(arr):
+    arr = np.array(arr, copy=True)
+    if arr.shape[0] >= 1:
+        arr[0] = 0.0
+    if arr.shape[0] >= 2:
+        arr[1] = 0.0
+    return arr
+
+
+# public API
+def save_cross_spectra(path, cross_spectra, sep="|", extra_meta=None):
+    """
+    Save cross-spectra to a compressed .npz file (always overwrites).
+
+    Assumptions:
+    - Spectra are 1-D arrays on integer ell starting at 0.
+    - ell<2 entries are set to zero before writing.
+
+    Parameters
+    ----------
+    path : str or Path
+        Output file ('.npz' recommended).
+    cross_spectra : mapping
+        Dict mapping (qid1, qid2) -> 1-D array. All arrays must have equal length.
+    sep : str, optional
+        Pair-key separator for internal storage.
+    extra_meta : mapping, optional
+        Small metadata (strings/numbers) to include.
+
+    Returns
+    -------
+    Path
+        The path written.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> d = {("A","A"): np.arange(5)+1, ("A","B"): 2*(np.arange(5)+1), ("B","B"): 3*(np.arange(5)+1)}
+    >>> _ = save_cross_spectra("fg_simple.npz", d)
+    """
+    path = Path(path)
+
+    canon = {}
+    for (q1, q2), arr in cross_spectra.items():
+        k = _pair_to_key(q1, q2, sep=sep)
+        canon[k] = _zero_low_ells(np.asarray(arr))
+
+    _check_all_same_length(canon.values())
+
+    qids = set()
+    for k in canon.keys():
+        a, b = _key_to_pair(k, sep=sep)
+        qids.add(a); qids.add(b)
+    qids = np.array(sorted(qids), dtype=object)
+
+    save_kwargs = {}
+    for k, arr in canon.items():
+        save_kwargs[f"spec:{k}"] = arr
+
+    save_kwargs["meta:qids"] = qids
+    save_kwargs["meta:sep"] = np.array([sep], dtype=object)
+
+    if extra_meta:
+        for mk, mv in extra_meta.items():
+            save_kwargs[f"meta:extra:{mk}"] = np.array([mv], dtype=object)
+
+    np.savez_compressed(path, **save_kwargs)
+    return path
+
+def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmetrize=True, qid_aliases=None):
+    """
+    Build a covariance array of shape (ncomp, ncomp, nell) for the given qids,
+    reading **only the spectra needed** directly from the NPZ on disk.
+
+    The element C[i, j, ell] equals the cross-spectrum between qids[i]
+    and qids[j] at multipole 'ell'. Missing pairs are either filled with
+    'fill_missing' or raise an error depending on 'require_all'.
+
+    Aliases
+    -------
+    You can pass a mapping ``qid_aliases`` where keys are requested qids and
+    values are the underlying qids to use on disk. This is useful when some
+    requested components are exact aliases/copies of others. For example:
+    
+    >>> # If NPZ contains only 'a' but you want 'x' to behave like 'a':
+    >>> # covariance_cube(path, ['a','x','b'], qid_aliases={'x':'a'})
+    >>> # All spectra involving 'x' are taken from those with 'a'.
+
+    Notes
+    -----
+    - ell<2 entries in the output are set to zero.
+    - Input spectra are assumed to live on ell = 0, 1, 2, ... with unit spacing.
+    - Only spectra required by the (qid_i, qid_j) pairs (after aliasing) are
+      read from the file.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to an NPZ written by :func:`save_cross_spectra`.
+    qids : sequence of str
+        Order of components along the first two axes.
+    require_all : bool, default True
+        If True, raise on missing pairs; else fill with 'fill_missing'.
+    fill_missing : float, default np.nan
+        Used only when require_all=False.
+    symmetrize : bool, default True
+        If True, symmetrize exactly over (i, j) by averaging with its transpose.
+    qid_aliases : mapping, optional
+        Dict mapping requested qids to substitute qids to use from disk.
+
+    Returns
+    -------
+    numpy.ndarray
+        Covariance array with shape (ncomp, ncomp, nell).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> d = {("a","a"): np.ones(5), ("a","b"): 2*np.ones(5), ("b","b"): 3*np.ones(5)}
+    >>> _ = save_cross_spectra("fg_cov_alias.npz", d)
+    >>> # Request ['a','x','b'] with x->a alias; file has no 'x' spectra
+    >>> C = covariance_cube("fg_cov_alias.npz", ["a","x","b"], qid_aliases={"x":"a"})
+    >>> C.shape
+    (3, 3, 5)
+    >>> np.all(C[..., :2] == 0)
+    True
+    """
+
+    if len(qids)==0: raise ValueError("No qids provided")
+    qids = list(map(str, qids))
+    ncomp = len(qids)
+    alias = dict(qid_aliases) if qid_aliases is not None else {}
+    resolved = [alias.get(q, q) for q in qids]
+
+    path = Path(path)
+    with np.load(path, allow_pickle=True) as z:
+        try:
+            sep = str(z["meta:sep"][0])
+        except KeyError:
+            sep = "|"
+
+        # Build set of unique needed (resolved) pairs and their NPZ keys
+        needed_pairs = set()
+        for qi in resolved:
+            for qj in resolved:
+                # use normalized resolved pair
+                a, b = _normalize_pair((qi, qj))
+                needed_pairs.add((a, b))
+
+        key_for_pair = {pair: f"spec:{_pair_to_key(pair[0], pair[1], sep=sep)}" for pair in needed_pairs}
+
+        # Determine nell by loading the first present needed spectrum
+        nell = None
+        loaded = {}
+        for pair, key in key_for_pair.items():
+            if key in z.files:
+                arr = _zero_low_ells(np.asarray(z[key]))
+                nell = arr.shape[0]
+                loaded[pair] = arr
+                break
+        
+        if nell is None:
+            if require_all:
+                raise KeyError("None of the requested pair spectra (after aliasing) were found in the file.")
+            any_spec_keys = [k for k in z.files if k.startswith("spec:")]
+            if not any_spec_keys:
+                raise ValueError("The NPZ file contains no spectra.")
+            arr = _zero_low_ells(np.asarray(z[any_spec_keys[0]]))
+            nell = arr.shape[0]
+
+        # Allocate covariance and fill
+        C = np.empty((ncomp, ncomp, nell), dtype=float)
+        C.fill(fill_missing)
+
+        # Fill using resolved pairs
+        for i, qi in enumerate(resolved):
+            for j, qj in enumerate(resolved):
+                pair = _normalize_pair((qi, qj))
+                key = key_for_pair[pair]
+                if pair in loaded:
+                    arr = loaded[pair]
+                elif key in z.files:
+                    arr = _zero_low_ells(np.asarray(z[key]))
+                    if arr.shape[0] != nell:
+                        raise ValueError(f"Spectrum length mismatch for pair {pair}: got {arr.shape[0]}, expected {nell}")
+                    loaded[pair] = arr
+                else:
+                    if require_all and i <= j:
+                        raise KeyError(f"Missing spectrum for pair {pair} (resolved from aliases)")
+                    continue
+                C[i, j, :] = arr
+
+        if symmetrize:
+            C = 0.5 * (C + np.swapaxes(C, 0, 1))
+
+        if nell > 0:
+            C[:, :, 0] = 0.0
+        if nell > 1:
+            C[:, :, 1] = 0.0
+
+        return C
