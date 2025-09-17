@@ -319,6 +319,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([1,2])
         meta.nsplits = 2
+        # assigning ACT splits 0 + 1 to Planck split 1
+        # and ACT splits 2 + 3 to Planck split 2
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
@@ -331,8 +333,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
                                               subproduct_name="noise_sims")
-        # assigning ACT splits 0 + 1 to Planck split 1
-        # and ACT splits 2 + 3 to Planck split 2
+
         
     elif parse_qid_experiment(qid)=='act':
         
@@ -1535,7 +1536,7 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
 
     return noise_mod
 
-def read_weights(args):
+def read_weights(args, use_ps_cut=False):
     
     '''
     reads in the fcoadd weights
@@ -1548,13 +1549,22 @@ def read_weights(args):
         specs = specs_weights['EpureB']
     else:
         specs = specs_weights['EB']
-    print("modifying weights to account for ellmin")
-    ellmin_dict = {
-    "pa5a": 1000,  # PA5 f090
-    "pa5b": 800,   # PA5 f150
-    "pa6a": 1000,  # PA6 f090
-    "pa6b": 600    # PA6 f150}
-    }
+
+    if use_ps_cut:
+        print("modifying weights to account for ellmin")
+        ellmin_dict = {
+            "pa5a": 1000,  # PA5 f090
+            "pa5b": 800,   # PA5 f150
+            "pa6a": 1000,  # PA6 f090
+            "pa6b": 600    # PA6 f150}
+        }
+    else:
+        ellmin_dict = {
+            "pa5a": 600,   # PA5 f090
+            "pa5b": 600,   # PA5 f150
+            "pa6a": 600,   # PA6 f090
+            "pa6b": 600    # PA6 f150
+        }
 
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
