@@ -234,7 +234,12 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
 
-
+def get_kspace_mask(args):
+    
+    if (args.khfilter is None) and (args.kvfilter is None):
+        return None
+    else:
+        return np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
 
 def get_inpaint_mask(args, datamodel):
     
@@ -352,7 +357,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
-        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
@@ -928,7 +933,7 @@ class ACTNoiseMetadata:
         return index
 
     def read_in_sim(self,split_num, sim_num, lmax=5400,
-                    alm=True, generate=False, write=False): #, fwhm=1.6, mask=None):
+                    alm=True, generate=False, write=False):
         
         # grab a sim from disk, fail if does not exist on-disk (by default)
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
@@ -1101,7 +1106,11 @@ class ForegroundHandler:
         lmax: int, maximum ell of fg power spectrum
         '''
         
-        w_2_foreground = 0.27
+        wfacs_file= fgs_path + "wfacs.yml"
+        with open(wfacs_file, "rb") as f:
+            wfacs = yaml.load(f, yaml.Loader)
+
+        w_2_foreground = wfacs["w2"]
 
         # Load foreground alms
         foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
@@ -1488,6 +1497,44 @@ def get_mask_tag(mask_fn, mask_subproduct):
 
     return f'{daynight}_{skyfrac}'
 
+def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
+    """
+    Apply an ℓmin taper to a noise power spectrum.
+    
+    Parameters
+    ----------
+    noise : np.ndarray
+        Input noise array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    blowup : float, optional
+        Factor to inflate the noise below cutoff (default=1e10).
+    
+    Returns
+    -------
+    noise_mod : np.ndarray
+        Modified noise array with inflated values below ellmin.
+    """
+    ell = np.arange(len(noise))
+    noise_mod = noise.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        noise_mod[mask] *= blowup
+    else:
+        # Smooth taper from blowup at (ellmin - delta_ell) → normal at (ellmin + delta_ell)
+        x = (ell - (ellmin - delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # effective multiplier: blowup below cutoff, ~1 above
+        mult = blowup * (1 - window) + 1.0 * window
+        noise_mod *= mult
+
+    return noise_mod
+
 def read_weights(args):
     
     '''
@@ -1501,10 +1548,19 @@ def read_weights(args):
         specs = specs_weights['EpureB']
     else:
         specs = specs_weights['EB']
+    print("modifying weights to account for ellmin")
+    ellmin_dict = {
+    "pa5a": 1000,  # PA5 f090
+    "pa5b": 800,   # PA5 f150
+    "pa6a": 1000,  # PA6 f090
+    "pa6b": 600    # PA6 f150}
+    }
 
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
-            noise_specs[ispec, i] = np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise=np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise_cut = apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
+            noise_specs[ispec, i] = noise_cut
     
     return noise_specs
 
@@ -1579,7 +1635,6 @@ Conventions
 def _normalize_pair(p):
     a, b = str(p[0]), str(p[1])
     return (a, b) if a <= b else (b, a)
-
 
 def _pair_to_key(qid1, qid2, sep="|"):
     qlo, qhi = _normalize_pair((qid1, qid2))
@@ -1678,9 +1733,6 @@ def save_cross_spectra(path, cross_spectra, sep="|", extra_meta=None):
 
     np.savez_compressed(path, **save_kwargs)
     return path
-
-
-
 
 def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmetrize=True, qid_aliases=None):
     """
