@@ -1261,7 +1261,7 @@ def preprocess_core(imap, mask,
                     inpaint_mask=None,
                     kspace_mask=None, 
                     foreground_cluster=None, deconvolve_beam_bool=False,
-                    beam=None, leakage=None, mlmax=5000):
+                    beam=None, leakage=None, mlmax=5000, plot_intermediate=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -1274,18 +1274,16 @@ def preprocess_core(imap, mask,
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
+    from pixell import enplot
+
     if dfact!=1 and (dfact is not None):
         imap = enmap.downgrade(imap,dfact)
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-        
+
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
-
-    # check if we have any unobserved pixels / NaNs in our footprint mask
-    if not(np.all((np.isfinite(imap[...,mask>1e-3])))):
-        imap[~np.isfinite(imap)] = 0
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
@@ -1293,6 +1291,7 @@ def preprocess_core(imap, mask,
         imap = enmap.extract(imap, oshape, mask.wcs)
         if ivar is not None:
             ivar = enmap.extract(ivar, oshape, mask.wcs)
+            
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
@@ -1302,8 +1301,8 @@ def preprocess_core(imap, mask,
             imap[0] = imap[0] - foreground_cluster
         else:
             imap = imap - foreground_cluster
-        
-        
+
+
     if deconvolve_beam_bool:
         print('deconv beam')
         imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
