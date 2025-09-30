@@ -29,7 +29,7 @@ def parse_qid_experiment(qid):
     elif qid[:3]=='sobs_':
         return 'sobs'
     elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
-        return 'so_lat_bn_may2025'
+        return 'so_lat_bn_may2025' #'so_lat_bn_may2025'
     elif qid in ['lfa', 'lfb','mfa','mfb', 'uhfa', 'uhfb']:
         return 'so_mss2'
     else:
@@ -229,6 +229,29 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOLATBN_MAY2025_NoiseMetadata(qid, verbose=True) 
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
+        isplit = None if coadd else splitnum
+        
+        meta.Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.beam_fells = meta.Beam.get_effective_beam()[1]  #done
+        meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
+
+    elif parse_qid_experiment(qid)=='so_lat_bn_may2025':
+        meta.Name = 'so_lat_bn_may2025' ##this should be passed as argument otherwise use default
+        meta.dm = DataModel.from_config(meta.Name)
+        qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
+        
+        meta.nsplits = qid_dict['num_splits']
+        meta.splits = np.arange(meta.nsplits)
+        #meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+        #meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+       
+
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.maptype = 'native'
+        meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
