@@ -1261,27 +1261,30 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None, deconvolve_beam_bool=False,
-                    beam=None, leakage=None, mlmax=5000, plot_intermediate=None):
+                    foreground_cluster=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
     For simulations ivar processing is redundant, we should probably set ivar as an optional argument
-
-    pass deconv_beam = True if you wanna do deconvolution
-    Leakage is the inverse variance leakage matrix that needs to be applied to the alms
-
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
-    from pixell import enplot
 
+    # Subtract cluster model first, accounting for calibration
+    if foreground_cluster is not None:
+        if imap.ndim==3:
+            imap[0] = imap[0] - (foreground_cluster / calibration)
+        else:
+            imap = imap - (foreground_cluster / calibration)
+
+    # Then downgrade
     if dfact!=1 and (dfact is not None):
         imap = enmap.downgrade(imap,dfact)
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
 
+    # Then inpaint
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
@@ -1296,17 +1299,6 @@ def preprocess_core(imap, mask,
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
-
-    if foreground_cluster is not None:
-        if imap.ndim==3:
-            imap[0] = imap[0] - foreground_cluster
-        else:
-            imap = imap - foreground_cluster
-
-
-    if deconvolve_beam_bool:
-        print('deconv beam')
-        imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
 
     imap = imap * mask
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
