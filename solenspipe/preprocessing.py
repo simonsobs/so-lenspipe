@@ -139,6 +139,7 @@ class MetadataUnifier(object):
         dm = DataModel.from_config(args.dm_name)
 
         # TODO: Handle daytime
+        # TODO: handle args.normalize_beam
         lbeam,vbeam = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=None, coadd=True)
         # The following normalizes the beam, and then "sanitizes" it if this is not a simulation
         if ells is not None:
