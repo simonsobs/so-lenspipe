@@ -1,4 +1,4 @@
-from pixell import enmap, curvedsky as cs, utils, enplot,curvedsky as cs
+from pixell import enmap, curvedsky as cs, utils, enplot,reproject
 from orphics import maps,cosmology,stats,pixcov
 import numpy as np
 import healpy as hp
@@ -13,6 +13,15 @@ def eshow(x,fname):
     #plots = enplot.get_plots(x, downgrade = 4,color="gray")
     plots = enplot.get_plots(x, downgrade = 4)
     enplot.write(fname,plots)
+
+def healpytopixell(map_path,shape,wcs,method="harm",order=None):
+    hmap = hp.read_map(map_path)
+    if method=="harm":
+        imap=reproject.healpix2map(hmap, shape=shape, wcs=wcs,verbose=True)
+    else:
+        imap=reproject.healpix2map(hmap, shape=shape, wcs=wcs,verbose=True, method=method,order=order)
+    return imap
+
 
 def stamp_plot(imap,ra,dec,boxwidth=10):
     dec,ra = np.deg2rad(np.array((dec, ra)))

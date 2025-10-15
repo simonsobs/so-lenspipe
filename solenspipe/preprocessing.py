@@ -3,12 +3,13 @@ from pixell import enmap, utils as u, curvedsky as cs, reproject
 import numpy as np
 from mnms import noise_models as nm
 from sofind import DataModel
-from pixell import bunch
+from pixell import bunch, enplot
 from solenspipe import utility as simgen
 import os
 import healpy as hp
 from scipy import interpolate
 import re
+from pathlib import Path
 
 specs_weights = {'EpureB': ['T','E','pureB'],
         'EB': ['T','E','B']}
@@ -22,7 +23,15 @@ def is_lat_iso(qid):
 
 def is_mss2(qid):
     return (parse_qid_experiment(qid)=='so_mss2')
-          
+
+def get_text(qid,args):
+    if qid[:2]=='p0':
+        exp = 'Planck'
+    else:
+        exp = 'ACT'
+    freq = args.freq
+    return f'{exp} {qid} {freq}'
+
 def parse_qid_experiment(qid):
     if qid in ['p01','p02','p03','p04','p05','p06','p07','p08','p09']:
         return 'planck'
@@ -40,12 +49,6 @@ class MetadataUnifier(object):
     This class provides a binding between a YAML file
     and SOFind, providing seamless easily extensible
     access to data products under a unified interface.
-
-    The following will be needed:
-    1. maps (srcfull, srcfree, ivar)
-    2. effective beams (beam * transfer * leakage * heapix_pixwin)
-    3. calibration
-    4. pol. eff.
     """
     def __init__(self,yaml_file='metadata.yaml'):
         self.c = io.config_from_yaml(yaml_file)
@@ -232,7 +235,12 @@ def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbo
     residual_alm = reproject.healpix2map(residual, lmax=3000, rot='gal,equ',save_alm=True)*10**6
     return residual_alm
 
-
+def get_kspace_mask(args):
+    
+    if (args.khfilter is None) and (args.kvfilter is None):
+        return None
+    else:
+        return np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
 
 def get_inpaint_mask(args, datamodel):
     
@@ -312,6 +320,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.dm = DataModel.from_config(meta.Name)
         meta.splits = np.array([1,2])
         meta.nsplits = 2
+        # assigning ACT splits 0 + 1 to Planck split 1
+        # and ACT splits 2 + 3 to Planck split 2
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
@@ -324,8 +334,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
                                               subproduct_name="noise_sims")
-        # assigning ACT splits 0 + 1 to Planck split 1
-        # and ACT splits 2 + 3 to Planck split 2
+
         
     elif parse_qid_experiment(qid)=='act':
         
@@ -337,14 +346,20 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.daynight = qid_dict['daynight']
    
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
+        if hasattr(args, "cal_subproduct_kwargs"):
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct,
+                                                        which='cals', **args.cal_subproduct_kwargs)
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct,
+                                                    which='poleffs', **args.cal_subproduct_kwargs)
+        else:
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+            meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
-        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
         meta.noisemodel = ACTNoiseMetadata(qid, verbose=True)
         meta.nspecs = nspecs
@@ -558,13 +573,21 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
+        if hasattr(args, "beam_subproduct_kwargs"):
+            self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
+        else:
+            self.beam_subproduct_kwargs = {}
 
     def get_beam(self, interp=True):
         
         if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
-            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'T')
-            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd, tpol = 'POL')
+            beam_T = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                              split_num=self.isplit, coadd=self.coadd, tpol = 'T',
+                                              **self.beam_subproduct_kwargs)
+            beam_P = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                              split_num=self.isplit, coadd=self.coadd, tpol = 'POL',
+                                              **self.beam_subproduct_kwargs)
 
             
             # if self.daynight != 'night':
@@ -577,7 +600,9 @@ class ACTBeamHelper:
             return beam_T, beam_P
         
         else:
-            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+            beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
+                                                split_num=self.isplit, coadd=self.coadd,
+                                                **self.beam_subproduct_kwargs)
             
             # if self.daynight != 'night':
             #     print('removing tf from beam --day')
@@ -738,10 +763,13 @@ class SOLATNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6,  mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,
+                    fwhm=1.6, mask=None, generate=False, write=False):
         
-        # grab a sim from disk, fail if does not exist on-disk
-        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        # grab a sim from disk, fail if does not exist on-disk (by default)
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
 
@@ -807,10 +835,13 @@ class SOsimsNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,  fwhm=1.6, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,
+                    generate=False, write=False, fwhm=1.6, mask=None):
         
         # grab a sim from disk, fail if does not exist on-disk
-        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
 
@@ -903,10 +934,13 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True): #, fwhm=1.6, mask=None):
+    def read_in_sim(self,split_num, sim_num, lmax=5400,
+                    alm=True, generate=False, write=False):
         
-        # grab a sim from disk, fail if does not exist on-disk
-        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num, lmax=lmax, alm=alm, generate=False)
+        # grab a sim from disk, fail if does not exist on-disk (by default)
+        my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
+                                  lmax=lmax, alm=alm, generate=generate,
+                                  write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
         return my_sim
@@ -1013,7 +1047,7 @@ class ForegroundHandler:
         Generates alm from cl for the given qid, cmb_set, and sim_indices (the latter 2 are used in the seed).
     '''
 
-    def __init__(self, datamodel, args):
+    def __init__(self, datamodel, args, debug=False):
         
         '''
         datamodel: DataModel, sofind datamodel
@@ -1022,23 +1056,46 @@ class ForegroundHandler:
         args.is_noiseless: bool, if True, no foregrounds are generated
         args.lmax_signal: int, maximum ell of signal sims
         args.maps_subproduct: str, subproduct name for maps
+        args.qids: str, qids delimited by spaces, e.g., "pa5a pa5b pa6a pa6b"
+        debug: bool, print foreground debug messages
         '''
 
         self.datamodel = datamodel
         self.args = args
-        assert self.args.fg_type in ['sims', 'theory'] # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
+        # 'sims_actplanck' loads from expanded foreground 2pt covariance estimated from ACT+Planck fits
+        assert self.args.fg_type in ['sims', 'theory', 'sims_actplanck'] 
+        self.debug = debug
         self.fgcov_func = self._define_fgcov_func()
+        # defined from compute_fg_alms(), but set to None by default 
+        self.alms_f = None
+
+    def split_qids(self):
+        # may be more generalized?
+        if isinstance(self.args.qids, str):
+            return self.args.qids.split(" ")
+        else:
+            return self.args.qids
 
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
-        if self.args.is_noiseless:
-            return None
+        # lmax conditioned by max ell of signal sims (van Engelen)
         if self.args.fg_type == 'sims':
-            return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
+            return lambda: self.generate_cov_fgs(self.args.fgs_path,
+                                                 self.args.lmax_signal)
         elif self.args.fg_type == 'theory':
             # currently unsupported
-            # return lambda: self.get_fg_cov(qids)
             raise NotImplementedError
+        elif self.args.fg_type == 'sims_actplanck':
+            assert self.args.fgs_path.endswith(".npz"), \
+                   "Unsupported format for fgs file (should be <filename>.npz)"
+            qids_split = self.split_qids()
+            if self.debug: print("qids_split: ", qids_split)
+            qid_aliases = { qid: qid[:-3] for qid in qids_split
+                                          if '_dw' in qid or '_dd' in qid }
+            if self.debug: print("qid_aliases: ", qid_aliases)
+            return lambda: fg_covariance_cube(self.args.fgs_path, qids_split,
+                                              qid_aliases=qid_aliases)
         return None
 
     def generate_cov_fgs(self, fgs_path, lmax):
@@ -1051,7 +1108,11 @@ class ForegroundHandler:
         lmax: int, maximum ell of fg power spectrum
         '''
         
-        w_2_foreground = 0.27
+        wfacs_file= fgs_path + "wfacs.yml"
+        with open(wfacs_file, "rb") as f:
+            wfacs = yaml.load(f, yaml.Loader)
+
+        w_2_foreground = wfacs["w2"]
 
         # Load foreground alms
         foreground_alms_93 = hp.read_alm(fgs_path + 'fg_nonoise_alms_0093.fits')
@@ -1074,34 +1135,57 @@ class ForegroundHandler:
 
         return cov_matrix
 
-    def get_fg_cov(self, qid):
-        raise NotImplementedError
-
     def get_map_fgs(self, qid, alms_f):
         '''
         qid of the map (frequency it corresponds to) is mapped to component of alms_f
+        if type is "sims_actplanck", generalize beyond [f150, f090] and use the order
+        provided in the qids parameter
         '''
-        qid_freq_dict = {'f150': 0, 'f090': 1}
-        qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', subproduct=self.args.maps_subproduct, qid=qid)
-        index_fg = qid_freq_dict[qid_dict['freq']]
-        return alms_f[index_fg]
+        if self.args.fg_type == "sims":
+            qid_freq_dict = {'f150': 0, 'f090': 1}
+            qid_dict = self.datamodel.get_qid_kwargs_by_subproduct(product='maps', qid=qid,
+                                                                   subproduct=self.args.maps_subproduct)
+            index_fg = qid_freq_dict[qid_dict['freq']]
+            return alms_f[index_fg]
+        else:
+            qids_split = self.split_qids()
+            return alms_f[qids_split.index(qid)]
 
-    def get_fg_alms(self, fgcov, qid, cmb_set, sim_indices):
+    def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
         '''
-        generate alm from cl
+        generate alm from cl and store in object
         
         fgcov: np.ndarray, foreground covariance matrix (2pt)
         qid: str, qid of the map
-        cmb_set: int, set of cmb sim (for seed)
-        sim_indices: int, index of the sim (for seed)
+        cmb_set: int, set of cmb sim (for seed, optional)
+        sim_indices: int, index of the sim (for seed, optional)
         '''
-        if self.args.fg_type == 'sims':
-            alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices))
-            return self.get_map_fgs(qid, alms_f)
-        elif self.args.fg_type == 'theory':
-            return cs.rand_alm(fgcov)
+        # no seed info provided or theory fg
+        if None in [cmb_set, sim_indices] or self.args.fg_type == 'theory':
+            self.alms_f = cs.rand_alm(fgcov, lmax=self.args.lmax_signal)
+        else:
+            assert 'sims' in self.args.fg_type, \
+                "need fgcov from sims to generate fg alms with a seed"
+            self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices),
+                                      lmax=self.args.lmax_signal)
+
         return None
 
+    def get_fg_alms(self, fgcov, qid, cmb_set=None,
+                    sim_indices=None, rerun=False):
+        '''
+        generate alm from cl (if not generated) and return
+        
+        fgcov: np.ndarray, foreground covariance matrix (2pt)
+        qid: str, qid of the map
+        cmb_set: int, set of cmb sim (for seed, optional)
+        sim_indices: int, index of the sim (for seed, optional)
+        '''
+        if self.alms_f is None or rerun:
+            self.compute_fg_alms(fgcov, cmb_set, sim_indices)
+
+        if self.debug: print("fg alms shape: ", self.alms_f.shape)
+        return self.get_map_fgs(qid, self.alms_f)
 """
 Some subtleties when applying this to different experiments:
 
@@ -1177,7 +1261,8 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None, deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
+                    foreground_cluster=None, deconvolve_beam_bool=False,
+                    beam=None, leakage=None, mlmax=5000, plot_intermediate=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -1190,22 +1275,24 @@ def preprocess_core(imap, mask,
 
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
     """
+    from pixell import enplot
+
     if dfact!=1 and (dfact is not None):
         imap = enmap.downgrade(imap,dfact)
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-        
+
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
 
-
-    #for Planck, assert that we extract the RA DEC of the ACT footprint only
+    # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:
         imap = enmap.extract(imap, oshape, mask.wcs)
         if ivar is not None:
             ivar = enmap.extract(ivar, oshape, mask.wcs)
+            
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
@@ -1215,8 +1302,8 @@ def preprocess_core(imap, mask,
             imap[0] = imap[0] - foreground_cluster
         else:
             imap = imap - foreground_cluster
-        
-        
+
+
     if deconvolve_beam_bool:
         print('deconv beam')
         imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
@@ -1411,7 +1498,45 @@ def get_mask_tag(mask_fn, mask_subproduct):
 
     return f'{daynight}_{skyfrac}'
 
-def read_weights(args):
+def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
+    """
+    Apply an ℓmin taper to a noise power spectrum.
+    
+    Parameters
+    ----------
+    noise : np.ndarray
+        Input noise array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    blowup : float, optional
+        Factor to inflate the noise below cutoff (default=1e10).
+    
+    Returns
+    -------
+    noise_mod : np.ndarray
+        Modified noise array with inflated values below ellmin.
+    """
+    ell = np.arange(len(noise))
+    noise_mod = noise.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        noise_mod[mask] *= blowup
+    else:
+        # Smooth taper from blowup at (ellmin - delta_ell) → normal at (ellmin + delta_ell)
+        x = (ell - (ellmin - delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # effective multiplier: blowup below cutoff, ~1 above
+        mult = blowup * (1 - window) + 1.0 * window
+        noise_mod *= mult
+
+    return noise_mod
+
+def read_weights(args, use_ps_cut=False):
     
     '''
     reads in the fcoadd weights
@@ -1425,9 +1550,27 @@ def read_weights(args):
     else:
         specs = specs_weights['EB']
 
+    if use_ps_cut:
+        print("modifying weights to account for ellmin")
+        ellmin_dict = {
+            "pa5a": 1000,  # PA5 f090
+            "pa5b": 800,   # PA5 f150
+            "pa6a": 1000,  # PA6 f090
+            "pa6b": 600    # PA6 f150}
+        }
+    else:
+        ellmin_dict = {
+            "pa5a": 600,   # PA5 f090
+            "pa5b": 600,   # PA5 f150
+            "pa6a": 600,   # PA6 f090
+            "pa6b": 600    # PA6 f150
+        }
+
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
-            noise_specs[ispec, i] = np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise=np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
+            noise_cut = apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
+            noise_specs[ispec, i] = noise_cut
     
     return noise_specs
 
@@ -1447,13 +1590,24 @@ def get_fout_name(fname, args, stage, tag=None):
     except AttributeError:
         fcoadd_folder = "default_fcoadd"
 
+    if hasattr(args, "no_fcoadd_folder"):
+        no_fcoadd_folder = args.no_fcoadd_folder
+    else:
+        no_fcoadd_folder = False
+
     if stage == 'weights':
         fname += '_weights.txt'
-        folder = f'../../{fcoadd_folder}/stage_compute_weights/'
+        if no_fcoadd_folder:
+            folder = f'../stage_compute_weights/'
+        else:
+            folder = f'../../{fcoadd_folder}/stage_compute_weights/'
     
     elif stage == 'cluster_fgmap':
         fname += '_cluster_fgmap.fits'
-        folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
+        if no_fcoadd_folder:
+            folder = f'../stage_cluster_fgmap/'
+        else:
+            folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
@@ -1475,3 +1629,250 @@ def get_fout_name(fname, args, stage, tag=None):
 
     return os.path.join(output_dir, fname)
 
+"""
+Utilities for saving/loading foreground cross-spectra and
+assembling covariance cubes.
+
+Conventions
+-----------
+- Each 1-D spectrum is indexed by multipole ell starting at 0 with step 1.
+- Entries with ell < 2 are forcibly set to zero (on save and on assembly).
+- Covariance arrays have shape (ncomp, ncomp, nell), i.e. (i, j, ell).
+"""
+
+
+# small helpers
+def _normalize_pair(p):
+    a, b = str(p[0]), str(p[1])
+    return (a, b) if a <= b else (b, a)
+
+def _pair_to_key(qid1, qid2, sep="|"):
+    qlo, qhi = _normalize_pair((qid1, qid2))
+    if sep in qlo or sep in qhi:
+        raise ValueError(f"qids must not contain the separator {sep!r}: got {qlo!r}, {qhi!r}")
+    return f"{qlo}{sep}{qhi}"
+
+
+def _key_to_pair(key, sep="|"):
+    parts = key.split(sep)
+    if len(parts) != 2:
+        raise ValueError(f"Invalid stored pair key {key!r}")
+    return _normalize_pair(parts)
+
+
+def _check_all_same_length(arrs):
+    n = None
+    for a in arrs:
+        a = np.asarray(a)
+        if a.ndim != 1:
+            raise ValueError("All cross-spectra must be 1-D arrays")
+        if n is None:
+            n = a.shape[0]
+        elif a.shape[0] != n:
+            raise ValueError("All cross-spectra must have the same length")
+    if n is None:
+        raise ValueError("No cross-spectra provided")
+    return int(n)
+
+
+def _zero_low_ells(arr):
+    arr = np.array(arr, copy=True)
+    if arr.shape[0] >= 1:
+        arr[0] = 0.0
+    if arr.shape[0] >= 2:
+        arr[1] = 0.0
+    return arr
+
+
+# public API
+def save_cross_spectra(path, cross_spectra, sep="|", extra_meta=None):
+    """
+    Save cross-spectra to a compressed .npz file (always overwrites).
+
+    Assumptions:
+    - Spectra are 1-D arrays on integer ell starting at 0.
+    - ell<2 entries are set to zero before writing.
+
+    Parameters
+    ----------
+    path : str or Path
+        Output file ('.npz' recommended).
+    cross_spectra : mapping
+        Dict mapping (qid1, qid2) -> 1-D array. All arrays must have equal length.
+    sep : str, optional
+        Pair-key separator for internal storage.
+    extra_meta : mapping, optional
+        Small metadata (strings/numbers) to include.
+
+    Returns
+    -------
+    Path
+        The path written.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> d = {("A","A"): np.arange(5)+1, ("A","B"): 2*(np.arange(5)+1), ("B","B"): 3*(np.arange(5)+1)}
+    >>> _ = save_cross_spectra("fg_simple.npz", d)
+    """
+    path = Path(path)
+
+    canon = {}
+    for (q1, q2), arr in cross_spectra.items():
+        k = _pair_to_key(q1, q2, sep=sep)
+        canon[k] = _zero_low_ells(np.asarray(arr))
+
+    _check_all_same_length(canon.values())
+
+    qids = set()
+    for k in canon.keys():
+        a, b = _key_to_pair(k, sep=sep)
+        qids.add(a); qids.add(b)
+    qids = np.array(sorted(qids), dtype=object)
+
+    save_kwargs = {}
+    for k, arr in canon.items():
+        save_kwargs[f"spec:{k}"] = arr
+
+    save_kwargs["meta:qids"] = qids
+    save_kwargs["meta:sep"] = np.array([sep], dtype=object)
+
+    if extra_meta:
+        for mk, mv in extra_meta.items():
+            save_kwargs[f"meta:extra:{mk}"] = np.array([mv], dtype=object)
+
+    np.savez_compressed(path, **save_kwargs)
+    return path
+
+def fg_covariance_cube(path, qids, require_all=True, fill_missing=np.nan, symmetrize=True, qid_aliases=None):
+    """
+    Build a covariance array of shape (ncomp, ncomp, nell) for the given qids,
+    reading **only the spectra needed** directly from the NPZ on disk.
+
+    The element C[i, j, ell] equals the cross-spectrum between qids[i]
+    and qids[j] at multipole 'ell'. Missing pairs are either filled with
+    'fill_missing' or raise an error depending on 'require_all'.
+
+    Aliases
+    -------
+    You can pass a mapping ``qid_aliases`` where keys are requested qids and
+    values are the underlying qids to use on disk. This is useful when some
+    requested components are exact aliases/copies of others. For example:
+    
+    >>> # If NPZ contains only 'a' but you want 'x' to behave like 'a':
+    >>> # covariance_cube(path, ['a','x','b'], qid_aliases={'x':'a'})
+    >>> # All spectra involving 'x' are taken from those with 'a'.
+
+    Notes
+    -----
+    - ell<2 entries in the output are set to zero.
+    - Input spectra are assumed to live on ell = 0, 1, 2, ... with unit spacing.
+    - Only spectra required by the (qid_i, qid_j) pairs (after aliasing) are
+      read from the file.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to an NPZ written by :func:`save_cross_spectra`.
+    qids : sequence of str
+        Order of components along the first two axes.
+    require_all : bool, default True
+        If True, raise on missing pairs; else fill with 'fill_missing'.
+    fill_missing : float, default np.nan
+        Used only when require_all=False.
+    symmetrize : bool, default True
+        If True, symmetrize exactly over (i, j) by averaging with its transpose.
+    qid_aliases : mapping, optional
+        Dict mapping requested qids to substitute qids to use from disk.
+
+    Returns
+    -------
+    numpy.ndarray
+        Covariance array with shape (ncomp, ncomp, nell).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> d = {("a","a"): np.ones(5), ("a","b"): 2*np.ones(5), ("b","b"): 3*np.ones(5)}
+    >>> _ = save_cross_spectra("fg_cov_alias.npz", d)
+    >>> # Request ['a','x','b'] with x->a alias; file has no 'x' spectra
+    >>> C = covariance_cube("fg_cov_alias.npz", ["a","x","b"], qid_aliases={"x":"a"})
+    >>> C.shape
+    (3, 3, 5)
+    >>> np.all(C[..., :2] == 0)
+    True
+    """
+
+    if len(qids)==0: raise ValueError("No qids provided")
+    qids = list(map(str, qids))
+    ncomp = len(qids)
+    alias = dict(qid_aliases) if qid_aliases is not None else {}
+    resolved = [alias.get(q, q) for q in qids]
+
+    path = Path(path)
+    with np.load(path, allow_pickle=True) as z:
+        try:
+            sep = str(z["meta:sep"][0])
+        except KeyError:
+            sep = "|"
+
+        # Build set of unique needed (resolved) pairs and their NPZ keys
+        needed_pairs = set()
+        for qi in resolved:
+            for qj in resolved:
+                # use normalized resolved pair
+                a, b = _normalize_pair((qi, qj))
+                needed_pairs.add((a, b))
+
+        key_for_pair = {pair: f"spec:{_pair_to_key(pair[0], pair[1], sep=sep)}" for pair in needed_pairs}
+
+        # Determine nell by loading the first present needed spectrum
+        nell = None
+        loaded = {}
+        for pair, key in key_for_pair.items():
+            if key in z.files:
+                arr = _zero_low_ells(np.asarray(z[key]))
+                nell = arr.shape[0]
+                loaded[pair] = arr
+                break
+        
+        if nell is None:
+            if require_all:
+                raise KeyError("None of the requested pair spectra (after aliasing) were found in the file.")
+            any_spec_keys = [k for k in z.files if k.startswith("spec:")]
+            if not any_spec_keys:
+                raise ValueError("The NPZ file contains no spectra.")
+            arr = _zero_low_ells(np.asarray(z[any_spec_keys[0]]))
+            nell = arr.shape[0]
+
+        # Allocate covariance and fill
+        C = np.empty((ncomp, ncomp, nell), dtype=float)
+        C.fill(fill_missing)
+
+        # Fill using resolved pairs
+        for i, qi in enumerate(resolved):
+            for j, qj in enumerate(resolved):
+                pair = _normalize_pair((qi, qj))
+                key = key_for_pair[pair]
+                if pair in loaded:
+                    arr = loaded[pair]
+                elif key in z.files:
+                    arr = _zero_low_ells(np.asarray(z[key]))
+                    if arr.shape[0] != nell:
+                        raise ValueError(f"Spectrum length mismatch for pair {pair}: got {arr.shape[0]}, expected {nell}")
+                    loaded[pair] = arr
+                else:
+                    if require_all and i <= j:
+                        raise KeyError(f"Missing spectrum for pair {pair} (resolved from aliases)")
+                    continue
+                C[i, j, :] = arr
+
+        if symmetrize:
+            C = 0.5 * (C + np.swapaxes(C, 0, 1))
+
+        if nell > 0:
+            C[:, :, 0] = 0.0
+        if nell > 1:
+            C[:, :, 1] = 0.0
+
+        return C

@@ -165,7 +165,7 @@ def get_auto_bandpowers(fname,nobh,pol,diag=False,exp=False,Lmax=3000,sd=800,rd=
     aclg_m=np.mean(acl_scattert,axis=0)[:Lmax]-mcn1g-mcn0g
     aclc_m=np.mean(aclc_scattert,axis=0)[:Lmax]-mcn1c-mcn0c
 
-    clkk=np.loadtxt("/home/r/rbond/jiaqu/DR6lensing/notebooks/clkk.txt")[:Lmax]
+    clkk=np.loadtxt("/home/r/rbond/jiaqu/so-lenspipe/data/clkk.txt")[:Lmax]
     xcl=np.load(f"{fname}/stage_scatter/xcl_scatter.npy")
     icl=np.load(f"{fname}/stage_scatter/icl_scatter.npy")
 
