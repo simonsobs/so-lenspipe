@@ -136,7 +136,7 @@ class MetadataUnifier(object):
                            ells=None,
                            get_breakdown=False,
                            transfer=True,
-                           pixwin=True):
+                           pixwin=True, verbose=True):
         #if coadd and split_num: raise ValueError # TODO: Implement splits
         args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
@@ -144,11 +144,21 @@ class MetadataUnifier(object):
         # TODO: Handle daytime
         lbeam,vbeam = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=None, coadd=True)
         # The following normalizes the beam, and then "sanitizes" it if this is not a simulation
+        try:
+            normalize_beam = args.normalize_beam
+        except AttributeError:
+            normalize_beam = True
+
+        if normalize_beam:
+            sfunc = lambda l,b,sval,verbose: maps.sanitize_beam(l,b,sval=sval,verbose=verbose)
+        else:
+            sfunc = lambda l,b,sval,verbose: b
+            
         if ells is not None:
-            obeam = maps.sanitize_beam(ells,maps.interp(lbeam,vbeam)(ells),sval=1e-3 if not(simulation) else None,verbose=True)
+            obeam = sfunc(ells,maps.interp(lbeam,vbeam)(ells),sval=1e-3 if not(simulation) else None,verbose=verbose)
         else:
             ells = lbeam.copy()
-            obeam = maps.sanitize_beam(ells,vbeam,sval=1e-3 if not(simulation) else None,verbose=True)
+            obeam = sfunc(ells,vbeam,sval=1e-3 if not(simulation) else None,verbose=verbose)
 
         final_beam = np.ones((3,obeam.size))
         final_beam[0] = obeam.copy()

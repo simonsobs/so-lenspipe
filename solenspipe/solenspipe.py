@@ -1514,7 +1514,7 @@ def get_labels():
 
 
 class LensingSandbox(object):
-    def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
+    def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res_arcmin, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
                  add_noise = False, mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
@@ -1523,11 +1523,11 @@ class LensingSandbox(object):
         # Specify geometry
         if mask is None:
             if (dec_min is None) and (dec_max is None):
-                self.shape,self.wcs = enmap.fullsky_geometry(res=res * utils.arcmin,variant='fejer1')
+                self.shape,self.wcs = enmap.fullsky_geometry(res=res_arcmin * utils.arcmin,variant='fejer1')
             else:
                 if dec_min is None: dec_min = -90.
                 if dec_max is None: dec_max = 90. 
-                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin, variant='fejer1')
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res_arcmin * utils.arcmin, variant='fejer1')
             mask = enmap.ones(self.shape,self.wcs)
         else:
             self.shape = mask.shape
