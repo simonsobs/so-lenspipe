@@ -1,0 +1,24 @@
+[build-system]
+requires = ["meson-python>=0.15", "numpy>=1.26"]
+build-backend = "mesonpy"
+
+[project]
+name = "solenspipe"
+version = "0.1.0"
+description = "SO Lensing Pipeline"
+readme = { file = "README.rst", content-type = "text/x-rst" }
+requires-python = ">=3.9"
+license = { text = "BSD" }
+authors = [
+  { name = "Simons Observatory Collaboration L3 Working Group", email = "mathewsyriac@gmail.com" }
+]
+
+dependencies = [
+    "numpy>=1.20",
+]
+
+[project.urls]
+Homepage = "https://github.com/simonsobs/so-lenspipe"
+Source = "https://github.com/simonsobs/so-lenspipe"
+Issues = "https://github.com/simonsobs/so-lenspipe/issues"
+

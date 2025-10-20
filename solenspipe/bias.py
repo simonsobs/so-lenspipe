@@ -130,11 +130,12 @@ def mcrdn0(icov, get_kmap, power, nsims, qfunc1,get_kmap1=None, qfunc2=None, Xda
             qbXsX = qb(Xs1,Xdat1) if qb is not None else qaXsX #this is split 2
             rdn0_only_term = power(qaXXs,qbXXs) + power(qaXsX,qbXXs) \
                     + power(qaXsX,qbXsX) + power(qaXXs,qbXsX)
-        Xsp = get_kmap((icov,1,i)) 
+            
+        Xsp = get_kmap((icov,0,i+1)) 
         if get_kmap1 is None:
             Xsp1=Xsp
         else:
-            Xsp1=get_kmap1((icov,1,i))
+            Xsp1=get_kmap1((icov,0,i+1))
 
         qaXsXsp = qa(Xs,Xsp) #split1 
         qbXsXsp = qb(Xs1,Xsp1) if qb is not None else qaXsXsp #split2
@@ -403,7 +404,7 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,she
     comm,rank,my_tasks = mpi.distribute(nsims)
     n1evals = []
     for i in my_tasks:
-        i=i+2 # (0 = data, 1 = noisy sim treated as data)
+        i=i+2
         if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
         Xs    = get_kmap((icov,0,i)) # S
         Ysp   = get_kmap((icov,1,i)) # S'
