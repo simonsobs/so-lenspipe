@@ -372,10 +372,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.leakage_matrix = None
         meta.deconvolve_beam = False
-        if args.deconvolve_beam:
-            meta.deconvolve_beam = True
-            if args.leakage_corr:
-                meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
+        # if args.deconvolve_beam:
+        #    meta.deconvolve_beam = True
+        if args.leakage_corr:
+            meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
         
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
@@ -671,10 +671,10 @@ class ACTBeamHelper:
         cbeam = cbeam[1]
         
         array0 = np.zeros(len(ell))
-        
-        beam_matrix = np.array([[sbeam, array0, array0],
-                                [te * cbeam * sbeam, sbeam, array0],
-                                [tb * cbeam * sbeam,  array0, sbeam]])
+        array1 = np.ones(len(ell))
+        beam_matrix = np.array([[array1, array0, array0],
+                                [te * array1, array1, array0],
+                                [tb * array1,  array0, array1]])
         invmatrix = (np.linalg.inv(beam_matrix.T)).T
         
         return invmatrix
