@@ -803,9 +803,9 @@ class SOLATNoiseMetadata:
     def get_index_sim_qid(self,qid):
 
         # Define a mapping from order to index
-        order_to_index = {'f090': 0, 'f150': 1}
+        order_to_index = {'a': 0, 'b': 1}
         # Extract the order from the qid
-        order = qid.split('_')[-1]
+        order = qid[-1]
         # Get the index corresponding to the order
         index = order_to_index[order]
 
