@@ -37,7 +37,7 @@ def parse_qid_experiment(qid):
         return 'planck'
     elif qid[:3]=='sobs_':
         return 'sobs'
-    elif qid in ["ot_i1_f150", "ot_i1_f090", "ot_i3_f150", "ot_i3_f090", "ot_i4_f150", "ot_i4_f090", "ot_i6_f150", "ot_i6_f090"]:
+    elif qid in ["i1a", "i1b", "i3a", "i3b", "i4a", "i4b", "i6a", "i6b"]:
         return 'lat_iso'
     elif qid in ['lfa', 'lfb','mfa','mfb', 'uhfa', 'uhfb']:
         return 'so_mss2'
@@ -292,7 +292,55 @@ def get_inpaint_mask(args, datamodel):
         print('not inpainting')
         return None
 
+def get_inpaint_mask_lat_iso(args, datamodel):
+    
+    '''
+    Generates a mask where to inpaint the map.
+    
+    ### Parameters:
+    - datamodel: DataModel object, used to read sofind products
+    - args: argparse.Namespace(), must contain the following attributes: 
+        args.inpaint: bool, if True, you want to inpaint
+        args.inpaint_subproduct: str, subproduct name for inpainting catalog
+        args.cat_date: str, date of inpaint catalog, e.g. '20241002'
+        args.regular_hole: float, radius of hole [arcmin] for regular sources
+        args.large_hole: float, radius of hole [arcmin] for large sources
+        args.shape: tuple, shape of mask
+        args.wcs: wcs object, wcs of mask
+    '''
+    
+    if args.inpaint:
+        print('inpainting')
+        #assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
+        # read catalog coordinates
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'ACT_catalog_simple_mnms.txt', subproduct = args.inpaint_subproduct))
+        #ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+
+        # Make masks for gapfill
+        #mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+        jmask = mask2 #mask1 & mask2
+        if jmask.dtype!=np.bool_: raise ValueError
+        jmask = ~jmask
+        
+        # if args.not_srcfree:
+        #     print('adding srcfull mask')
+        #     planck70 = datamodel.read_mask(mask_fn='dr6v4_lensing_20240918_planck_galactic_mask_70.fits', subproduct=args.mask_subproduct)
+        #     planck70 = enmap.extract( enmap.downgrade(planck70,2), args.shape, args.wcs)
+            
+        #     inpaint_mask = datamodel.read_mask(mask_fn='source_mask_15mJy_and_dust_rad5.fits', subproduct=args.mask_subproduct)
+        #     inpaint_mask = enmap.enmap(enmap.downgrade(inpaint_mask,2), dtype=bool)
+        #     inpaint_mask = ~inpaint_mask
+
+        #     final_mask = enmap.enmap((~jmask & ~inpaint_mask) * planck70, dtype=bool)
+        #     return final_mask
+        
+        return jmask
+    
+    else:
+        print('not inpainting')
+        return None
 
 def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
@@ -378,7 +426,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
             meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
         
     elif parse_qid_experiment(qid)=='lat_iso':
-        meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
+        meta.Name = 'so_lat_iso_sv1' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
@@ -388,7 +436,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
        
 
-        meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
+        meta.inpaint_mask = get_inpaint_mask_lat_iso(args, meta.dm) #TO FIX !!! TEMPORARY BECAUSE WE DO NOT HAVE SOURCE FREE MAPS YET
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
         meta.maptype = 'native'
         meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
@@ -734,16 +782,16 @@ class SOLATNoiseMetadata:
     def __init__(self, qid, verbose=False):
         self.qid = qid
         
-        qid_dict_noise = {'ot_i1_f090': ["ot_i1_f090", "ot_i1_f150"],
-                          'ot_i1_f150': ["ot_i1_f090", "ot_i1_f150"],
-                          'ot_i3_f090': ["ot_i3_f090", "ot_i3_f150"],
-                          'ot_i3_f150': ["ot_i3_f090", "ot_i3_f150"],
-                          'ot_i4_f090': ["ot_i4_f090", "ot_i4_f150"],
-                          'ot_i4_f150': ["ot_i4_f090", "ot_i4_f150"],
-                          'ot_i6_f090': ["ot_i6_f090", "ot_i6_f150"],
-                          'ot_i6_f150': ["ot_i6_f090", "ot_i6_f150"],
+        qid_dict_noise = {'i1a': ["i1a", "i1b"],
+                          'i1b': ["i1a", "i1b"],
+                          'i3a': ["i3a", "i3b"],
+                          'i3b': ["i3a", "i3b"],
+                          'i4a': ["i4a", "i4b"],
+                          'i4b': ["i4a", "i4b"],
+                          'i6a': ["i6a", "i6b"],
+                          'i6b': ["i6a", "i6b"],
                           }
-        config_name="so_lat_pipe4_BN"
+        config_name="so_lat_iso_deep56_v20251019"
         noise_model_name="tile_cmbmask"
         if verbose:
             print(f"Initializing NoiseMetadata with qid: {self.qid}")
