@@ -1530,13 +1530,13 @@ def get_mask_tag(mask_fn, mask_subproduct):
     Extracts and returns the tag from the mask filename.
     """
 
-    assert 'lensing_masks' in mask_subproduct, 'mask tag only implemented for lensing masks'
+    # assert 'lensing_masks' in mask_subproduct, 'mask tag only implemented for lensing masks'
     # find daynight tag "daydeep", "daywide" o "night"
-    daynight = re.search(r'(daydeep|daywide|night|pipe4|mss0002)', mask_fn).group(0)
+    # daynight = re.search(r'(daydeep|daywide|night|pipe4|mss0002)', mask_fn).group(0)
     # find skyfraction. it is 2 digit number. the string between the last "_" and ".fits"
-    skyfrac  = re.search(r'_(\d{2})(?:_[^_]+)?\.fits$', mask_fn).group(1) # re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
-
-    return f'{daynight}_{skyfrac}'
+    # skyfrac  = re.search(r'_(\d{2})(?:_[^_]+)?\.fits$', mask_fn).group(1) # re.search(r'_([^_]+)\.fits$', mask_fn).group(1)
+    return f 'mask'
+    # return f'{daynight}_{skyfrac}'
 
 def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
     """
