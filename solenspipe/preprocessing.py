@@ -312,7 +312,7 @@ def get_inpaint_mask_lat_iso(args, datamodel):
     if args.inpaint:
         print('inpainting')
         #assert args.cat_date is not None, "cat_date must be provided for inpaint"
-
+        print(args.inpaint_subproduct)
         # read catalog coordinates
         rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'ACT_catalog_simple_mnms.txt', subproduct = args.inpaint_subproduct))
         #ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
@@ -432,12 +432,19 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.nsplits = qid_dict['num_splits']
         meta.splits = np.arange(meta.nsplits)
-        meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
-        meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-       
-
+        
+        if hasattr(args, "cal_subproduct_kwargs"):
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct,
+                                                        which='cals', **args.cal_subproduct_kwargs)
+            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct,
+                                                    which='poleffs', **args.cal_subproduct_kwargs)
+        else:
+            meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
+            meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+    
+    
         meta.inpaint_mask = get_inpaint_mask_lat_iso(args, meta.dm) #TO FIX !!! TEMPORARY BECAUSE WE DO NOT HAVE SOURCE FREE MAPS YET
-        meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
+        meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
         meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
         meta.nspecs = nspecs
@@ -447,6 +454,13 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.Beam = SOLATBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]  #done
         meta.transfer_fells = meta.Beam.get_effective_beam()[2] #done
+
+        meta.leakage_matrix = None
+        meta.deconvolve_beam = False
+        # if args.deconvolve_beam:
+        #    meta.deconvolve_beam = True
+        if args.leakage_corr:
+            meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
 
     elif parse_qid_experiment(qid)=='so_mss2':
         meta.Name = 'so_lat_mbs_mss0002' ##this should be passed as argument otherwise use default
@@ -519,7 +533,15 @@ def process_beam(sofind_beam, norm=True, interp=True):
         return ell_bells, bells
 
 class SOLATBeamHelper:
-    def __init__(self, datamodel,args,qid, isplit=0, coadd=False, daynight=None):
+    def __init__(self, datamodel,args,qid, isplit=0, coadd=False):
+        
+        default_values = {'tf_subproduct': 'v20251019_dummy',  ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+                          'beam_subproduct': 'v20251019_dummy', ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+                          'mlmax': 4000}
+        for key, value in default_values.items():
+            if not hasattr(args, key):
+                print(f"Setting default value for '{key}': {value}")
+            setattr(args, key, getattr(args, key, value))
         self.datamodel = datamodel
         self.mlmax = args.mlmax
         self.qid = qid
@@ -527,10 +549,15 @@ class SOLATBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
-        self.daynight = daynight #not really needed here
+        if hasattr(args, "beam_subproduct_kwargs"):
+            self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
+        else:
+            self.beam_subproduct_kwargs = {}
     
     def get_beam(self):
-        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, split_num=self.isplit, coadd=self.coadd)
+        beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, 
+                                            split_num=self.isplit, coadd=self.coadd,
+                                            **self.beam_subproduct_kwargs)
         beam_map = process_beam(beam_map,True)
         return beam_map
         
@@ -1135,13 +1162,19 @@ class ForegroundHandler:
             # currently unsupported
             raise NotImplementedError
         elif self.args.fg_type == 'sims_actplanck':
+            print(self.args.fgs_path)
             assert self.args.fgs_path.endswith(".npz"), \
                    "Unsupported format for fgs file (should be <filename>.npz)"
             qids_split = self.split_qids()
             if self.debug: print("qids_split: ", qids_split)
             qid_aliases = { qid: qid[:-3] for qid in qids_split
                                           if '_dw' in qid or '_dd' in qid }
+            qid_aliases = { "pa5a": "pa5a" for qid in qids_split            ###TO FIX!!! SUBSTITUTE WHEN WE GET FGS FOR SO
+                                            if qid[-1]=="a"}
+            qid_aliases = { "pa5b": "pa5b" for qid in qids_split            ###TO FIX!!! SUBSTITUTE WHEN WE GET FGS FOR SO
+                                            if qid[-1]=="b"}
             if self.debug: print("qid_aliases: ", qid_aliases)
+            print(f"QID ALIASES {qid_aliases}")
             return lambda: fg_covariance_cube(self.args.fgs_path, qids_split,
                                               qid_aliases=qid_aliases)
         return None
@@ -1596,14 +1629,30 @@ def read_weights(args, use_ps_cut=False):
             "pa5a": 1000,  # PA5 f090
             "pa5b": 800,   # PA5 f150
             "pa6a": 1000,  # PA6 f090
-            "pa6b": 600    # PA6 f150}
+            "pa6b": 600,    # PA6 f150}
+            "i1a": 600,  ##TO FIX!!!!!!!!!!! FOR NOW SAME LMIN CUT EVERYWHERE FOR LAT ISO
+            "i1b": 600,
+            "i3a": 600,
+            "i3b": 600,
+            "i4a": 600,
+            "i4b": 600,
+            "i6a": 600,
+            "i6b": 600,
         }
     else:
         ellmin_dict = {
             "pa5a": 600,   # PA5 f090
             "pa5b": 600,   # PA5 f150
             "pa6a": 600,   # PA6 f090
-            "pa6b": 600    # PA6 f150
+            "pa6b": 600,    # PA6 f150
+            "i1a": 600,  ##TO FIX!!!!!!!!!!! FOR NOW SAME LMIN CUT EVERYWHERE FOR LAT ISO
+            "i1b": 600,
+            "i3a": 600,
+            "i3b": 600,
+            "i4a": 600,
+            "i4b": 600,
+            "i6a": 600,
+            "i6b": 600,
         }
 
     for i, qid in enumerate(args.qids):
