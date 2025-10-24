@@ -10,6 +10,7 @@ import healpy as hp
 from scipy import interpolate
 import re
 from pathlib import Path
+import yaml
 
 specs_weights = {'EpureB': ['T','E','pureB'],
         'EB': ['T','E','B']}
@@ -1658,7 +1659,8 @@ def read_weights(args, use_ps_cut=False):
     for i, qid in enumerate(args.qids):
         for ispec, spec in enumerate(specs):
             noise=np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
-            noise_cut = apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
+            print("Warning: I set ellmin=600 irrespectively of the tube")
+            noise_cut = apply_ellmin_taper(noise, 600, delta_ell=25, blowup=1e10) #apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
             noise_specs[ispec, i] = noise_cut
     
     return noise_specs
