@@ -365,7 +365,6 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
-        
         meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
@@ -376,6 +375,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         #    meta.deconvolve_beam = True
         if args.leakage_corr:
             meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
+        print("done")
         
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
@@ -679,6 +679,98 @@ class ACTBeamHelper:
         
         return invmatrix
 
+class PlanckBeamHelper:
+
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+        default_values = {'tf_subproduct': 'dummy',
+                          'beam_subproduct': 'dummy',
+                          'mlmax': 4000}
+        for key, value in default_values.items():
+            if not hasattr(args, key):
+                print(f"Setting default value for '{key}': {value}")
+            setattr(args, key, getattr(args, key, value))
+
+        self.datamodel = datamodel
+        self.mlmax = args.mlmax
+        self.qid = qid
+        self.isplit = isplit
+        self.coadd = coadd
+        self.beam_subproduct = args.beam_subproduct
+        self.tf_subproduct = args.tf_subproduct
+        if hasattr(args, "beam_subproduct_kwargs"):
+            self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
+        else:
+            self.beam_subproduct_kwargs = {}
+
+    def get_beam(self, qid=None, isplit=None, interp=True, pixwin=True):
+        """
+        Retrieve the Planck beam for a given QID and split number.
+
+        Parameters:
+        - pixwin (bool): Apply pixel window function if True.
+
+        Returns:
+        - np.ndarray: The beam function array.
+        """
+        # overwrite with custom
+        if isplit is None: isplit = self.isplit
+        if qid is None: qid = self.qid
+
+        # Determine split letter (coadd case doesn't matter)
+        sl = 'A' if isplit == 1 else 'B'
+
+        # Load and interpolate the beam
+        ell_b, bl = self.datamodel.read_beam(qid,
+                        subproduct=self.beam_subproduct,
+                        split_num=sl,
+                        coadd=(self.isplit is None),
+                        **self.beam_subproduct_kwargs)
+        
+        # process_beam essentially but with pixwin
+        beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
+
+        # Generate the beam function values
+        beam_fells = beam_f(np.arange(self.mlmax+1))
+        if pixwin:
+            beam_fells *= hp.pixwin(2048)[:self.mlmax+1]
+        
+        # normalize if required
+        if self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct):
+            beam_fells /= beam_fells[0]
+
+        if interp:
+            return maps.interp(np.arange(self.mlmax+1), beam_fells,
+                               fill_value='extrapolate')
+        else:
+            return np.arange(self.mlmax+1), beam_fells
+
+    
+    def get_tf(self):
+        ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
+        return maps.interp(ells_tf, tf, fill_value='extrapolate')
+    
+    def get_effective_beam(self):
+        
+        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
+        
+        tf = self.get_tf()(np.arange(self.mlmax+1))
+        beam = self.get_beam()[np.arange(self.mlmax+1)]
+        
+        fkbeam[0] = beam * tf
+        fkbeam[1] = beam
+        fkbeam[2] = beam
+
+        return fkbeam, beam, tf
+    
+    def planck_processed_beam(self, qid, splitnum, pixwin=True):
+        # deprecated
+        #b_ell=self.get_beam(qid, splitnum, pixwin=pixwin)
+        #ell=np.arange(len(b_ell))
+        #sofind_beam = np.array([ell, b_ell])
+        #beam=process_beam(sofind_beam, norm=True)
+        #return beam
+        return self.get_beam(qid=qid, isplit=splitnum, pixwin=pixwin)
+
 class PlanckNoiseMetadata:
     
     def __init__(self, qid, verbose=False,
@@ -957,72 +1049,6 @@ class ACTNoiseMetadata:
 
         # else:
         #     return my_sim        
-
-
-
-class PlanckBeamHelper:
-
-    def __init__(self, datamodel, args, qid, isplit):
-        """
-        Initialize the PlanckBeamHelper.
-        """
-        self.datamodel = datamodel
-        self.mlmax = args.mlmax
-        self.qid = qid
-        self.isplit = isplit
-        self.beam_subproduct = args.beam_subproduct
-
-    def get_beam(self, pixwin=True):
-        """
-        Retrieve the Planck beam for a given QID and split number.
-
-        Parameters:
-        - pixwin (bool): Apply pixel window function if True.
-
-        Returns:
-        - np.ndarray: The beam function array.
-        """
-
-        # Determine split letter (coadd case doesn't matter)
-        sl = 'A' if self.isplit == 1 else 'B'
-
-        # Load and interpolate the beam
-        ell_b, bl = self.datamodel.read_beam(self.qid,
-                        subproduct=self.beam_subproduct,
-                        split_num=sl,
-                        coadd=(self.isplit is None))
-        beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
-
-        # Generate the beam function values
-        beam_fells = beam_f(np.arange(self.mlmax+1))
-        if pixwin:
-            beam_fells *= hp.pixwin(2048)[:self.mlmax+1]
-
-        return beam_fells
-    
-    def get_tf(self):
-        ells_tf, tf = np.arange(2, 3000, dtype=float), np.ones(2998)
-        return maps.interp(ells_tf, tf, fill_value='extrapolate')
-    
-    def get_effective_beam(self):
-        
-        fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
-        
-        tf = self.get_tf()(np.arange(self.mlmax+1))
-        beam = self.get_beam()[np.arange(self.mlmax+1)]
-        
-        fkbeam[0] = beam * tf
-        fkbeam[1] = beam
-        fkbeam[2] = beam
-
-        return fkbeam, beam, tf
-    
-    def planck_processed_beam(self, qid, splitnum, pixwin=True):
-        b_ell=self.get_beam(qid, splitnum, pixwin=pixwin)
-        ell=np.arange(len(b_ell))
-        sofind_beam = np.array([ell, b_ell])
-        beam=process_beam(sofind_beam, norm=True)
-        return beam
 
 
 class ForegroundHandler:
