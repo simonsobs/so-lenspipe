@@ -434,7 +434,8 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
 
     elif "ROT" in coup:
         if est1=="EB":
-            qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y[1],fBalms=X[2]) # added these indices on March 31, 2025.
+            qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y[1],fBalms=X[2]) # added these indices on March 31, 2025. I think this is wrong, we are losing half our info :)))
+            # qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,X[1],X[2],Y[1],Y[2]) ### testing this one on Oct 24!! 
         else:
             print("Not implemented for rot.")
 
