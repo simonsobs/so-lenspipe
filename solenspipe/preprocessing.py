@@ -754,7 +754,7 @@ class PlanckBeamHelper:
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
-        beam = self.get_beam()[np.arange(self.mlmax+1)]
+        beam = self.get_beam()(np.arange(self.mlmax+1))
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam
