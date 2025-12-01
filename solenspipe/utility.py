@@ -39,7 +39,6 @@ def project_mask(mask,shape,wcs,fname=None):
 #fitting functions
 
 def rolloff(ell, ell_off=None, alpha=-4, patience=2.):
-
     """
     Adapted from mapsims
     Get a transfer function T(ell) to roll off red noise at ell <
