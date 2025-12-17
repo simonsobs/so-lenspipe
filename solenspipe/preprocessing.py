@@ -990,12 +990,12 @@ class ACTNoiseMetadata:
                             'pa5b': 'tile_cmbmask',
                             'pa6a': 'tile_cmbmask_ivfwhm2',
                             'pa6b': 'tile_cmbmask_ivfwhm2',
-                            'pa5a_dd': 'tile_cmbmask_daydeep',
-                            'pa5b_dd': 'tile_cmbmask_daydeep',
-                            'pa6a_dd': 'tile_cmbmask_daydeep',
-                            'pa6b_dd': 'tile_cmbmask_daydeep',
-                            'pa5a_dw': 'tile_cmbmask_daywide',
-                            'pa5b_dw': 'tile_cmbmask_daywide'}
+                            'pa5a_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa5b_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa6a_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa6b_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa5a_dw': 'tile_cmbmask_daywide_250513',
+                            'pa5b_dw': 'tile_cmbmask_daywide_250513'}
 
         qid_dict_config_noise_name = {'pa4b': 'act_dr6v4',
                                     'pa5a': 'act_dr6v4',
