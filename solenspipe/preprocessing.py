@@ -806,7 +806,7 @@ class PlanckNoiseMetadata:
                                     subproduct="noise_sims",
                                     maptag=maptag)
     
-    def read_in_sim(self, isplit, index, lmax=4000):
+    def read_in_sim(self, isplit, index, lmax=4000, return_map=False):
         # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
         try:
             residual_map = hp.read_map(self.noise_map_path(isplit, index),
@@ -818,8 +818,13 @@ class PlanckNoiseMetadata:
             residual_map = np.array([residual_map,
                                      residual_map*0.,
                                      residual_map*0.])
-        return reproject.healpix2map(residual_map, lmax=lmax,
-                                     rot='gal,equ',save_alm=True)*10**6
+        
+        if return_map:
+            return reproject.healpix2map(residual_map, lmax=lmax,
+                                         rot='gal,equ') * 1e6
+        else:
+            return reproject.healpix2map(residual_map, lmax=lmax,
+                                        rot='gal,equ',save_alm=True)*10**6
 
 
 class SOLATNoiseMetadata:
@@ -1283,6 +1288,7 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
+                    ivar_inpaint=None,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
@@ -1312,8 +1318,8 @@ def preprocess_core(imap, mask,
 
     # Then inpaint
     if inpaint_mask is not None:
-        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        # setting ivar = None for inpainting ACT by
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
