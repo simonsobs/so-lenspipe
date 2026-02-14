@@ -911,8 +911,8 @@ class SOLATNoiseMetadata:
                           'i6a': ["i6a", "i6b"],
                           'i6b': ["i6a", "i6b"],
                           }
-        config_name="so_lat_iso_deep56_v20251019"
-        noise_model_name="tile_cmbmask"
+        config_name="so_lat_iso_deep56_v20260201_skn_50cg"
+        noise_model_name="tile_cmbmask_120obscut_120estcut_2_30"
         if verbose:
             print(f"Initializing NoiseMetadata with qid: {self.qid}")
             
@@ -932,7 +932,7 @@ class SOLATNoiseMetadata:
         return index
 
     def read_in_sim(self,split_num, sim_num, lmax=5400, alm=True,
-                    fwhm=1.6, mask=None, generate=False, write=False):
+                    fwhm=1.6, mask=None, generate=True, write=True):
         
         # grab a sim from disk, fail if does not exist on-disk (by default)
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
@@ -1365,6 +1365,7 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
+                    ivar_inpaint=None,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
@@ -1395,7 +1396,7 @@ def preprocess_core(imap, mask,
     # Then inpaint
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
