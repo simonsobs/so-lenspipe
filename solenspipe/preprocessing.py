@@ -303,11 +303,13 @@ def get_inpaint_mask_lat_iso(args, datamodel):
     - args: argparse.Namespace(), must contain the following attributes: 
         args.inpaint: bool, if True, you want to inpaint
         args.inpaint_subproduct: str, subproduct name for inpainting catalog
+        args.inpaint_cat: str, name of inpaint catalog
         args.cat_date: str, date of inpaint catalog, e.g. '20241002'
         args.regular_hole: float, radius of hole [arcmin] for regular sources
         args.large_hole: float, radius of hole [arcmin] for large sources
         args.shape: tuple, shape of mask
         args.wcs: wcs object, wcs of mask
+        
     '''
     
     if args.inpaint:
@@ -315,7 +317,7 @@ def get_inpaint_mask_lat_iso(args, datamodel):
         #assert args.cat_date is not None, "cat_date must be provided for inpaint"
         print(args.inpaint_subproduct)
         # read catalog coordinates
-        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'ACT_catalog_simple_mnms.txt', subproduct = args.inpaint_subproduct))
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'{args.inpaint_cat_name}.txt', subproduct = args.inpaint_subproduct))
         #ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
 
         # Make masks for gapfill
@@ -427,7 +429,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         print("done")
         
     elif parse_qid_experiment(qid)=='lat_iso':
-        meta.Name = 'so_lat_iso_sv1' ##this should be passed as argument otherwise use default
+        meta.Name = args.config_name 
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
@@ -447,7 +449,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.inpaint_mask = get_inpaint_mask_lat_iso(args, meta.dm) #TO FIX !!! TEMPORARY BECAUSE WE DO NOT HAVE SOURCE FREE MAPS YET
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
-        meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
+        meta.noisemodel = SOLATNoiseMetadata(qid, args, verbose=True) 
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
@@ -536,8 +538,8 @@ def process_beam(sofind_beam, norm=True, interp=True):
 class SOLATBeamHelper:
     def __init__(self, datamodel,args,qid, isplit=0, coadd=False):
         
-        default_values = {'tf_subproduct': 'v20251019_dummy',  ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
-                          'beam_subproduct': 'v20251019_dummy', ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+        default_values = {'tf_subproduct': 'dummy',  ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+                          'beam_subproduct': 'dummy', ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
                           'mlmax': 4000}
         for key, value in default_values.items():
             if not hasattr(args, key):
@@ -899,7 +901,7 @@ class PlanckNoiseMetadata:
 
 
 class SOLATNoiseMetadata:
-    def __init__(self, qid, verbose=False):
+    def __init__(self, qid, args, verbose=False):
         self.qid = qid
         
         qid_dict_noise = {'i1a': ["i1a", "i1b"],
@@ -911,10 +913,10 @@ class SOLATNoiseMetadata:
                           'i6a': ["i6a", "i6b"],
                           'i6b': ["i6a", "i6b"],
                           }
-        config_name="so_lat_iso_deep56_v20251019"
-        noise_model_name="tile_cmbmask"
+        config_name = args.noise_config_name 
+        noise_model_name = args.noise_model_name 
         if verbose:
-            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+            print(f"Initializing NoiseMetadata {config_name} with qid: {self.qid}")
             
         self.tnm = nm.BaseNoiseModel.from_config(config_name,
                                                  noise_model_name,
@@ -1365,6 +1367,7 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
+                    ivar_inpaint=None,   
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
@@ -1394,8 +1397,8 @@ def preprocess_core(imap, mask,
 
     # Then inpaint
     if inpaint_mask is not None:
-        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        #   # setting ivar = None for inpainting ACT by
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
