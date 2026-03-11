@@ -451,7 +451,7 @@ def initialize_args(args):
     Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
     return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
 
-def convert_seeds(seed,nsims=2000,ndiv=4):
+def convert_seeds(seed,nsims=2000,ndiv=2):
     # Convert the solenspipe convention to the Alex convention
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
@@ -463,7 +463,8 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
         s_set = 0
         noise_seed = (icov,cmb_set,i)+(2,)
     elif cmb_set==2 or cmb_set==3:
-        s_i = i + nstep*2
+        assert i < nstep // 2, 'this is for N1, you really don"t want to reuse sims'
+        s_i = i + nstep//2
         s_set = cmb_set - 2
         noise_seed = (icov,cmb_set,i)+(2,)
 
