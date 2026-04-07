@@ -325,6 +325,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+        if hasattr(args, "nemo_calibration"):
+            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        else:
+            meta.cal_cluster = 1.
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
@@ -357,7 +361,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-
+        if hasattr(args, "nemo_calibration"):
+            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        else:
+            meta.cal_cluster = 1.
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
@@ -1305,7 +1312,7 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None):
+                    foreground_cluster=None, cal_cluster=1.):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -1318,9 +1325,9 @@ def preprocess_core(imap, mask,
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
         if imap.ndim==3:
-            imap[0] = imap[0] - (foreground_cluster / calibration)
+            imap[0] = imap[0] - (foreground_cluster / cal_cluster)
         else:
-            imap = imap - (foreground_cluster / calibration)
+            imap = imap - (foreground_cluster / cal_cluster)
 
     # Then downgrade
     if dfact!=1 and (dfact is not None):
