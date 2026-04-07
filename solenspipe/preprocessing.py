@@ -105,15 +105,16 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         # assigning ACT splits 0 + 1 to Planck split 1
         # and ACT splits 2 + 3 to Planck split 2
         # ! isplit = None if coadd else (splitnum // 2 + 1)
-        isplit = 1 if coadd else (splitnum // 2 + 1)
+        isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = None
         meta.nspecs = nspecs
+        meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         meta.maptype = 'reprojected'
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
@@ -147,6 +148,13 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
+        meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        
+        meta.leakage_matrix = None
+        meta.leakage_corr = args.leakage_corr
+        if meta.leakage_corr:
+            meta.leakage_matrix = meta.Beam.get_invleakage_beaminv_matrix()
+
     return meta, isplit
 
 def process_beam(sofind_beam, norm=True, interp=True):
@@ -226,6 +234,54 @@ class ACTBeamHelper:
         fkbeam[2] = beam
 
         return fkbeam, beam, tf
+    
+    def get_invleakage_beaminv_matrix(self):
+        
+        '''This matrix gets applied to T,E,B to do both beam deconvolution and leakage correction
+        
+        / B_s            0    0   \ -1  / alm_T \
+        | gamma_E * B_c  B_s  0   |     | alm_E |
+        \ gamma_B * B_c  0    B_s /     \ alm_B /
+        
+        where B_s is the per-split beam
+        B_c is the coadd beam
+        gamma is defined as leakage correction / beam(T)
+        (see https://lambda.gsfc.nasa.gov/product/act/act_dr6.02/act_dr6.02_harmonic_beams_profiles_info.html)
+        '''
+        
+        te = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='e')
+        ell = te[0]
+        
+        assert int(ell[0]) == 0, 'ell start 0 important, we are doing multiplications afterwards'
+
+        te = te[1]
+        tb = self.datamodel.read_beam(qid=self.qid, subproduct='beams_leakage', coadd=True, leakage_comp='b')
+        assert np.all(tb[0] == ell)
+        tb = tb[1]
+                
+        # assert self.coadd is False
+        
+        sbeam = self.get_beam(interp=False)
+        assert np.all(sbeam[0] == ell)
+        sbeam = sbeam[1]
+        
+        inv_tf = 1 / self.get_tf()(ell)
+        
+        self.coadd = True
+        cbeam = self.get_beam(interp=False)
+        self.coadd = False
+        assert np.all(cbeam[0] == ell)
+        cbeam = cbeam[1]
+        
+        array0 = np.zeros(len(ell))
+        
+        inv_sbeam = 1/sbeam
+        
+        inv_matrix = np.array([[ inv_tf * inv_sbeam,                  array0,    array0],
+                                [-te * cbeam * inv_sbeam**2 * inv_tf, inv_sbeam, array0],
+                                [-tb * cbeam * inv_sbeam**2 * inv_tf, array0,    inv_sbeam]])
+        
+        return inv_matrix
 
 class PlanckBeamHelper:
 
@@ -247,7 +303,7 @@ class PlanckBeamHelper:
         self.tf_subproduct = args.tf_subproduct
         self.beam_subproduct_kwargs = getattr(args, "beam_subproduct_kwargs", {})
 
-    def get_beam(self, qid=None, isplit=None, interp=True, pixwin=True):
+    def get_beam(self, interp=True, pixwin=True):
         """
         Retrieve the Planck beam for a given QID and split number.
 
@@ -258,17 +314,17 @@ class PlanckBeamHelper:
         - np.ndarray: The beam function array.
         """
         # overwrite with custom
-        if isplit is None: isplit = self.isplit
-        if qid is None: qid = self.qid
+        # if isplit is None: isplit = self.isplit
+        # if qid is None: qid = self.qid
 
         # Determine split letter (coadd case doesn't matter)
-        sl = 'A' if isplit == 1 else 'B'
+        sl = 'A' if self.isplit == 1 else 'B'
 
         # Load and interpolate the beam
-        ell_b, bl = self.datamodel.read_beam(qid,
+        ell_b, bl = self.datamodel.read_beam(self.qid,
                         subproduct=self.beam_subproduct,
                         split_num=sl,
-                        coadd=(self.isplit is None),
+                        coadd=self.coadd,
                         **self.beam_subproduct_kwargs)
         
         # process_beam essentially but with pixwin
@@ -306,8 +362,8 @@ class PlanckBeamHelper:
 
         return fkbeam, beam, tf
     
-    def planck_processed_beam(self, qid, splitnum, pixwin=True):
-        return self.get_beam(qid=qid, isplit=splitnum, pixwin=pixwin)
+    # def planck_processed_beam(self, qid, splitnum, pixwin=True):
+    #     return self.get_beam(qid=qid, isplit=splitnum, pixwin=pixwin)
 
 class PlanckNoiseMetadata:
     
@@ -525,6 +581,10 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
     imap = enmap.ifft(fmap).real
     return imap
 
+def inpaint_temperature_only(tqu_map, mask):
+    omap = tqu_map.copy()
+    omap[0] = maps.gapfill_edge_conv_flat(tqu_map[0], mask)
+    return omap
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
@@ -532,7 +592,7 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None):
+                    foreground_cluster=None, cal_cluster=1.):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -557,13 +617,14 @@ def preprocess_core(imap, mask,
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
         if imap.ndim==3:
-            imap[0] = imap[0] - (foreground_cluster / calibration)
+            imap[0] = imap[0] - (foreground_cluster / cal_cluster)
         else:
-            imap = imap - (foreground_cluster / calibration) 
+            imap = imap - (foreground_cluster / cal_cluster) 
 
     # Then inpaint
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
+        # imap = inpaint_temperature_only(imap, inpaint_mask) 
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask) # , ivar=ivar)
             
     # Check that non-finite regions are in masked region; then set non-finite to zero
