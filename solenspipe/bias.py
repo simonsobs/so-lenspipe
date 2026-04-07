@@ -982,6 +982,7 @@ def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=
     return totrdn0/nsims
 
 # helper function for subset rdn0
+# format_cl and format_phi MUST contain "s1", "sp1" (and "s2", "sp2" for cl)
 def load_save_power(x_index, y_index, u_index, v_index,
                     qa, qf1, get_kmap, power, i_set = 0, repeat=False,
                     qf2=None, get_kmap1=None, get_kmap2=None, get_kmap3=None,
@@ -989,6 +990,10 @@ def load_save_power(x_index, y_index, u_index, v_index,
                     format_phi="phi_cross_s1,sp1_shear.npy", shear=False,
                     noiseless_sims=True, verbose=True):
     
+    format_cl = format_cl.replace("_shear", f"_set{i_set}_shear")
+    format_phi = format_phi.replace("_shear", f"_set{i_set}_shear")
+
+
     new_format = out_root + format_cl.replace("s1", str(x_index)).replace("sp1", str(y_index)) \
                                      .replace("s2", str(u_index)).replace("sp2", str(v_index)) \
                                      .replace(".txt", "_noiseless.txt" if noiseless_sims else ".txt")
@@ -1168,9 +1173,11 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
         
         # mcn0 terms
         with bench.show(f"Rank {rank}, sim index {s}, mcn0 terms"):
-            with bench.show(f"Rank {rank}, mcn0 term sspssp (s: {s}, s+1: {s+1})"):
+            with bench.show(f"Rank {rank}, mcn0 term ss',ss' (s: {s}, s+1: {s+1})"):
+                if verbose: print(f"Rank {rank}, starting: mcn0 term ss',ss' (s: {s}, s+1: {s+1})")
                 sspssp = mcn0_terms((s,s+1), (s,s+1), repeat=True)
-            with bench.show(f"Rank {rank}, mcn0 term sspsps (s: {s}, s+1: {s+1})"):
+            with bench.show(f"Rank {rank}, mcn0 term ss',s's (s: {s}, s+1: {s+1})"):
+                if verbose: print(f"Rank {rank}, starting: mcn0 term ss',s's (s: {s}, s+1: {s+1})")
                 sspsps = mcn0_terms((s,s+1), (s+1,s))
         mcn0_only_term = sspssp + sspsps
 
@@ -1179,13 +1186,17 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
         # using notation from equation (43) of 2011.02475v2
         if not skip_rd:
             with bench.show(f"Rank {rank}, (data {data_sim_id}, sim {s}), rdn0 terms"):
-                with bench.show(f"Rank {rank}, rdn0 term dsds (d: {data_sim_id}, s: {s})"):
+                with bench.show(f"Rank {rank}, rdn0 term ds,ds (d: {data_sim_id}, s: {s})"):
+                    if verbose: print(f"Rank {rank}, starting: rdn0 term ds,ds (d: {data_sim_id}, s: {s})")
                     dsds = rdn0_terms((d,s), (d,s), repeat=True)
-                with bench.show(f"Rank {rank}, rdn0 term dssd (d: {data_sim_id}, s: {s})"):
+                with bench.show(f"Rank {rank}, rdn0 term ds,sd (d: {data_sim_id}, s: {s})"):
+                    if verbose: print(f"Rank {rank}, starting: rdn0 term ds,sd (d: {data_sim_id}, s: {s})")
                     dssd = rdn0_terms((d,s), (s,d))
-                with bench.show(f"Rank {rank}, rdn0 term sdds (d: {data_sim_id}, s: {s})"):
+                with bench.show(f"Rank {rank}, rdn0 term sd,ds (d: {data_sim_id}, s: {s})"):
+                    if verbose: print(f"Rank {rank}, starting: rdn0 term sd,ds (d: {data_sim_id}, s: {s})")
                     sdds = rdn0_terms((s,d), (d,s))
-                with bench.show(f"Rank {rank}, rdn0 term sdsd (d: {data_sim_id}, s: {s})"):
+                with bench.show(f"Rank {rank}, rdn0 term sd,sd (d: {data_sim_id}, s: {s})"):
+                    if verbose: print(f"Rank {rank}, starting: rdn0 term sd,sd (d: {data_sim_id}, s: {s})")
                     sdsd = rdn0_terms((s,d), (s,d), repeat=True)
 
             rdn0_only_term = dsds + dssd + sdds + sdsd

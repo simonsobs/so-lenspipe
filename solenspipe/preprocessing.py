@@ -365,7 +365,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
-        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        try:
+            meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit,
+                                      coadd=coadd, taper_ellmin=args.taper_ellmin)
+        except AttributeError: # no taper_ellmin parameter
+            meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
@@ -455,13 +459,13 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
                               subproduct=args.maps_subproduct,
                               maptag=maptag)
 
-def process_beam(sofind_beam, norm=True, interp=True):
+def process_beam(sofind_beam, norm=True, interp=True, ell_min_taper=None):
     '''
     normalized beam if required and then interpolate
+    ell_min_taper cosine tapers beam to 1 if not set to None
     '''
     ell_bells, bells = sofind_beam[0], sofind_beam[1]
     assert ell_bells[0] == 0
-
     if norm:
         bells /= bells[0]
         
@@ -556,7 +560,8 @@ class ACTBeamHelper:
     - get_effective_beam(): returns the effective beam (effective beam, beam, transfer function)
     """
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+    def __init__(self, datamodel, args, qid, isplit=0,
+                 coadd=False, taper_ellmin=None):
         
         default_values = {'tf_subproduct': 'dummy',
                           'beam_subproduct': 'dummy',
@@ -573,6 +578,7 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
+        self.taper_ellmin = taper_ellmin
         if hasattr(args, "beam_subproduct_kwargs"):
             self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
         else:
@@ -628,6 +634,9 @@ class ACTBeamHelper:
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
+        if self.taper_ellmin is not None:
+            tf = taper_replace(tf, self.taper_ellmin,
+                               delta_ell=(self.taper_ellmin // 2))
         
         # if self.daynight != 'night': #if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
@@ -642,6 +651,9 @@ class ACTBeamHelper:
             
         # else:
         beam = self.get_beam()(np.arange(self.mlmax+1))
+        if self.taper_ellmin is not None:
+            beam = taper_replace(beam, self.taper_ellmin,
+                                 delta_ell=(self.taper_ellmin // 2))
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
@@ -1559,6 +1571,44 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
         noise_mod *= mult
 
     return noise_mod
+
+def taper_replace(cls, ellmin, delta_ell=15, final_value=1.0):
+    """
+    Apply a cosine taper from cls[ellmin] to (cls[0], final_value).
+    
+    Parameters
+    ----------
+    cls : np.ndarray
+        Input array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    final_value : float, optional
+        Final value of taper at cls[0].
+    
+    Returns
+    -------
+    cls_mod : np.ndarray
+        Modified cls with tapered values below ellmin.
+    """
+    ell = np.arange(len(cls))
+    cls_mod = cls.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        cls_mod[:mask] = final_value
+    else:
+        # Smooth from (ellmin - 2 * delta_ell) → normal at ellmin
+        x = (ell - (ellmin - 2 * delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # rescale window from final_value to cls_mod[ellmin]
+        window = final_value + window * (cls[ellmin] - final_value)
+        cls_mod[:ellmin] = window[:ellmin]
+
+    return cls_mod
 
 def read_weights(args, use_ps_cut=False):
     
