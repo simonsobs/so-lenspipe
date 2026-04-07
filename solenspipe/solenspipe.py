@@ -28,73 +28,43 @@ def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2
         Xdatp_1 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 1 used for RDN0 for different sim data combination
         Xdatp_2 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 2 used for RDN0 for different sim data combination
         Xdatp_3 (array): [fTalm,fEalm,fBalm] list of filtered alms from split 3 used for RDN0 for different sim data combination
-        qfunc2 ([type], optional): [description]. Defaults to None.
 
     Returns:
-        array: Combination of reconstructed kappa alms
+        array: Combination of reconstructed kappa alms.
+            [phi_xy_X, phi_xy01, phi_xy02, phi_xy03, phi_xy12, phi_xy13, phi_xy23,
+             phi_xy_x0, phi_xy_x1, phi_xy_x2, phi_xy_x3]
     """
-    q_bh_1=q_func1
-    if Xdatp_0 is None:
-        print("none")
-        
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_3))
-        phi_xy01 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_1))+plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_0)))
-        phi_xy02 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_0)))
-        phi_xy03 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_0)))
-        phi_xy10=phi_xy01
-        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_1)))
-        phi_xy13= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_1)))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        phi_xy23=0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdat_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdat_2)))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
-    
-    else:
-       
-        phi_xy00 = plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_0))
-        phi_xy11 = plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_1))
-        phi_xy22 = plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_2))
-        phi_xy33 = plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_3))
-        phi_xy01 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_1))+plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_0)))
-        phi_xy02 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_0)))
-        phi_xy03 = 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_0,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_0)))
-        phi_xy10=phi_xy01
-        phi_xy12= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_2))+plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_1)))
-        phi_xy13= 0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_1,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_1)))
-        phi_xy20=phi_xy02
-        phi_xy21=phi_xy12
-        phi_xy23=0.5*(plensing.phi_to_kappa(q_bh_1(Xdat_2,Xdatp_3))+plensing.phi_to_kappa(q_bh_1(Xdat_3,Xdatp_2)))
-        phi_xy30=phi_xy03
-        phi_xy31=phi_xy13
-        phi_xy32=phi_xy23
-        phi_xy_hat=(phi_xy00+phi_xy11+phi_xy22+phi_xy33+phi_xy01+phi_xy02+phi_xy03+phi_xy10+phi_xy12+phi_xy13+phi_xy20+phi_xy21+phi_xy23+phi_xy30+phi_xy31+phi_xy32)/4**2
-        phi_xy_X=phi_xy_hat-(phi_xy00+phi_xy11+phi_xy22+phi_xy33)/4**2                        
-        phi_xy0=(phi_xy00+phi_xy01+phi_xy02+phi_xy03)/4
-        phi_xy1=(phi_xy10+phi_xy11+phi_xy12+phi_xy13)/4
-        phi_xy2=(phi_xy20+phi_xy21+phi_xy22+phi_xy23)/4
-        phi_xy3=(phi_xy30+phi_xy31+phi_xy32+phi_xy33)/4
-        phi_xy_x0=phi_xy0-phi_xy00/4
-        phi_xy_x1=phi_xy1-phi_xy11/4
-        phi_xy_x2=phi_xy2-phi_xy22/4
-        phi_xy_x3=phi_xy3-phi_xy33/4
+    qe = q_func1
+    ptk = plensing.phi_to_kappa
 
-    phi_xy=np.array([phi_xy_X,phi_xy01,phi_xy02,phi_xy03,phi_xy12,phi_xy13,phi_xy23,phi_xy_x0,phi_xy_x1,phi_xy_x2,phi_xy_x3])
-    
+    if Xdatp_0 is None:
+        X = [Xdat_0, Xdat_1, Xdat_2, Xdat_3]
+        Xp = X
+    else:
+        X = [Xdat_0, Xdat_1, Xdat_2, Xdat_3]
+        Xp = [Xdatp_0, Xdatp_1, Xdatp_2, Xdatp_3]
+
+    # Only compute the 6 cross-split pairs (i != j), skip diagonal terms
+    # since they cancel in all returned cross QE:
+    #   phi_xy_X  = (sum of cross terms) / 16
+    #   phi_xy_xi = (sum of cross terms involving split i) / 4
+    phi_xy01 = 0.5*(ptk(qe(X[0],Xp[1])) + ptk(qe(X[1],Xp[0])))
+    phi_xy02 = 0.5*(ptk(qe(X[0],Xp[2])) + ptk(qe(X[2],Xp[0])))
+    phi_xy03 = 0.5*(ptk(qe(X[0],Xp[3])) + ptk(qe(X[3],Xp[0])))
+    phi_xy12 = 0.5*(ptk(qe(X[1],Xp[2])) + ptk(qe(X[2],Xp[1])))
+    phi_xy13 = 0.5*(ptk(qe(X[1],Xp[3])) + ptk(qe(X[3],Xp[1])))
+    phi_xy23 = 0.5*(ptk(qe(X[2],Xp[3])) + ptk(qe(X[3],Xp[2])))
+
+    cross_sum = 2*(phi_xy01 + phi_xy02 + phi_xy03 + phi_xy12 + phi_xy13 + phi_xy23)
+    phi_xy_X = cross_sum / 16
+
+    phi_xy_x0 = (phi_xy01 + phi_xy02 + phi_xy03) / 4
+    phi_xy_x1 = (phi_xy01 + phi_xy12 + phi_xy13) / 4
+    phi_xy_x2 = (phi_xy02 + phi_xy12 + phi_xy23) / 4
+    phi_xy_x3 = (phi_xy03 + phi_xy13 + phi_xy23) / 4
+
+    phi_xy = np.array([phi_xy_X, phi_xy01, phi_xy02, phi_xy03, phi_xy12, phi_xy13, phi_xy23,
+                       phi_xy_x0, phi_xy_x1, phi_xy_x2, phi_xy_x3])
 
     return phi_xy
 
