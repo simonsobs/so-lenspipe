@@ -148,7 +148,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
-        meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        meta.cal_cluster = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.nemo_calibration, which='cals')
         
         meta.leakage_matrix = None
         meta.leakage_corr = args.leakage_corr
