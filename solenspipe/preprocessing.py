@@ -303,11 +303,13 @@ def get_inpaint_mask_lat_iso(args, datamodel):
     - args: argparse.Namespace(), must contain the following attributes: 
         args.inpaint: bool, if True, you want to inpaint
         args.inpaint_subproduct: str, subproduct name for inpainting catalog
+        args.inpaint_cat: str, name of inpaint catalog
         args.cat_date: str, date of inpaint catalog, e.g. '20241002'
         args.regular_hole: float, radius of hole [arcmin] for regular sources
         args.large_hole: float, radius of hole [arcmin] for large sources
         args.shape: tuple, shape of mask
         args.wcs: wcs object, wcs of mask
+        
     '''
     
     if args.inpaint:
@@ -427,7 +429,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         print("done")
         
     elif parse_qid_experiment(qid)=='lat_iso':
-        meta.Name = args.config_name #'so_lat_iso_sv1' ##this should be passed as argument otherwise use default
+        meta.Name = args.config_name 
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
@@ -1401,7 +1403,7 @@ def preprocess_core(imap, mask,
 
     # Then inpaint
     if inpaint_mask is not None:
-        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
+        #   # setting ivar = None for inpainting ACT by
         imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
