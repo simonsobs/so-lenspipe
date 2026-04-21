@@ -315,7 +315,7 @@ def get_inpaint_mask_lat_iso(args, datamodel):
         #assert args.cat_date is not None, "cat_date must be provided for inpaint"
         print(args.inpaint_subproduct)
         # read catalog coordinates
-        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'ACT_catalog_simple_mnms.txt', subproduct = args.inpaint_subproduct))
+        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'{args.inpaint_cat_name}.txt', subproduct = args.inpaint_subproduct))
         #ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
 
         # Make masks for gapfill
@@ -427,7 +427,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         print("done")
         
     elif parse_qid_experiment(qid)=='lat_iso':
-        meta.Name = 'so_lat_iso_sv1' ##this should be passed as argument otherwise use default
+        meta.Name = args.config_name #'so_lat_iso_sv1' ##this should be passed as argument otherwise use default
         meta.dm = DataModel.from_config(meta.Name)
         qid_dict = meta.dm.get_qid_kwargs_by_subproduct(product='maps', subproduct=args.maps_subproduct, qid=qid)
         
@@ -443,11 +443,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
             meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
             meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
     
-    
+
         meta.inpaint_mask = get_inpaint_mask_lat_iso(args, meta.dm) #TO FIX !!! TEMPORARY BECAUSE WE DO NOT HAVE SOURCE FREE MAPS YET
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
-        meta.noisemodel = SOLATNoiseMetadata(qid, verbose=True) 
+        meta.noisemodel = SOLATNoiseMetadata(qid, args, verbose=True) 
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
@@ -536,8 +536,8 @@ def process_beam(sofind_beam, norm=True, interp=True):
 class SOLATBeamHelper:
     def __init__(self, datamodel,args,qid, isplit=0, coadd=False):
         
-        default_values = {'tf_subproduct': 'v20251019_dummy',  ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
-                          'beam_subproduct': 'v20251019_dummy', ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+        default_values = {'tf_subproduct': 'dummy',  ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
+                          'beam_subproduct': 'dummy', ##TO FIX: CHANGE NAME OF SUBPRODUCT TO JUST "DUMMY" IN THE FUTURE
                           'mlmax': 4000}
         for key, value in default_values.items():
             if not hasattr(args, key):
@@ -555,11 +555,11 @@ class SOLATBeamHelper:
         else:
             self.beam_subproduct_kwargs = {}
     
-    def get_beam(self):
+    def get_beam(self, interp=True):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid, 
                                             split_num=self.isplit, coadd=self.coadd,
                                             **self.beam_subproduct_kwargs)
-        beam_map = process_beam(beam_map,True)
+        beam_map = process_beam(beam_map,self.datamodel.get_if_norm_beam(subproduct=self.beam_subproduct), interp=interp)
         return beam_map
         
     def get_tf(self):
@@ -899,7 +899,7 @@ class PlanckNoiseMetadata:
 
 
 class SOLATNoiseMetadata:
-    def __init__(self, qid, verbose=False):
+    def __init__(self, qid, args, verbose=False):
         self.qid = qid
         
         qid_dict_noise = {'i1a': ["i1a", "i1b"],
@@ -911,14 +911,20 @@ class SOLATNoiseMetadata:
                           'i6a': ["i6a", "i6b"],
                           'i6b': ["i6a", "i6b"],
                           }
-        config_name="so_lat_iso_deep56_v20251019"
-        noise_model_name="tile_cmbmask"
+        config_name= args.noise_config_name #"so_lat_iso_deep56_v20260201_skn_50cg"
+        noise_model_name= args.noise_model_name#"tile_cmbmask_120obscut_120estcut_2_30"
+        noise_subproduct_kwargs_lists = {}
+        for k in args.noise_subproduct_kwargs:
+            noise_subproduct_kwargs_lists[k] = [args.noise_subproduct_kwargs[k]]
+            if verbose: 
+                print(f"kwarg noise {k} = {args.noise_subproduct_kwargs[k]}")
         if verbose:
-            print(f"Initializing NoiseMetadata with qid: {self.qid}")
+            print(f"Initializing NoiseMetadata {config_name} with qid: {self.qid}")
             
         self.tnm = nm.BaseNoiseModel.from_config(config_name,
                                                  noise_model_name,
-                                                 *qid_dict_noise[self.qid])
+                                                 *qid_dict_noise[self.qid],
+                                                 **noise_subproduct_kwargs_lists)
         
     def get_index_sim_qid(self,qid):
 
@@ -1365,6 +1371,7 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
+                    ivar_inpaint=None,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
@@ -1395,7 +1402,7 @@ def preprocess_core(imap, mask,
     # Then inpaint
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
 
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
@@ -1686,7 +1693,7 @@ def read_weights(args, use_ps_cut=False):
         for ispec, spec in enumerate(specs):
             noise=np.loadtxt(get_fout_name(get_name_weights(qid, spec), args, stage='weights'))[:args.mlmax+1]
             print("Warning: I set ellmin=600 irrespectively of the tube")
-            noise_cut = apply_ellmin_taper(noise, 600, delta_ell=25, blowup=1e10) #apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
+            noise_cut = apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10) #apply_ellmin_taper(noise, ellmin_dict[qid], delta_ell=25, blowup=1e10)
             noise_specs[ispec, i] = noise_cut
     
     return noise_specs
