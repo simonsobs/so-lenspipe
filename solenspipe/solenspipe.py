@@ -388,7 +388,10 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     est1 = est1.upper()
     coup = [c.upper() for c in coup]
     
-    print(coup)
+    print("coup ="+str(coup))
+    print("est1 = "+str(est1))
+    print("est2 = "+str(est2))
+    
     print("est list = "+str(pytempura.est_list))
     print(est1)
     assert est1 in pytempura.est_list
@@ -397,7 +400,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
 
     if est2 is not None:
         bh = True
-        assert est2 in pytempura.est_list
+        # assert est2 in pytempura.est_list
         assert Al1 is not None
         assert Al2 is not None
         if Al2.ndim==2:
@@ -435,21 +438,67 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
     elif "ROT" in coup:
         if est1=="EB":
             qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,fEalms=Y[1],fBalms=X[2]) # added these indices on March 31, 2025. I think this is wrong, we are losing half our info :)))
-            # qfunc1 = lambda X,Y: qe.qe_rot(px,ucls,mlmax,X[1],X[2],Y[1],Y[2]) ### testing this one on Oct 24!! 
         else:
             print("Not implemented for rot.")
 
-    if bh:# haven't done for tau yet
-        assert est2 in ['SRC','MASK'] # TODO: add mask
+    if bh:
+        assert est2 in ['SRC','MASK','LENS'] # TODO: add mask
         if est2 == 'SRC':
             qfunc2 = lambda X,Y: qe.qe_source(px,mlmax,Y[0],profile=profile,xfTalm=X[0])
         elif est2 == 'mask':
             qfunc2 = lambda X,Y: qe.qe_mask(px,ucls,mlmax,fTalm=Y[0],xfTalm=X[0])
-        # The bias-hardened estimator Eq 27 of arxiv:1209.0091
-        if R12.shape[0]==1:
+        elif est2 == 'LENS':
+            qfunc2 = lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                    fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                    estimators=[est1],
+                                    xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])[est1] ### What are these hardcoded indices? T E and B
+                                    
+        if "LENS" in coup:
+            # The bias-hardened estimator Eq 27 of arxiv:1209.0091
+            if R12.shape[0]==1:
 
-            if est1=='TT':
-                # Bias harden only gradient e.g. source hardening
+                if est1=='TT':
+                    # Bias harden only gradient e.g. source hardening
+                    def retfunc(X,Y):
+                        q1 = qfunc1(X,Y)
+                        q2 = qfunc2(X,Y)
+                        g = cs.almxfl( \
+                                    (cs.almxfl(q1[0],Al1[0]) - \
+                                        cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                    1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
+                        )
+                        c = cs.almxfl(q1[1],Al1[1])
+                        return np.asarray((g,c))
+                else:
+                    def retfunc(X,Y):
+                        print('test bh MV')
+                        qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                            fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                            estimators=['TT'],
+                                            xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['TT']
+                        q1=qfuncTT(X,Y)
+
+                        q2 = qfunc2(X,Y)
+
+                        qfuncmv=lambda X,Y: qe.qe_all(px,ucls,mlmax,
+                                            fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
+                                            estimators=['MV'],
+                                            xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['MV']
+                        
+                        qmv=qfuncmv(X,Y)
+                        g_bh_TT = cs.almxfl( \
+                                    (cs.almxfl(q1[0],Al3[0]) - \
+                                        cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                    1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
+                        )
+                        g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
+                        c = cs.almxfl(qmv[1],Al1[1])
+
+
+                        return np.asarray((g,c))
+
+            elif R12.shape[0]==2:
+                # Bias harden both e.g. mask hardening
                 def retfunc(X,Y):
                     q1 = qfunc1(X,Y)
                     q2 = qfunc2(X,Y)
@@ -458,53 +507,30 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                     )
-                    c = cs.almxfl(q1[1],Al1[1])
-                    return np.asarray((g,c))
-            else:
-                def retfunc(X,Y):
-                    print('test bh MV')
-                    qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
-                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
-                                        estimators=['TT'],
-                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['TT']
-                    q1=qfuncTT(X,Y)
-
-                    q2 = qfunc2(X,Y)
-
-                    qfuncmv=lambda X,Y: qe.qe_all(px,ucls,mlmax,
-                                        fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
-                                        estimators=['MV'],
-                                        xfTalm=X[0],xfEalm=X[1],xfBalm=X[2])['MV']
-                    
-                    qmv=qfuncmv(X,Y)
-                    g_bh_TT = cs.almxfl( \
-                                (cs.almxfl(q1[0],Al3[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
-                                1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
+                    c = cs.almxfl( \
+                                (cs.almxfl(q1[1],Al1[1]) - \
+                                    cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                                1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
                     )
-                    g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
-                    c = cs.almxfl(qmv[1],Al1[1])
-
-
                     return np.asarray((g,c))
-
-        elif R12.shape[0]==2:
-            # Bias harden both e.g. mask hardening
-            def retfunc(X,Y):
-                q1 = qfunc1(X,Y)
-                q2 = qfunc2(X,Y)
-                g = cs.almxfl( \
-                               (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
-                               1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
-                )
-                c = cs.almxfl( \
-                               (cs.almxfl(q1[1],Al1[1]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
-                               1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
-                )
-                return np.asarray((g,c))
-
+        elif "TAU" in coup:
+            if est1=='TT':
+                print("bias hardening tau NOW", flush=True)
+                # Bias harden only gradient e.g. source hardening
+                def retfunc(X,Y):
+                    q1 = qfunc1(X,Y) #tau
+                    q2 = plensing.phi_to_kappa(qfunc2(X,Y)) #lens (g,c). ADDED CONVERSION ON DEC 18 TO SEE IF THAT'S THE ISSUE
+                    # np.save("/scratch/darbyk12/dr6_taubh_test/subtrahend_alm.npy", cs.almxfl(q2[0], Al1 * Al2 * R12[0]))
+                    # np.save("/scratch/darbyk12/dr6_taubh_test/minuend_alm.npy", cs.almxfl(q1,Al1))
+                    # np.save("/scratch/darbyk12/dr6_taubh_test/unfiltered_minuend_alm.npy", q1)
+                    # np.save("/scratch/darbyk12/dr6_taubh_test/bhfilt.npy", 1. / (1. - Al1 * Al2 * R12[0]**2.))
+                    tau = cs.almxfl( \
+                                (cs.almxfl(q1,Al1) - \
+                                    cs.almxfl(q2[0], Al1 * Al2 * R12[0])) , \
+                                1. / (1. - Al1 * Al2 * R12[0]**2.) \
+                    )
+                    return np.asarray(tau)
+        
         return retfunc
                 
     else:
@@ -518,13 +544,11 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
             elif "TAU" in coup:
                 def retfunc(X,Y):
                     recon = qfunc1(X,Y)
-#               e      print("shape of Al1 = "+str(np.shape(Al1)))
                     return np.asarray((cs.almxfl(recon,Al1)))
                 return retfunc
             elif "ROT" in coup: # added this section on March 31 2025
                 def retfunc(X,Y):
                     recon = qfunc1(X,Y)
-#                     print("shape of Al1 = "+str(np.shape(Al1)))
                     return np.asarray((cs.almxfl(recon,Al1)))
                 return retfunc
         else: return qfunc1

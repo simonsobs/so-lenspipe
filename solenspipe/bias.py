@@ -690,8 +690,6 @@ def mcrdn0_s4(icov, get_kmap, power, phifunc, nsims, qfunc1,get_kmap1=None,get_k
                     qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                     qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
                     mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
-                    np.savetxt("/scratch/darbyk12/power(qaXsXsp,qbXsXsp)_lens.txt", power(qaXsXsp,qbXsXsp))
-                    np.savetxt("/scratch/darbyk12/power(qaXsXsp,qbXspXs)_lens.txt", power(qaXsXsp,qbXspXs))
                 else:
                     qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
                     qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
@@ -705,8 +703,6 @@ def mcrdn0_s4(icov, get_kmap, power, phifunc, nsims, qfunc1,get_kmap1=None,get_k
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
                 qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
                 mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
-                np.savetxt("/scratch/darbyk12/power(qaXsXsp,qbXsXsp).txt", power(qaXsXsp,qbXsXsp))
-                np.savetxt("/scratch/darbyk12/power(qaXsXsp,qbXspXs).txt", power(qaXsXsp,qbXspXs))
             else:
                 qaXsXsp = qf1(Xs,Xsp) #split1 
                 qbXsXsp = qf2(Xs,Xsp) if qf2 is not None else qaXsXsp #split2
