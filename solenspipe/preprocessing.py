@@ -57,14 +57,19 @@ def get_inpaint_mask(args, datamodel):
     if args.inpaint:
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
-
-        # read catalog coordinates
-        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
-        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
-
-        # Make masks for gapfill
-        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-        mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+        
+        mask1 = enmap.ones(args.shape, args.wcs, dtype=bool)
+        mask2 = enmap.ones(args.shape, args.wcs, dtype=bool)
+        
+        # read catalog coordinates, # Make masks for gapfill
+        if not np.isclose(args.regular_hole, 0.):
+            rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+            mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+        
+        if not np.isclose(args.large_hole, 0.):
+            ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+            mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+        
         jmask = mask1 & mask2
         if jmask.dtype!=np.bool_: raise ValueError
         jmask = ~jmask
@@ -110,11 +115,12 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
+        print('ive just read beam_fells', 'split', isplit, 'coadd', coadd)
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = None
         meta.nspecs = nspecs
-        meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        # meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         meta.maptype = 'reprojected'
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
@@ -144,11 +150,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
-        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd, taper_ellmin=args.taper_ellmin)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
-        meta.cal_cluster = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.nemo_calibration, which='cals')
+        # meta.cal_cluster = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.nemo_calibration, which='cals')
         
         meta.leakage_matrix = None
         meta.leakage_corr = args.leakage_corr
@@ -171,7 +177,45 @@ def process_beam(sofind_beam, norm=True, interp=True):
         return maps.interp(ell_bells, bells, fill_value='extrapolate')
     else:
         return ell_bells, bells
-      
+
+def taper_replace(cls, ellmin, delta_ell=15, final_value=1.0):
+    """
+    Apply a cosine taper from cls[ellmin] to (cls[0], final_value).
+    
+    Parameters
+    ----------
+    cls : np.ndarray
+        Input array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    final_value : float, optional
+        Final value of taper at cls[0].
+    
+    Returns
+    -------
+    cls_mod : np.ndarray
+        Modified cls with tapered values below ellmin.
+    """
+    ell = np.arange(len(cls))
+    cls_mod = cls.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        cls_mod[:mask] = final_value
+    else:
+        # Smooth from (ellmin - 2 * delta_ell) → normal at ellmin
+        x = (ell - (ellmin - 2 * delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # rescale window from final_value to cls_mod[ellmin]
+        window = final_value + window * (cls[ellmin] - final_value)
+        cls_mod[:ellmin] = window[:ellmin]
+
+    return cls_mod
+
 class ACTBeamHelper:
     
     """
@@ -194,7 +238,7 @@ class ACTBeamHelper:
     - get_effective_beam(): returns the effective beam (effective beam, beam, transfer function)
     """
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+    def __init__(self, datamodel, args, qid, isplit=0, coadd=False, taper_ellmin=None):
         
         default_values = {'tf_subproduct': 'dummy',
                           'beam_subproduct': 'dummy',
@@ -212,6 +256,7 @@ class ACTBeamHelper:
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
         self.beam_subproduct_kwargs = getattr(args, "beam_subproduct_kwargs", {})
+        self.taper_ellmin = taper_ellmin
 
     def get_beam(self, interp=True):
         beam_map = self.datamodel.read_beam(subproduct=self.beam_subproduct, qid=self.qid,
@@ -228,6 +273,11 @@ class ACTBeamHelper:
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
         beam = self.get_beam()(np.arange(self.mlmax+1))
+        
+        if self.taper_ellmin is not None:
+            print('doing taper ellmin')
+            beam = taper_replace(beam, self.taper_ellmin,
+                                 delta_ell=(self.taper_ellmin // 2))
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam
@@ -320,6 +370,11 @@ class PlanckBeamHelper:
         # Determine split letter (coadd case doesn't matter)
         sl = 'A' if self.isplit == 1 else 'B'
 
+        print(self.datamodel.get_beam_fn(self.qid,
+                        subproduct=self.beam_subproduct,
+                        split_num=sl,
+                        coadd=self.coadd,
+                        **self.beam_subproduct_kwargs))
         # Load and interpolate the beam
         ell_b, bl = self.datamodel.read_beam(self.qid,
                         subproduct=self.beam_subproduct,
@@ -592,7 +647,7 @@ def preprocess_core(imap, mask,
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None, cal_cluster=1.):
+                    foreground_cluster=None):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -617,9 +672,9 @@ def preprocess_core(imap, mask,
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
         if imap.ndim==3:
-            imap[0] = imap[0] - (foreground_cluster / cal_cluster)
+            imap[0] = imap[0] - (foreground_cluster / calibration)
         else:
-            imap = imap - (foreground_cluster / cal_cluster) 
+            imap = imap - (foreground_cluster / calibration) 
 
     # Then inpaint
     if inpaint_mask is not None:
