@@ -8,7 +8,7 @@ import solenspipe
 from solenspipe import bias,biastheory
 import pytempura
 import healpy as hp
-from enlib import bench
+from pixell import bench
 import matplotlib.pyplot as plt
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"

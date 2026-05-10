@@ -6,7 +6,7 @@ import os,sys
 import solenspipe
 from falafel import qe
 import mapsims
-from enlib import bench
+from pixell import bench
 import healpy as hp
 
 """
