@@ -993,6 +993,8 @@ def load_save_power(x_index, y_index, u_index, v_index,
     format_cl = format_cl.replace("_shear", f"_set{i_set}_shear")
     format_phi = format_phi.replace("_shear", f"_set{i_set}_shear")
 
+    def verbose_print(s):
+        if verbose: print(s)
 
     new_format = out_root + format_cl.replace("s1", str(x_index)).replace("sp1", str(y_index)) \
                                      .replace("s2", str(u_index)).replace("sp2", str(v_index)) \
@@ -1002,10 +1004,6 @@ def load_save_power(x_index, y_index, u_index, v_index,
     if not shear:
         new_format = new_format.replace("shear", "noshear")
         new_format_phi = new_format_phi.replace("shear", "noshear")
-
-    if verbose:
-        print("Format for cls: ", new_format)
-        print("Format for intermediate phi: ", new_format_phi)
 
     # make sure {xy, yx} = {uv, vu}
     assert x_index in [u_index, v_index] and y_index in [u_index, v_index], "bad indices"
@@ -1071,21 +1069,21 @@ def load_save_power(x_index, y_index, u_index, v_index,
 
     # check for saved cls
     try:
-        print(f"Looking for cls: {new_format}")
+        verbose_print(f"Looking for cls: {new_format}")
         cl = np.loadtxt(new_format)
-        print(f"Found cls: {new_format}")
+        verbose_print(f"Found cls: {new_format}")
 
     except FileNotFoundError:
         new_format_phi_xy = new_format_phi.replace("s1", str(x_index)).replace("sp1", str(y_index))
         new_format_phi_uv = new_format_phi.replace("s1", str(u_index)).replace("sp1", str(v_index))
         try:
             p_xy_loaded = np.load(new_format_phi_xy, allow_pickle=True)
-            print(f"Found phi_xy: {new_format_phi_xy}")
+            verbose_print(f"Found phi_xy: {new_format_phi_xy}")
         except FileNotFoundError:
             p_xy_loaded = None
         try:
             p_uv_loaded = np.load(new_format_phi_uv, allow_pickle=True)
-            print(f"Found phi_uv: {new_format_phi_uv}!")
+            verbose_print(f"Found phi_uv: {new_format_phi_uv}!")
         except FileNotFoundError:
             p_uv_loaded = None
         
