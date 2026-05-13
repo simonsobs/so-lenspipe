@@ -2,7 +2,7 @@ import numpy as np
 from orphics import mpi
 from pixell import utils # These are needed for MPI. Relevant functions can be copied over.
 import healpy as hp
-from enlib import bench
+from pixell import bench
 from pixell.mpi import FakeCommunicator
 from pixell import lensing as plensing
 

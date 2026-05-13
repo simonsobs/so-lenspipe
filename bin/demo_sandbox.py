@@ -6,7 +6,7 @@ from orphics import maps, io, cosmology, stats
 from falafel import utils as futils
 import pytempura
 import pyfisher
-from enlib import bench
+from pixell import bench
 import solenspipe
 from mpi4py import MPI
 comm = MPI.COMM_WORLD

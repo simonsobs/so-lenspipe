@@ -4,7 +4,7 @@ from pixell import enmap,lensing as plensing,curvedsky as cs,reproject
 import numpy as np
 import os,sys
 import healpy as hp
-from enlib import bench
+from pixell import bench
 from mapsims import noise,SOChannel
 from falafel import qe
 from solenspipe import initialize_mask, SOLensInterface,get_kappa_alm

@@ -57,8 +57,7 @@ To install, run:
 
 ::
 
-    python setup.py build_ext -i
-    pip install -e . --user
+    pip install  --no-build-isolation --editable . --refresh
 
 Then copy ``input/config_template.yml`` to ``input/config.yml`` and edit
 it to match paths on your system (specifically, the ``data_path``
