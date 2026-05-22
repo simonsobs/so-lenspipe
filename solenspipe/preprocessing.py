@@ -445,9 +445,10 @@ class PlanckNoiseMetadata:
         self.qid_freq = qid_dict_config_noise_name[qid]
 
     # moved Frank's residual noise alm function here...
-    def noise_map_path(self, isplit, index):
+    def noise_map_path(self, isplit, index, cmb_set):
         datamodel = DataModel.from_config(self.planck_config_name)
-        maptag = str(index+200).zfill(4)
+        maptag = str(index+199 - 200*cmb_set).zfill(4)
+        print('planck maptag', maptag)
         assert isplit in [1,2], "Planck splits are either 1 or 2"
         split_num = "A" if isplit == 1 else "B"
         return datamodel.get_map_fn(qid=self.qid, coadd=False,
@@ -455,14 +456,14 @@ class PlanckNoiseMetadata:
                                     subproduct="noise_sims",
                                     maptag=maptag)
     
-    def read_in_sim(self, isplit, index, lmax=4000):
+    def read_in_sim(self, isplit, index, cmb_set, lmax=4000):
         # instead of modifying pixell (save_alm option), 
         # have added healpix2map snippet in code
         try:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set),
                                        field=(0,1,2))
         except IndexError:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set),
                                        field=(0))
             print("No pol found, setting E/B to 0.")
             residual_map = np.array([residual_map,
@@ -557,12 +558,12 @@ class ACTNoiseMetadata:
 
         return index
 
-    def read_in_sim(self,split_num, sim_num, lmax=5400,
-                    alm=True, generate=False, write=False):
+    def read_in_sim(self,split_num, sim_num, cmb_set=None, lmax=5400,
+                    alm=True, write=False): # generate=False,
         
-        # grab a sim from disk, fail if does not exist on-disk (by default)
+        # grab a sim from disk, generate otherwise (generate=False is default)
         my_sim = self.tnm.get_sim(split_num=split_num, sim_num=sim_num,
-                                  lmax=lmax, alm=alm, generate=generate,
+                                  lmax=lmax, alm=alm,
                                   write=write)
         index = self.get_index_sim_qid(self.qid)
         my_sim = my_sim[index].squeeze()
@@ -933,7 +934,7 @@ def read_weights(args):
     
     return noise_specs
 
-def get_fout_name(fname, args, stage, tag=None):
+def get_fout_name(fname, args, stage, tag=None, path='../'):
 
     '''
     fname: name of file to be saved
@@ -957,23 +958,23 @@ def get_fout_name(fname, args, stage, tag=None):
     if stage == 'weights':
         fname += '_weights.txt'
         if no_fcoadd_folder:
-            folder = f'../stage_compute_weights/'
+            folder = f'{path}stage_compute_weights/'
         else:
-            folder = f'../{fcoadd_folder}/stage_compute_weights/'
+            folder = f'{path}{fcoadd_folder}/stage_compute_weights/'
     
-    elif stage == 'cluster_fgmap':
-        fname += '_cluster_fgmap.fits'
-        if no_fcoadd_folder:
-            folder = f'../stage_cluster_fgmap/'
-        else:
-            folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
+    # elif stage == 'cluster_fgmap':
+    #     fname += '_cluster_fgmap.fits'
+    #     if no_fcoadd_folder:
+    #         folder = f'../stage_cluster_fgmap/'
+    #     else:
+    #         folder = f'../../{fcoadd_folder}/stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = '../stage_kspace_coadd_sims/'
+            folder = f'{path}stage_kspace_coadd_sims/'
         else:
-            folder = '../stage_kspace_coadd/'
+            folder = f'{path}stage_kspace_coadd/'
 
     elif stage == 'nilc_coadd':
         fname  = 'nilc_coadd_' + fname + '.fits'
