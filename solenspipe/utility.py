@@ -1662,3 +1662,188 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,cross
     mvdumbN0c=mvdumbN0c/sumcc
     
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
+
+def id_sources(in_m,
+               odir,
+               threshes=[25, 20, 15, 10],
+               ell_filt=(2000, 3000),
+               ell_max=8000,
+               inpaint_rad=6,
+               apod_deg=3):
+    """
+        Flag persistent sources in map by looking for
+        high-SNR regions in ell-filtered maps
+
+        in_m (enmap): input map
+        odir (string): output directory for catalog and plots
+        threshes (list of ints): SNR threshold to flag on in each iteration
+        ell_filt (tuple of ints): ell-space filter for identification
+        ell_max (int): maximum ell value for a_lm conversion
+        inpaint_rad (int): radius to inpaint
+        apod_deg (int): apodization radius for the edges
+
+        Returns catalog of coordinates of sources, and saves
+        txt file of locations and PDF of stamps to odir
+    """
+
+    from scipy.ndimage import label, center_of_mass, generate_binary_structure, binary_dilation
+    import astropy.units as u
+    from astropy.coordinates import SkyCoord
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    # Copy input map for filtering and inpainting
+    m = in_m.copy()
+
+    # Resolution for stamping
+    res_y, res_x = np.abs(in_m.wcs.wcs.cdelt[::-1]) * utils.degree
+
+    # Apodize edges to avoid false flags
+    m_mask = enmap.zeros(m.shape, wcs=m.wcs, dtype=np.float64)
+    m_mask[m != 0] = 1
+    m_mask = enmap.apod_mask(m_mask, width=apod_deg * utils.degree)
+    m *= m_mask
+
+    # Prepare for sources
+    source_list = []
+
+    # Helper for computing SNR
+    sn = lambda x : (x - x.mean()) / x.std()
+
+    # Helper for consolidating nearby sources
+    def _consolidate_nearby(srcs_pix):
+        # Sort by intensity (2nd column)
+        srcs_pix = srcs_pix[np.argsort(srcs_pix[:, 2])[::-1]]
+
+        # Convert to RA, DEC
+        srcs = np.array([np.rad2deg(m.pix2sky(src_pix[:2])) for src_pix in srcs_pix])
+
+        # Get circles of inpainting radius
+        sc = SkyCoord(ra=srcs[:, 1] * u.deg, dec=srcs[:, 0] * u.deg)
+        idx1, idx2, sep, _ = sc.search_around_sky(sc, inpaint_rad * u.arcmin)
+
+        # Turn into a graph and find connected components
+        n = len(srcs)
+        graph = coo_matrix((np.ones(len(idx1)), (idx1, idx2)), shape=(n, n))
+        n_comp, labels = connected_components(graph, directed=False)
+
+        # Iterate and find the sources to keep
+        keep = np.empty(n_comp, dtype=int)
+        for k in range(n_comp):
+            members = np.where(labels == k)[0]
+            keep[k] = members.min()
+
+        return srcs_pix[keep]
+
+    # Iterate through possible thresholds
+    for thresh in threshes:
+
+        # Filter maps
+        alm = cs.map2alm(m, lmax=ell_max)
+        ells, ems = hp.Alm.getlm(hp.Alm.getlmax(alm.shape[1]))
+        alm = alm[0] # Only use T
+        alm[(ells < ell_filt[0]) | (ells > ell_filt[1])] = 0.+0.j
+        m_ell_filt = enmap.empty((1,) + m.shape[-2:], m.wcs)
+        cs.alm2map(alm, m_ell_filt)
+
+        # Get signal to noise in maps
+        filt_sn = sn(m_ell_filt)
+
+        # Identify pixels which exceed the threshold
+        locs = np.argwhere(np.abs(filt_sn) > thresh)
+        source_mask = np.zeros(filt_sn.shape[1:], dtype=bool)
+        source_mask[locs[:, 1], locs[:, 2]] = True
+
+        # Cluster high-SNR regions
+        struct = generate_binary_structure(2, 2)
+        dilated = binary_dilation(source_mask, structure=struct, iterations=2) # Dilate for sparse data
+        sources, num_clusters = label(dilated, structure=struct)
+        source_locs = center_of_mass(source_mask, sources, range(1, num_clusters + 1))
+        source_locs = np.array(source_locs, dtype=int) # Round to int for array indexing
+
+        # Sort sources by significance
+        sorted_sources = np.argsort(np.abs(filt_sn[0, source_locs[:, 0], source_locs[:, 1]]))[::-1]
+        source_locs = source_locs[sorted_sources]
+
+        # Prepare to store actual max values
+        source_locs = np.hstack([source_locs, np.ones((source_locs.shape[0], 1), dtype=int)])
+
+        # Center sources
+        for i, src in enumerate(source_locs):
+            y, x, _ = src
+
+            # Get stamp of inpaint area
+            width_y = int((inpaint_rad * utils.arcmin) / res_y)
+            width_x = int((inpaint_rad * utils.arcmin) / res_x)
+            stamp = in_m[0, y - width_y:y + width_y, x - width_x:x + width_x]
+
+            # Get highest-intensity location
+            max_loc = np.unravel_index(np.argmax(stamp), stamp.shape)
+
+            # Save
+            source_locs[i, 0] += max_loc[0] - width_y
+            source_locs[i, 1] += max_loc[1] - width_x
+            source_locs[i, 2] = np.max(stamp)
+
+        # Remove nearby sources
+        source_locs = _consolidate_nearby(source_locs)
+
+        # Add to list
+        source_list.append(source_locs)
+
+        # Inpaint map
+        source_mask_enmap = maps.mask_srcs(m.shape,
+                                           m.wcs,
+                                           np.array([np.rad2deg(m.pix2sky(source_loc[:2])) for source_loc in source_locs]).T,
+                                           inpaint_rad)
+        source_mask_enmap = ~source_mask_enmap
+        m = maps.gapfill_edge_conv_flat(m, source_mask_enmap)
+
+    source_list = np.vstack(source_list)
+
+    # Remove nearby sources
+    source_list = _consolidate_nearby(source_list)
+
+    # Don't need intensity anymore
+    source_list = source_list[:, :2]
+
+    # Save sources in sky coordinates
+    source_list_decra = np.array([np.rad2deg(m.pix2sky(loc)) for loc in source_list])
+    np.savetxt(odir + '/source_list.txt', source_list_decra)
+
+    # Plot and save sources
+    with PdfPages(odir + '/source_stamps.pdf') as pdf:
+        for i, src in enumerate(source_list):
+            y, x = src
+            dec, ra = source_list_decra[i]
+
+            # Prep figure
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+
+            # Get stamp
+            width_y = int((2 * inpaint_rad * utils.arcmin) / res_y)
+            width_x = int((2 * inpaint_rad * utils.arcmin) / res_x)
+            stamp = in_m[0, y - width_y:y + width_y, x - width_x:x + width_x]
+
+            # Plot
+            bound = max(np.abs(np.min(stamp)), np.max(stamp))
+            cbar = ax.imshow(stamp, vmin=-1 * bound, vmax=bound)
+            fig.colorbar(cbar, ax=ax, shrink=0.8)
+
+            # Label
+            ax.set_xlabel('RA (pixels)', fontsize='x-large')
+            ax.set_ylabel('DEC (pixels)', fontsize='x-large')
+            ax.set_title('Source at (%0.3f, %0.3f)' % (ra, dec), fontsize='x-large')
+
+            # Style
+            ax.tick_params(axis='both', labelsize='large')
+
+            # Save
+            fig.tight_layout()
+            pdf.savefig(bbox_inches='tight')
+            plt.close(fig)
+
+    # Return source list
+    return source_list_decra
