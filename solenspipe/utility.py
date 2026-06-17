@@ -1780,7 +1780,7 @@ def id_sources(in_m,
             stamp = in_m[0, y - width_y:y + width_y, x - width_x:x + width_x]
 
             # Get highest-intensity location
-            max_loc = np.unravel_index(np.argmax(stamp), stamp.shape)
+            max_loc = np.unravel_index(np.argmax(np.abs(stamp)), stamp.shape)
 
             # Save
             source_locs[i, 0] += max_loc[0] - width_y
