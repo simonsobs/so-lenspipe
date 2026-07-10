@@ -836,7 +836,7 @@ def get_name_cluster_fgmap(qid, isplit=1, coadd=False):
     else:
         return f'{qid}_split{isplit}_nemo'
 
-def get_name_run(args, split=None, coadd=False):
+def get_name_run(args, split=None, coadd=False, qid=None):
 
     name_run = f'mnemo{args.cluster_subtraction}_{args.mask_tag}'
     
@@ -846,12 +846,12 @@ def get_name_run(args, split=None, coadd=False):
     if coadd:
         name_run += '_coadd'
         
-    return name_run, f'{"_".join(args.qids)}_{name_run}'
+    return name_run, f'{"_".join(args.qids) if qid is None else qid}_{name_run}'
 
-def get_name_sim(sim_tag, task, args):
+def get_name_sim(sim_tag, task, args, qid=None):
     
     name_run = f'{sim_tag}_{(args.sims_start+task):05}'
-    return name_run, f'{"_".join(args.qids)}_{name_run}'
+    return name_run, f'{"_".join(args.qids) if qid is None else qid}_{name_run}'
 
 def get_mask_tag(mask_fn, mask_subproduct):
 
