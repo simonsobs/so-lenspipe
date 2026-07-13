@@ -6,6 +6,9 @@ from pixell import bench
 from pixell.mpi import FakeCommunicator
 from pixell import lensing as plensing
 
+from solenspipe.utility import atomic_write
+import os
+
 """
 Extremely general functions for lensing power spectrum bias subtraction
 ======================================================================
@@ -357,7 +360,8 @@ def mcn0(icov, get_kmap, power, nsims, qfunc1, qfunc2=None, comm=None,
                   verbose=verbose, skip_rd=True)[1]
 
 
-def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,shear=False):
+def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,
+         comm=None,verbose=True,shear=False,start_index=2):
     """
     MCN1 for alpha=XY cross beta=AB
     qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
@@ -388,6 +392,8 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,she
         MPI communicator
     verbose: bool, optional
         Whether to show progress
+    start_index: int
+        First sim index to use, defaults to 1.
 
     Returns
     -------
@@ -404,7 +410,7 @@ def mcn1(icov,get_kmap,power,nsims,qfunc1,qfunc2=None,comm=None,verbose=True,she
     comm,rank,my_tasks = mpi.distribute(nsims)
     n1evals = []
     for i in my_tasks:
-        i=i+2
+        i = i + start_index # i=i+2
         if rank==0 and verbose: print("MCN1: Rank %d doing task %d" % (comm.rank,i))
         Xs    = get_kmap((icov,0,i)) # S
         Ysp   = get_kmap((icov,1,i)) # S'
@@ -981,6 +987,7 @@ def simple_rdn0(icov,alpha,beta,qfunc,get_kmap,comm,power,nsims,Xdata,symmetric=
     print("RDN0 done")
     return totrdn0/nsims
 
+
 # helper function for subset rdn0
 # format_cl and format_phi MUST contain "s1", "sp1" (and "s2", "sp2" for cl)
 def load_save_power(x_index, y_index, u_index, v_index,
@@ -988,7 +995,7 @@ def load_save_power(x_index, y_index, u_index, v_index,
                     qf2=None, get_kmap1=None, get_kmap2=None, get_kmap3=None,
                     out_root="", format_cl="cl_cross_s1,sp1_x_s2,sp2_shear.txt",
                     format_phi="phi_cross_s1,sp1_shear.npy", shear=False,
-                    noiseless_sims=True, verbose=True):
+                    noiseless_sims=True, verbose=True, mutex=None):
     
     format_cl = format_cl.replace("_shear", f"_set{i_set}_shear")
     format_phi = format_phi.replace("_shear", f"_set{i_set}_shear")
@@ -1081,10 +1088,21 @@ def load_save_power(x_index, y_index, u_index, v_index,
             verbose_print(f"Found phi_xy: {new_format_phi_xy}")
         except FileNotFoundError:
             p_xy_loaded = None
+        except ValueError: # corrupted file!
+            try:
+                os.remove(new_format_phi_xy)
+            except FileNotFoundError: pass
+            p_xy_loaded = None
+
         try:
             p_uv_loaded = np.load(new_format_phi_uv, allow_pickle=True)
             verbose_print(f"Found phi_uv: {new_format_phi_uv}!")
         except FileNotFoundError:
+            p_uv_loaded = None
+        except ValueError: # corrupted file!
+            try:
+                os.remove(new_format_phi_uv)
+            except FileNotFoundError: pass
             p_uv_loaded = None
         
         with bench.show(f"cl_xy_uv: (({x_index},{y_index}),({u_index},{v_index}))"):
@@ -1092,9 +1110,9 @@ def load_save_power(x_index, y_index, u_index, v_index,
                                       p_uv_saved=p_uv_loaded,
                                       to_repeat=to_repeat)
 
-        if p_xy_loaded is None: np.save(new_format_phi_xy, p_xy)
-        if p_uv_loaded is None: np.save(new_format_phi_uv, p_uv)
-        np.savetxt(new_format, cl)
+        if p_xy_loaded is None: atomic_write(new_format_phi_xy, p_xy, mutex=mutex)
+        if p_uv_loaded is None: atomic_write(new_format_phi_uv, p_uv, mutex=mutex)
+        atomic_write(new_format, cl, txt=True, mutex=mutex)
 
     return cl
 
@@ -1104,7 +1122,7 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
                      qfunc2=None, use_mpi=True, verbose=True, skip_rd=False,
                      shear=False, power_mcn0=None, noiseless_mcn0=False, out_root="",
                      format_cl="cl_cross_s1,sp1_x_s2,sp2_shear.txt",
-                     format_phi="phi_cross_s1,sp1_shear.npy"):
+                     format_phi="phi_cross_s1,sp1_shear.npy", mutex=None):
     """
     This function performs the Realization-dependent N0 (RDN0) using combinations of simulations for the cross-correlation based estimator.
     This variant treats a specific simulation index "data_sim_id" as the data, and computes an average over nsims.
@@ -1125,6 +1143,7 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
     shear: A boolean indicating whether to apply shear in the calculations.
     power_mcn0: An optional parameter related to power calculations.
     out_root: An output path / prefix to load/save intermediate rdn0 calculations.
+    mutex: mpi4py.util.sync.Mutex object for MPI file locking.
 
     Returns:
         A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
@@ -1156,7 +1175,8 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
                                    get_kmap2=get_kmap2, get_kmap3=get_kmap3,
                                    out_root=out_root, shear=shear,
                                    format_cl=format_cl, format_phi=format_phi,
-                                   noiseless_sims=False, verbose=verbose)
+                                   noiseless_sims=False, mutex=mutex,
+                                   verbose=verbose)
             
         def mcn0_terms(xy, uv, repeat=False):
             return load_save_power(xy[0], xy[1], uv[0], uv[1],
@@ -1167,7 +1187,8 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
                                    get_kmap2=get_kmap2, get_kmap3=get_kmap3,
                                    out_root=out_root, shear=shear,
                                    format_cl=format_cl, format_phi=format_phi,
-                                   noiseless_sims=noiseless_mcn0, verbose=verbose)
+                                   noiseless_sims=noiseless_mcn0, mutex=mutex,
+                                   verbose=verbose)
         
         # mcn0 terms
         with bench.show(f"Rank {rank}, sim index {s}, mcn0 terms"):

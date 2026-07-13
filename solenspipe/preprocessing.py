@@ -1335,11 +1335,7 @@ def preprocess_core(imap, mask,
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
 
-    # Then inpaint
-    if inpaint_mask is not None:
-        # setting ivar = None for inpainting ACT by
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
-
+    # CHANGING THE ORDER A BIT
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:
@@ -1352,6 +1348,12 @@ def preprocess_core(imap, mask,
     imap[~np.isfinite(imap)] = 0
 
     imap = imap * mask
+
+    # Then inpaint
+    if inpaint_mask is not None:
+        # setting ivar = None for inpainting ACT by
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
+
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration

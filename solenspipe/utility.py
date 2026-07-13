@@ -7,6 +7,8 @@ from orphics import maps
 from falafel.utils import get_cmb_alm, get_theory_dicts
 import pytempura
 
+# for atomic writing/reading
+import shutil, os, stat, tempfile, time
 
 def eshow(x,fname): 
     ''' Define a function to quickly plot the maps '''
@@ -1435,7 +1437,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
   
     lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
-    if profile is None:
+    if profile is None or bh is False:
         profile=np.ones(Lmax+1)
     else:
         profile=profile[:Lmax+1]
@@ -1662,3 +1664,77 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,cross
     mvdumbN0c=mvdumbN0c/sumcc
     
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
+
+
+#### adapted from https://stackoverflow.com/questions/11614815/a-safe-atomic-file-copy-operation
+# Source - https://stackoverflow.com/a/74687845
+# Posted by therightstuff
+# Retrieved 2026-05-19, License - CC BY-SA 4.0
+
+def copy_with_metadata(source, target):
+    """Copy file with all its permissions and metadata.
+    
+    Lifted from https://stackoverflow.com/a/43761127/2860309
+    :param source: source file name
+    :param target: target file name
+    """
+    # copy content, stat-info (mode too), timestamps...
+    shutil.copy2(source, target)
+    # copy owner and group
+    st = os.stat(source)
+    os.chown(target, st[stat.ST_UID], st[stat.ST_GID])
+
+
+def atomic_write(filename, file_contents, txt=False, mode="w", mutex=None):
+    """Write to a temporary file and rename it to avoid file corruption.
+    Attribution: @therightstuff, @deichrenner, @hrudham
+    :param file_contents: contents to be written to file
+    :param target_file_path: the file to be created or replaced
+    :param mode: the file mode defaults to "w", only "w" and "a" are supported
+    :param mutex: mpi4py.util.sync.Mutex object, since copy_with_metadata is
+                  not thread-safe?
+    """
+    # Use the same directory as the destination file so that moving it across
+    # file systems does not pose a problem.
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=os.path.dirname(filename))
+    try:
+        # preserve file metadata if it already exists
+        if mutex is not None:
+            with mutex:
+                if os.path.exists(filename):
+                    try:
+                        copy_with_metadata(filename, temp_file.name)
+                    except OSError:
+                        pass # just skip, not necessary
+
+                with open(temp_file.name, mode + "b") as f:
+                    if txt: np.savetxt(f, file_contents)
+                    else: np.save(f, file_contents) # .npy
+                    # flush buffer
+                    f.flush()
+                    os.fsync(f.fileno())
+        else:
+            if os.path.exists(filename):
+                try:
+                    copy_with_metadata(filename, temp_file.name)
+                except OSError:
+                    pass # just skip, not necessary
+
+            with open(temp_file.name, mode + "b") as f:
+                if txt: np.savetxt(f, file_contents)
+                else: np.save(f, file_contents) # .npy
+                # flush buffer
+                f.flush()
+                os.fsync(f.fileno())
+
+        # replacing is atomic
+        os.replace(temp_file.name, filename)
+
+    finally:
+        if os.path.exists(temp_file.name):
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
