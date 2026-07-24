@@ -804,7 +804,7 @@ class PlanckNoiseMetadata:
                                     'p05': '143',
                                     'p06': '217',
                                     'p07': '353',
-                                    'p08': '547',
+                                    'p08': '545',
                                     'p09': '857'}
         
         self.planck_config_name = config_name
