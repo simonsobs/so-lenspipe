@@ -41,7 +41,7 @@ def parse_qid_experiment(qid):
 
 # leaving this for archival purposes for now
 # function called in v5 preprocessing is in PlanckNoiseMetadata
-def process_residuals_alms(isplit, freq, task,root_path="/gpfs/fs0/project/r/rbond/jiaqu/"):
+def process_residuals_alms(isplit, freq, task,root_path="/project/rrg-rbond-ac/jiaqu/"):
     """
     Rotate the residuals from healpix to enmap and return the residual alms. Note that extraction of the ACT footprint is not performed here.
     This is done for a given simulation type, frequency, and task number.
@@ -160,7 +160,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        if hasattr(args, "nemo_calibration"):
+        if getattr(args, "nemo_calibration", None) is not None:
             meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
         else:
             meta.cal_cluster = 1.
@@ -173,6 +173,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
                                               subproduct_name="noise_sims")
+        meta.nspecs = nspecs
+        meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         # assigning ACT splits 0 + 1 to Planck split 1
         # and ACT splits 2 + 3 to Planck split 2
         
@@ -188,10 +190,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
    
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid.split('_')[0], subproduct=args.poleff_subproduct, which='poleffs')
-        
+        print(f"testing poleff solenspipe {qid}: {meta.pol_eff}")
+
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-        if hasattr(args, "nemo_calibration"):
+        if getattr(args, "nemo_calibration", None) is not None:
             meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
         else:
             meta.cal_cluster = 1.
@@ -209,10 +212,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         meta.leakage_matrix = None
         meta.deconvolve_beam = False
-        if args.deconvolve_beam:
-            meta.deconvolve_beam = True
-            if args.leakage_corr:
-                meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
+        #if args.deconvolve_beam:
+            #meta.deconvolve_beam = True
+        if args.leakage_corr:
+            meta.leakage_matrix = meta.Beam.get_invleakage_matrix()
         
     elif parse_qid_experiment(qid)=='lat_iso':
         meta.Name = 'so_lat_pipe4_BN' ##this should be passed as argument otherwise use default
@@ -495,10 +498,11 @@ class ACTBeamHelper:
         cbeam = cbeam[1]
         
         array0 = np.zeros(len(ell))
+        array1 = np.ones(len(ell))
         
-        beam_matrix = np.array([[sbeam, array0, array0],
-                                [te * cbeam * sbeam, sbeam, array0],
-                                [tb * cbeam * sbeam,  array0, sbeam]])
+        beam_matrix = np.array([[array1, array0, array0],
+                                [te * array1 , array1, array0],
+                                [tb * array1,  array0, array1]])
         invmatrix = (np.linalg.inv(beam_matrix.T)).T
         
         return invmatrix
@@ -527,31 +531,68 @@ class PlanckNoiseMetadata:
             print(f"Initializing NoiseMetadata with qid: {self.qid}")
         self.qid_freq = qid_dict_config_noise_name[qid]
 
+    # NPIPE residual bank is only 600 realizations deep (maptags 0200-0799),
+    # unlike the ~2000-deep DR6 CMB signal bank. The CMB signal seed s_i packs
+    # cmb_set with stride nsims//ndiv=500 (convert_seeds), which overruns the
+    # NPIPE bank for set 1 (s_i=500..799 -> maptags 0700-0999, and 0800+ do not
+    # exist on disk). The Planck noise realization must therefore be decoupled
+    # from the signal s_i and packed with a Planck-appropriate stride of 300
+    # (600 sims / 2 sets): set 0 -> maptags 0200-0499, set 1 -> 0500-0799.
+    NPIPE_STRIDE = 300   # sims per cmb_set for the NPIPE residual bank
+    # sim_id is 1-indexed (sims-start=1), so base 199 packs each set flush from
+    # the bottom of its block with no gap and no cross-set overlap:
+    #   set 0: sim_id 1..300 -> maptags 0200-0499
+    #   set 1: sim_id 1..300 -> maptags 0500-0799
+    # both blocks are fully present on disk (npipe6v20{A,B}_sim: 0200-0799).
+    NPIPE_BASE = 199
+
+    def noise_realization(self, cmb_set, sim_id):
+        # raw (cmb_set, sim_id) -> NPIPE maptag string, stride-300 packing
+        return str(sim_id + cmb_set * self.NPIPE_STRIDE + self.NPIPE_BASE).zfill(4)
+
     # moved Frank's residual noise alm function here...
-    def noise_map_path(self, isplit, index):
+    def noise_map_path(self, isplit, index, cmb_set=None, sim_id=None):
         datamodel = DataModel.from_config(self.planck_config_name)
-        maptag = str(index+200).zfill(4)
+        if cmb_set is not None and sim_id is not None:
+            # decoupled NPIPE noise realization (stride 300), independent of the
+            # signal s_i so set 1 stays inside the 0500-0799 block on disk.
+            maptag = self.noise_realization(cmb_set, sim_id)
+        else:
+            # legacy path: `index` is the converted signal s_i (stride 500).
+            maptag = str(index+200).zfill(4)
         assert isplit in [1,2], "Planck splits are either 1 or 2"
         split_num = "A" if isplit == 1 else "B"
         return datamodel.get_map_fn(qid=self.qid, coadd=False,
                                     split_num=split_num,
                                     subproduct="noise_sims",
                                     maptag=maptag)
-    
-    def read_in_sim(self, isplit, index, lmax=4000):
-        # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
+
+    def read_in_sim(self, isplit, index, lmax=4000, cmb_set=None, sim_id=None):
+        # use the self-contained healpix2map below (no patched pixell needed,
+        # unlike reproject.healpix2map(save_alm=True))
         try:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set, sim_id),
                                        field=(0,1,2))
         except IndexError:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set, sim_id),
                                        field=(0))
             print("No pol found, setting E/B to 0.")
             residual_map = np.array([residual_map,
                                      residual_map*0.,
                                      residual_map*0.])
-        return reproject.healpix2map(residual_map, lmax=lmax,
-                                     rot='gal,equ',save_alm=True)*10**6
+        return healpix2map(residual_map, lmax=lmax,
+                           rot='gal,equ',save_alm=True)*10**6
+
+
+def healpix2map(iheal, lmax, rot=None, spin=[0,2], method="harm", niter=0, save_alm=False):
+    # Self-contained healpix->alm with optional gal->equ rotation; replaces the
+    # patched-pixell reproject.healpix2map(save_alm=True) the Planck path needed.
+    assert method in ["harm", "harmonic"]
+    alm = cs.map2alm_healpix(iheal, lmax=lmax, spin=spin, niter=niter)
+    if rot is not None:
+        cs.rotate_alm(alm, *reproject.rot2euler(rot), inplace=True)
+    if save_alm:
+        return alm
 
 
 class SOLATNoiseMetadata:
@@ -880,8 +921,7 @@ class ForegroundHandler:
 
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
-        if self.args.is_noiseless:
-            return None
+      
         if self.args.fg_type == 'sims':
             return lambda: self.generate_cov_fgs(self.args.fgs_path, self.args.lmax_signal) # lmax conditioned by max ell of signal sims (van Engelen)
         elif self.args.fg_type == 'theory':
@@ -1021,51 +1061,54 @@ def preprocess_core(imap, mask,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
-                    kspace_mask=None, 
-                    foreground_cluster=None, cal_cluster=1., deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
+                    kspace_mask=None,
+                    foreground_cluster=None, cal_cluster=None,
+                    deconvolve_beam_bool=False, beam=None, leakage=None, mlmax=5000):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
     and removing a pixel window function. It also removes a calibration
     and polarization efficiency.
     For simulations ivar processing is redundant, we should probably set ivar as an optional argument
-
-    pass deconv_beam = True if you wanna do deconvolution
-    Leakage is the inverse variance leakage matrix that needs to be applied to the alms
-
     Returns beam convolved (transfer uncorrected) T, Q, U maps.
+
+    Cluster subtraction follows the brexit ordering: downgrade then extract onto the
+    mask geometry, THEN subtract foreground_cluster (which is supplied on that same
+    downgraded/footprint geometry). cal_cluster defaults to the map calibration if unset.
+    deconvolve_beam_bool/beam/leakage/mlmax are accepted for backward compatibility.
     """
+    # for Planck, assert that we extract the RA DEC of the ACT footprint only
+
+    if dfact!=1 and (dfact is not None):
+        imap = enmap.downgrade(imap,dfact)
+        if ivar is not None:
+            ivar = enmap.downgrade(ivar,dfact,op=np.sum)
+
+    oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
+    if imap[0].shape != mask.shape:
+        imap = enmap.extract(imap, oshape, mask.wcs)
+        if ivar is not None:
+            ivar = enmap.extract(ivar, oshape, mask.wcs)
 
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
+        if cal_cluster is None:
+            cal_cluster = calibration
         if imap.ndim==3:
             imap[0] = imap[0] - (foreground_cluster / cal_cluster)
         else:
             imap = imap - (foreground_cluster / cal_cluster)
 
-    # Then downgrade
-    if dfact!=1 and (dfact is not None):
-        imap = enmap.downgrade(imap,dfact)
-        if ivar is not None:
-            ivar = enmap.downgrade(ivar,dfact,op=np.sum)
-        
+    # Then inpaint
     if inpaint_mask is not None:
         # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
+        # imap = inpaint_temperature_only(imap, inpaint_mask)
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask) # , ivar=ivar)
 
-
-    #for Planck, assert that we extract the RA DEC of the ACT footprint only
-    if imap[0].shape != mask.shape:
-        imap = enmap.extract(imap, (3,)+mask.shape, mask.wcs)
-        if ivar is not None:
-            ivar = enmap.extract(ivar, (3,)+mask.shape, mask.wcs)
     # Check that non-finite regions are in masked region; then set non-finite to zero
     if not(np.all((np.isfinite(imap[...,mask>1e-3])))): raise ValueError
     imap[~np.isfinite(imap)] = 0
 
-    if foreground_cluster is not None:
-        imap[0] = imap[0] - foreground_cluster
-        
     if deconvolve_beam_bool:
         print('deconv beam')
         imap = deconvolve_beam(imap, mask, mlmax, beam=beam, leakage=leakage)
@@ -1074,12 +1117,14 @@ def preprocess_core(imap, mask,
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration
-    imap[1:] = imap[1:] / pol_eff
-    
+    if imap.ndim==3:
+        imap[1:] = imap[1:] / pol_eff
+
     if ivar is not None:
         ivar = ivar / calibration**2.
-        ivar[1:] = ivar[1:] * pol_eff**2.
-    
+        if imap.ndim==3:
+            ivar[1:] = ivar[1:] * pol_eff**2.
+
     return imap, ivar # ivar will be none if nothing happened to it
 
 def deconvolve_beam(imap, mask, mlmax, beam=None, leakage=None):
@@ -1244,6 +1289,11 @@ def get_name_run(args, split=None, coadd=False):
 
     return name_run
 
+def get_name_sim(sim_tag, task, args):
+
+    name_run = f'{sim_tag}_{(args.sims_start+task):05}'
+    return name_run, f'{"_".join(args.qids)}_{name_run}'
+
 def get_mask_tag(mask_fn, mask_subproduct):
 
     """
@@ -1325,7 +1375,7 @@ def read_weights(args):
     
     return noise_specs
 
-def get_fout_name(fname, args, stage, tag=None):
+def get_fout_name(fname, args, stage, tag=None, path='../'):
 
     '''
     fname: name of file to be saved
@@ -1333,9 +1383,11 @@ def get_fout_name(fname, args, stage, tag=None):
     stage: str
         ['weights', 'cluster_fgmap', 'kspace_coadd', 'nilc_coadd']
     tag: optional, used in kspace_coadd and nilc_coadd to distinguish between sim (tag='sim') and data (tag=None), because we store them in different folders
+    path: prefix for the sibling stage folders (default '../'); kspace_coadd.py passes
+        args.storage_path so it can read per-array alms from a different stage tree.
     '''
     fname = fname.split('.fits')[0]
-    
+
     try:
         fcoadd_folder = f'{args.mask_tag}_fcoadd'
     except AttributeError:
@@ -1343,25 +1395,25 @@ def get_fout_name(fname, args, stage, tag=None):
 
     if stage == 'weights':
         fname += '_weights.txt'
-        folder = f'../stage_compute_weights/'
-    
+        folder = f'{path}stage_compute_weights/'
+
     elif stage == 'cluster_fgmap':
         fname += '_cluster_fgmap.fits'
-        folder = f'../stage_cluster_fgmap/'
+        folder = f'{path}stage_cluster_fgmap/'
 
     elif stage == 'kspace_coadd':
         fname  = 'kspace_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = '../stage_kspace_coadd_sims/'
+            folder = f'{path}stage_kspace_coadd_sims/'
         else:
-            folder = '../stage_kspace_coadd/'
+            folder = f'{path}stage_kspace_coadd/'
 
     elif stage == 'nilc_coadd':
         fname  = 'nilc_coadd_' + fname + '.fits'
         if tag == 'sim':
-            folder = '../stage_nilc_coadd_sims/'
+            folder = f'{path}stage_nilc_coadd_sims/'
         else:
-            folder = '../stage_nilc_coadd'
+            folder = f'{path}stage_nilc_coadd'
 
     output_dir = os.path.join(args.output_dir, folder)
     # create output folder if it does not exist

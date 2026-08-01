@@ -647,10 +647,9 @@ def RDN0_analytic(shape,wcs,theory,fwhm,noise_t,noise_p,powdict,estimator,XY,UV,
                                  field_names_alpha=None,field_names_beta=None,skip_filter_field_names=False,
                                  split_estimator=split_estimator)
 
-def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
-              #get_kmap1=None,get_kmap2=None,get_kmap3=None,
-              qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, 
-              use_mpi=True, verbose=True, skip_rd=False,shear=False,power_mcn0=None):
+
+def mcrdn0_s4(sim_set,get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
+         verbose=True, skip_rd=False,shear=False,power_mcn0=None,skip_mcn0=False,drop_sim=None):
     """
     This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
 
@@ -667,6 +666,19 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
     use_mpi: A boolean indicating whether to use MPI for distributing tasks.
     verbose: A boolean indicating whether to print verbose messages.
     skip_rd: A boolean indicating whether to skip certain operations.
+    drop_sim: Sim index to EXCLUDE from the bank (leave-one-out). Required when a
+        sim plays the role of "data" for an RDN0-based covariance: if that same
+        realization stays in the bank, the S_k (x) S_k pairing in the rdn0-only
+        term contributes a spurious lensing-like signal that MCN0 does not
+        cancel. The excluded task contributes nothing, so the effective bank is
+        nsims-1.
+    skip_mcn0: Skip the sim-sim MCN0 term and return the RAW rdn0-only term
+        (NOT rdn0_only - mcn0). MCN0 never involves Xdat, so when many
+        realizations each play the role of "data" (an RDN0-based covariance) it
+        is a common offset identical for every realization that cancels in the
+        covariance; computing it once and reusing it halves the cost and avoids
+        loading the Xsp splits. The caller subtracts the reused MCN0 itself if an
+        absolute (rather than covariance) normalization is wanted.
     shear: A boolean indicating whether to apply shear in the calculations.
     power_mcn0: An optional parameter related to power calculations.
 
@@ -674,11 +686,13 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
         A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
 
     """
-
+    
+         
     i_set,start=sim_set
     qa = phifunc 
     qf1 = qfunc1
     qf2=qfunc2
+    
 
     mcn0evals = []
     if not(skip_rd): 
@@ -695,11 +709,14 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
 
     for i in my_tasks:
         i=i+start
+        if drop_sim is not None and i==drop_sim:
+            if verbose: print("MCRDN0: rank %d SKIPPING sim %d (leave-one-out: it is the data)" % (rank,i))
+            continue
         if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,i))
-        Xs  = get_kmap((0,i_set,i), split=0)
-        Xs1 = get_kmap((0,i_set,i), split=1)
-        Xs2 = get_kmap((0,i_set,i), split=2)
-        Xs3 = get_kmap((0,i_set,i), split=3)
+        Xs  = get_kmap((0,i_set,i))
+        Xs1= get_kmap1((0,i_set,i))
+        Xs2= get_kmap2((0,i_set,i))
+        Xs3= get_kmap3((0,i_set,i))
 
 
         if not(skip_rd): 
@@ -718,18 +735,23 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
                 rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
                         + power(qaXsX,qbXsX) 
 
-        Xsp  = get_kmap((0,i_set,i+1), split=0) 
-        Xsp1 = get_kmap((0,i_set,i+1), split=1) 
-        Xsp2 = get_kmap((0,i_set,i+1), split=2) 
-        Xsp3 = get_kmap((0,i_set,i+1), split=3) 
+        if skip_mcn0:
+            # reuse-MCN0 mode: no Xsp loads, no sim-sim QE, keep the raw rd term
+            rdn0evals.append(rdn0_only_term.copy())
+            continue
+
+        Xsp = get_kmap((0,i_set,i+1)) 
+        Xsp1 = get_kmap1((0,i_set,i+1)) 
+        Xsp2 = get_kmap2((0,i_set,i+1)) 
+        Xsp3 = get_kmap3((0,i_set,i+1)) 
 
 
         if power_mcn0 is None:
 
             if shear:
-                qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
-                qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
-                qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+                qaXsXsp = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xsp[1],Xsp1[1],Xsp2[1],Xsp3[1],qf1) #split1 
+                qbXsXsp = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xsp[1],Xsp1[1],Xsp2[1],Xsp3[1],qf2) if qf2 is not None else qaXsXsp #split2
+                qbXspXs =qa(Xsp[0],Xsp1[0],Xsp2[0],Xsp3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qa(Xsp[0],Xsp1[0],Xsp2[0],Xsp3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) #this is not present
             else:
                 qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
                 qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
@@ -754,8 +776,11 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
         avgrdn0 = utils.allgatherv(rdn0evals,comm)
     else:
         avgrdn0 = None
+    if skip_mcn0:
+        return avgrdn0, None
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
+
 
 
 def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
