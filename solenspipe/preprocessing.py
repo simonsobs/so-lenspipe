@@ -1012,36 +1012,73 @@ class PlanckNoiseMetadata:
             print(f"Initializing NoiseMetadata with qid: {self.qid}")
         self.qid_freq = qid_dict_config_noise_name[qid]
 
+    # NPIPE residual bank is only 600 realizations deep (maptags 0200-0799),
+    # unlike the ~2000-deep DR6 CMB signal bank. The CMB signal seed s_i packs
+    # cmb_set with stride nsims//ndiv=500 (convert_seeds), which overruns the
+    # NPIPE bank for set 1 (s_i=500..799 -> maptags 0700-0999, and 0800+ do not
+    # exist on disk). The Planck noise realization must therefore be decoupled
+    # from the signal s_i and packed with a Planck-appropriate stride of 300
+    # (600 sims / 2 sets): set 0 -> maptags 0200-0499, set 1 -> 0500-0799.
+    NPIPE_STRIDE = 300   # sims per cmb_set for the NPIPE residual bank
+    # sim_id is 1-indexed (sims-start=1), so base 199 packs each set flush from
+    # the bottom of its block with no gap and no cross-set overlap:
+    #   set 0: sim_id 1..300 -> maptags 0200-0499
+    #   set 1: sim_id 1..300 -> maptags 0500-0799
+    # both blocks are fully present on disk (npipe6v20{A,B}_sim: 0200-0799).
+    NPIPE_BASE = 199
+
+    def noise_realization(self, cmb_set, sim_id):
+        # raw (cmb_set, sim_id) -> NPIPE maptag string, stride-300 packing
+        return str(sim_id + cmb_set * self.NPIPE_STRIDE + self.NPIPE_BASE).zfill(4)
+
     # moved Frank's residual noise alm function here...
-    def noise_map_path(self, isplit, index):
+    def noise_map_path(self, isplit, index, cmb_set=None, sim_id=None):
         datamodel = DataModel.from_config(self.planck_config_name)
-        maptag = str(index+200).zfill(4)
+        if cmb_set is not None and sim_id is not None:
+            # decoupled NPIPE noise realization (stride 300), independent of the
+            # signal s_i so set 1 stays inside the 0500-0799 block on disk.
+            maptag = self.noise_realization(cmb_set, sim_id)
+        else:
+            # legacy path: `index` is the converted signal s_i (stride 500).
+            maptag = str(index+200).zfill(4)
         assert isplit in [1,2], "Planck splits are either 1 or 2"
         split_num = "A" if isplit == 1 else "B"
         return datamodel.get_map_fn(qid=self.qid, coadd=False,
                                     split_num=split_num,
                                     subproduct="noise_sims",
                                     maptag=maptag)
-    
-    def read_in_sim(self, isplit, index, lmax=4000, return_map=False):
-        # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
+
+    def read_in_sim(self, isplit, index, lmax=4000, return_map=False, cmb_set=None, sim_id=None):
+        # use the self-contained healpix2map below (no patched pixell needed,
+        # unlike reproject.healpix2map(save_alm=True))
         try:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set, sim_id),
                                        field=(0,1,2))
         except IndexError:
-            residual_map = hp.read_map(self.noise_map_path(isplit, index),
+            residual_map = hp.read_map(self.noise_map_path(isplit, index, cmb_set, sim_id),
                                        field=(0))
             print("No pol found, setting E/B to 0.")
             residual_map = np.array([residual_map,
                                      residual_map*0.,
                                      residual_map*0.])
-        
+
         if return_map:
             return reproject.healpix2map(residual_map, lmax=lmax,
                                          rot='gal,equ') * 1e6
         else:
-            return reproject.healpix2map(residual_map, lmax=lmax,
-                                        rot='gal,equ',save_alm=True)*10**6
+            return healpix2map(residual_map, lmax=lmax,
+                               rot='gal,equ',save_alm=True)*10**6
+
+
+def healpix2map(iheal, lmax, rot=None, spin=[0,2], method="harm", niter=0, save_alm=False):
+    # Self-contained healpix->alm with optional gal->equ rotation; replaces the
+    # patched-pixell reproject.healpix2map(save_alm=True) the Planck path needed.
+    assert method in ["harm", "harmonic"]
+    alm = cs.map2alm_healpix(iheal, lmax=lmax, spin=spin, niter=niter)
+    if rot is not None:
+        cs.rotate_alm(alm, *reproject.rot2euler(rot), inplace=True)
+    if save_alm:
+        return alm
 
 
 class SOLATNoiseMetadata:
