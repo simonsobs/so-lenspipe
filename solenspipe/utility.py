@@ -900,23 +900,34 @@ def kspace_mask(imap, vk_mask=[-90,90], hk_mask=[-50,50], normalize="phys", deco
 
 
 
-def get_Dpower(X,U,mask,m=4):
+def get_Dpower(X,U,mask,m=4, shared_noise_pairs=None):
     """Get split averaged data power
-
     Args:
         X (array of arrays): array containing m alms
         U (array of arrays): array containing m alms
         mask (arrays): analysis mask used
         m (int, optional): Number of splits used Defaults to 4.
     """
+    
     cls = hp.alm2cl(X[0])*0
 
-    for i in range(m):
-        for j in range(m):
-            if j!=i:
-                cls+=hp.alm2cl(X[i],U[j])/(w_n(mask,2)*m*(m-1))
-    #cls=cls/(w_n(mask,2)*m*(m-1))
-    return cls
+    if shared_noise_pairs is not None:
+
+        counter = 0
+        for i in range(m):
+            for j in range(m):
+                if j!=i and ((i,j) not in shared_noise_pairs):
+                    counter +=1 
+                    cls+=hp.alm2cl(X[i],U[j])/(w_n(mask,2))
+        
+        return cls / counter 
+    else:
+        for i in range(m):
+            for j in range(m):
+                if j!=i:
+                    cls+=hp.alm2cl(X[i],U[j])/(w_n(mask,2)*m*(m-1))
+        
+        return cls
 
 def get_Spower(X,U,mask):
     """Get signal only data power
@@ -936,7 +947,10 @@ def get_theory_for_response(lmax=9000):
     lcl=np.array([ucls['TT'], ucls['EE'], ucls['BB'], ucls['TE']])
     return lcl
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
+                       mask,lmin,lmax,mlmax=None,est2=None,cross=True,
+                       bh=False,nlpp=None,nlss=None,response=None,profile=None,
+                       shared_noise_pairs=None):
     """Generate beloved dumb N0s for both gradient and curl.
 
     Args:
@@ -984,10 +998,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         nlss=nlss[:Lmax+1]
         response=response[:Lmax+1]
 
-    D_l=get_Dpower(X,U,mask,m=4)
+    D_l=get_Dpower(X,U,mask,m=4, shared_noise_pairs=shared_noise_pairs)
     S_l=get_Spower(coaddX,coaddU,mask)
-    d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
-    s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
+    d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
+    s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
     if est2 is None:
@@ -1104,7 +1118,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, 
+                                   cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,
+                                   response=response,profile=profile,
+                                   shared_noise_pairs=shared_noise_pairs)
         elif est1 == 'MVPOL':
             print("use mvpol")
             return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
@@ -1412,7 +1429,8 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None,
+                    shared_noise_pairs=None):
     """Curvedsky dumb N0 for MV"""
     if mlmax is not None:
         Lmax = mlmax
@@ -1448,7 +1466,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
 
     #prepare the sim total power spectrum
     #prepare the data total power spectrum
-    D_l=get_Dpower(X,U,mask,m=4)
+    D_l=get_Dpower(X,U,mask,m=4, shared_noise_pairs = shared_noise_pairs)
     S_l=get_Spower(coaddX,coaddU,mask)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
