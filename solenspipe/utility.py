@@ -997,8 +997,10 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
             -(shared noise), smooth and one-signed, while the per-realization
             difference adds zero-mean split-noise cross terms that make the sxs
             term heavy-tailed when the legs hold loud few-mode noise (cf. the
-            nokmask HILC T covariance investigation, 2026-07-29). Only wired
-            for est1='MV' (passed through to diagonal_RDN0mv).
+            nokmask HILC T covariance investigation, 2026-07-29). Wired for
+            est1='MV' and est1='MVPOL' (passed through to diagonal_RDN0mv and
+            diagonal_RDN0mvpol); the single-estimator branches above use the
+            per-realization S_l - D_l.
 
     Returns:
         _type_: _description_
@@ -1151,7 +1153,12 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
             return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile,Dl=D_l,Sl=S_l,smd=smd,Dl_sxs=Dl_sxs,return_terms=return_terms)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            # pass the caller's keywords through, exactly as the MV branch does.
+            # Until 2026-08-05 this branch hardcoded cross/bh/profile and dropped
+            # Dl/Sl/smd/Dl_sxs/return_terms, so a mean-sxs MVPOL run silently
+            # reverted to the per-realization sxs term and, because the mean-sxs
+            # stages pass X=U=None and rely on Dl/Sl, crashed inside get_Dpower.
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile,Dl=D_l,Sl=S_l,smd=smd,Dl_sxs=Dl_sxs,return_terms=return_terms)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
@@ -1646,8 +1653,26 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
 
 
-def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None,Lmax=None):
-    """Curvedsky dumb N0 for MVPOL currently no T"""
+def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None,Lmax=None,Dl=None,Sl=None,smd=None,Dl_sxs=None,return_terms=False):
+    """Curvedsky dumb N0 for MVPOL currently no T.
+
+    Dl/Sl: precomputed get_Dpower/get_Spower spectra (skips the alm2cl; X/U/
+    coaddX/coaddU are then unused, which is what the mean-sxs stage relies on
+    since it passes them as None). smd: override for the S_l - D_l spectra in
+    the sxs terms, shape (4, >=nl) [TT,EE,BB,TE]; pass the ensemble mean of
+    (S-D) to recondition the per-realization N0 (see diagonal_RDN0cross).
+    Dl_sxs is accepted so the MV and MVPOL calls take the same keywords, but it
+    has NO effect here: the (1 - D/ffl) factors it reconditions live only in the
+    MV cross-estimator terms (qttte/qttee/qteee/qtbeb), and MVPOL combines the
+    diagonal EE and EB terms alone.
+
+    bh is not implemented: MVPOL is the nobh estimator by convention and the
+    source-hardening terms were never written for it, so bh=True raises rather
+    than being silently dropped."""
+    if bh:
+        raise NotImplementedError(
+            "diagonal_RDN0mvpol: source hardening (bh=True) is not implemented "
+            "for MVPOL; run it as the nobh estimator")
     Lmax = lmax       # maximum multipole of output normalization
     rlmin = lmin
     rlmax = lmax      # reconstruction multipole range
@@ -1673,17 +1698,19 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=Fa
 
     #prepare the sim total power spectrum
     #prepare the data total power spectrum
-    D_l=get_Dpower(X,U,mask,m=4)
-    S_l=get_Spower(coaddX,coaddU,mask)
+    D_l=Dl if Dl is not None else get_Dpower(X,U,mask,m=4)
+    S_l=Sl if Sl is not None else get_Spower(coaddX,coaddU,mask)
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
+    # sxs spectra: per-realization S-D by default, ensemble-mean override via smd
+    smd_ocl = np.asarray(smd)[:, :ls.size] if smd is not None else (s_ocl - d_ocl)
     #dataxdata
 
     cl=ocl**2/(d_ocl)
     AgEE0,AcEE0=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:] )
     AgEB0,AcEB0=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:] )
 
-    cl=ocl**2/(s_ocl-d_ocl)
+    cl=ocl**2/(smd_ocl)
     AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
     AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
 
@@ -1725,5 +1752,13 @@ def diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=Fa
         mvdumbN0c+=np.nan_to_num(weights_NUMc[i])*np.nan_to_num(dumbn0c[i])
     mvdumbN0g=mvdumbN0g/sumcg
     mvdumbN0c=mvdumbN0c/sumcc
-    
+
+    if return_terms:
+        # Per-term contributions to the MVPOL gradient N0, same units as the
+        # returned total (they sum to it); mirrors diagonal_RDN0mv.
+        names = ['EB','EE']
+        terms = {nm: np.nan_to_num(weights_NUMg[i])*np.nan_to_num(dumbn0g[i])/sumcg*fac**2*0.25
+                 for i, nm in enumerate(names)}
+        return mvdumbN0g*fac**2*0.25, mvdumbN0c*fac**2*0.25, terms
+
     return mvdumbN0g*fac**2*0.25,mvdumbN0c*fac**2*0.25
