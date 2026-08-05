@@ -874,6 +874,227 @@ def mcrdn0_s4(sim_set, get_kmap, power,phifunc, nsims, qfunc1,
     avgmcn0 = utils.allgatherv(mcn0evals,comm)
     return avgrdn0, avgmcn0
 
+def rdn0_s4(i_set, sims_ids, get_kmap, power, phifunc, qfunc1,
+              #get_kmap1=None,get_kmap2=None,get_kmap3=None,
+              qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, 
+              use_mpi=True, verbose=True, shear=False,power_mcn0=None,
+              two_sets=False):
+    """
+    This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
+
+    Parameters:
+    sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
+    get_kmap: A function to retrieve a specific map based on the provided parameters.
+    power: A function to calculate the power spectra
+    phifunc: function that returns the different phi combinations used to produce a phi_cl without noise bias. Eq.(28)-(30) of 2011.02475
+    nsims: The number of simulations used to estimate RDN0.
+    qfunc1: QE wrapper used.
+    get_kmap1, get_kmap2, get_kmap3: Functions to retrieve the data map splits
+    qfunc2: An optional QE wrapper if the second phi used to creat clphiphi is different to the first one.
+    Xdat, Xdat1, Xdat2, Xdat3: Data used in the calculations.
+    use_mpi: A boolean indicating whether to use MPI for distributing tasks.
+    verbose: A boolean indicating whether to print verbose messages.
+    skip_rd: A boolean indicating whether to skip certain operations.
+    shear: A boolean indicating whether to apply shear in the calculations.
+    power_mcn0: An optional parameter related to power calculations.
+
+    Returns:
+        A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
+
+    """
+    nsims = len(sims_ids)
+
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2 = qfunc2
+
+    rdn0evals = []
+    mcn0evals = []
+    
+    # if i_set == 1:
+    #     sim_set = 0
+    # else:
+    #     sim_set = 1
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)     
+
+    for task in my_tasks:
+        
+        sim_id = sims_ids[task]
+        sim_prime_id = sims_ids[(task+1) % nsims]
+
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,sim_id))
+        
+        for sim_set in [0,1]:
+
+            Xs  = get_kmap((0,sim_set,sim_id), split=0)
+            Xsp = get_kmap((0,sim_set,sim_prime_id), split=0)
+            
+            if power_mcn0 is not None:
+                print('noiseless as input, duplicating Xs')
+                Xs1 = Xs
+                Xs2 = Xs
+                Xs3 = Xs
+                Xsp1 = Xsp
+                Xsp2 = Xsp
+                Xsp3 = Xsp
+                
+            else:
+                Xs1 = get_kmap((0,sim_set,sim_id), split=1)
+                Xs2 = get_kmap((0,sim_set,sim_id), split=2)
+                Xs3 = get_kmap((0,sim_set,sim_id), split=3)
+                Xsp1 = get_kmap((0,sim_set,sim_prime_id), split=1)
+                Xsp2 = get_kmap((0,sim_set,sim_prime_id), split=2)
+                Xsp3 = get_kmap((0,sim_set,sim_prime_id), split=3)
+
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) 
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1)
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX)
+            
+            if power_mcn0 is None:
+
+                if shear:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+                else:
+                    qaXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf1) #split1 
+                    qbXsXsp = qa(Xs,Xs1,Xs2,Xs3,Xsp,Xsp1,Xsp2,Xsp3,qf2) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qa(Xsp,Xsp1,Xsp2,Xsp3,Xs,Xs1,Xs2,Xs3,qf1) #this is not present
+                
+                mcn0_term = (power(qaXsXsp,qbXsXsp) + power(qaXsXsp,qbXspXs))
+
+            else:
+
+                if shear:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs[0],Xsp[1])) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs[0],Xsp[1])) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp[0],Xs[1])) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp[0],Xs[1])) #this is not present
+                else:
+                    qaXsXsp = plensing.phi_to_kappa(qf1(Xs,Xsp)) #split1 
+                    qbXsXsp = plensing.phi_to_kappa(qf2(Xs,Xsp)) if qf2 is not None else qaXsXsp #split2
+                    qbXspXs = plensing.phi_to_kappa(qf2(Xsp,Xs)) if qf2 is not None else plensing.phi_to_kappa(qf1(Xsp,Xs)) #this is not present
+                
+                mcn0_term = (power_mcn0(qaXsXsp,qbXsXsp) + power_mcn0(qaXsXsp,qbXspXs))
+
+            mcn0evals.append(mcn0_term.copy())
+            rdn0evals.append(rdn0_only_term - mcn0_term)
+
+    avgrdn0 = utils.allgatherv(rdn0evals,comm)
+    avgmcn0 = utils.allgatherv(mcn0evals,comm)
+    
+    return avgrdn0, avgmcn0
+
+
+def rdn0_s4_only(i_set, sims_ids, get_kmap, power, phifunc, qfunc1,
+              #get_kmap1=None,get_kmap2=None,get_kmap3=None,
+              qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, 
+              use_mpi=True, verbose=True, shear=False,power_mcn0=None,
+              two_sets=False):
+    """
+    This function performs the Realization dependent N0 (RDN0) using combinations of simulations and data for the cross-correlation based estimator. Currently for 4 splits of data.
+
+    Parameters:
+    sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
+    get_kmap: A function to retrieve a specific map based on the provided parameters.
+    power: A function to calculate the power spectra
+    phifunc: function that returns the different phi combinations used to produce a phi_cl without noise bias. Eq.(28)-(30) of 2011.02475
+    nsims: The number of simulations used to estimate RDN0.
+    qfunc1: QE wrapper used.
+    get_kmap1, get_kmap2, get_kmap3: Functions to retrieve the data map splits
+    qfunc2: An optional QE wrapper if the second phi used to creat clphiphi is different to the first one.
+    Xdat, Xdat1, Xdat2, Xdat3: Data used in the calculations.
+    use_mpi: A boolean indicating whether to use MPI for distributing tasks.
+    verbose: A boolean indicating whether to print verbose messages.
+    skip_rd: A boolean indicating whether to skip certain operations.
+    shear: A boolean indicating whether to apply shear in the calculations.
+    power_mcn0: An optional parameter related to power calculations.
+
+    Returns:
+        A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
+
+    """
+    nsims = len(sims_ids)
+
+    qa = phifunc 
+    qf1 = qfunc1
+    qf2 = qfunc2
+
+    rdn0evals = []
+
+    
+    # if i_set == 1:
+    #     sim_set = 0
+    # else:
+    #     sim_set = 1
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)     
+
+    for task in my_tasks:
+        
+        sim_id = sims_ids[task]
+        sim_prime_id = sims_ids[(task+1) % nsims]
+
+        if rank==0 and verbose: print("MCRDN0: Rank %d doing task %d" % (rank,sim_id))
+        
+        for sim_set in [0,1]:
+
+            Xs  = get_kmap((0,sim_set,sim_id), split=0)
+            
+            if power_mcn0 is not None:
+                print('noiseless as input, duplicating Xs')
+                Xs1 = Xs
+                Xs2 = Xs
+                Xs3 = Xs
+
+                
+            else:
+                Xs1 = get_kmap((0,sim_set,sim_id), split=1)
+                Xs2 = get_kmap((0,sim_set,sim_id), split=2)
+                Xs3 = get_kmap((0,sim_set,sim_id), split=3)
+
+            if shear:
+                qaXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf1) 
+                qbXXs = qa(Xdat[0],Xdat1[0],Xdat2[0],Xdat3[0],Xs[1],Xs1[1],Xs2[1],Xs3[1],qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf1) 
+                qbXsX = qa(Xs[0],Xs1[0],Xs2[0],Xs3[0],Xdat[1],Xdat1[1],Xdat2[1],Xdat3[1],qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX) 
+            else:
+                qaXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf1)
+                qbXXs = qa(Xdat,Xdat1,Xdat2,Xdat3,Xs,Xs1,Xs2,Xs3,qf2) if qf2 is not None else qaXXs 
+                qaXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf1) 
+                qbXsX = qa(Xs,Xs1,Xs2,Xs3,Xdat,Xdat1,Xdat2,Xdat3,qf2) if qf2 is not None else qaXsX 
+                rdn0_only_term = power(qaXXs,qbXXs)+ power(qaXXs,qbXsX) + power(qaXsX,qbXXs) \
+                        + power(qaXsX,qbXsX)
+            
+
+            rdn0evals.append(rdn0_only_term)
+
+    avgrdn0 = utils.allgatherv(rdn0evals,comm)
+
+    
+    return avgrdn0
+
+
+
 
 def mcrdn0_only(icov, get_kmap, power,phifunc, nsims, qfunc1,get_kmap1=None,get_kmap2=None,get_kmap3=None, qfunc2=None, Xdat=None,Xdat1=None,Xdat2=None,Xdat3=None, use_mpi=True, 
          verbose=True, skip_rd=False,shear=False):
