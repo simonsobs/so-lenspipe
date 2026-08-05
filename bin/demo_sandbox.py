@@ -32,7 +32,7 @@ parser.add_argument("--apodize", type=float, help='Apodize the mask with input w
 parser.add_argument("--no-save", action='store_true',help='Dont save outputs other than plots.')
 parser.add_argument("--add-noise", action='store_true',help='Whether to add noise to data and sim maps.')
 parser.add_argument("--map-plots", action='store_true',help='Whether to plot data maps.')
-parser.add_argument("--downgrade", type='float',default=None,help='Downgrade map/mask to specified resolution.')
+parser.add_argument("--downgrade", type=float,default=None,help='Downgrade map/mask to specified resolution.')
 required_args = parser.add_argument_group('Required arguments')
 args = parser.parse_args()
 
