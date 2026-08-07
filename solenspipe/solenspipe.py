@@ -268,6 +268,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
 
     assert est1 in ['TT','TE','EE','EB','TB','MV','MVPOL','SHEAR'] # TODO: add other
     if est1=='SHEAR':
+
         qfunc1 = lambda X,Y: qe.qe_shear(px,mlmax,
                             Talm=X[0],fTalm=Y[1])
     else:
@@ -426,7 +427,7 @@ def convert_seeds(seed,nsims=2000,ndiv=2):
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
     nstep = nsims//ndiv
-    if i>=nstep: 
+    if i>=nstep:
         warnings.warn("i>=nstep: If more than one CMB set is being used (e.g for RDN0 and MCN1), you might be re-using sims.")
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep
