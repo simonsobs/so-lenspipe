@@ -984,6 +984,72 @@ def norm_derivative_cmb(ucls, tcls, lmin, lmax, k_ellmax=4000, lmax_in=3000,
             'bands': (lo, hi, centres), 'gbar': out, 'tasks': tasks, 'renorm_max_dev': renorm}
 
 
+def srccross_derivative_tt(ucls, tcls, lmin, lmax, profile, k_ellmax=4000, lmax_in=3000,
+                           band=1, eps=0.1, comm=None, verbose=True):
+    """Derivative of the unnormalized lensing response of the source
+    (profile) estimator, R_sphi(C_map) = pytempura.get_cross('SRC', 'TT',
+    C_map, tcls, profile), with respect to the TT spectrum of the map. The
+    source weights carry no CMB spectrum, so C_map enters only through the
+    TT lensing response function and R_sphi is exactly linear in C^TT; the
+    bands, perturbations and per-multipole reduction are those of
+    norm_derivative_cmb. At the fiducial R_sphi equals the stage_norm
+    R_src_tt (the symmetric cross-response).
+
+    Returns dict: 'R_src' (fiducial R_sphi), 'dR' ((k_ellmax+1, lmax_in+1)
+    dR_sphi/dC^TT_l, phi units), 'bands', 'renorm_max_dev'."""
+    import pytempura
+    ucls = {k: np.asarray(ucls[k], dtype=np.float64)[:k_ellmax + 1] for k in _SPECS}
+    tcls = {k: np.asarray(tcls[k], dtype=np.float64)[:k_ellmax + 1] for k in _SPECS}
+    rank0 = (comm is None) or (comm.Get_rank() == 0)
+
+    def cross(resp):
+        return np.asarray(pytempura.get_cross('SRC', 'TT', resp, tcls, lmin, lmax,
+                                              k_ellmax=k_ellmax, profile=profile), dtype=np.float64)
+
+    R0 = cross(ucls)
+    lo, hi, centres = spectrum_bands(lmin, lmax, band)
+    S = perturbation_scale(ucls, 'TT')
+    my = _split_tasks(len(centres), comm)
+    out = np.zeros((len(my), k_ellmax + 1))
+    t0 = time.time()
+    for n, j in enumerate(my):
+        sl = slice(int(lo[j]), int(hi[j]))
+        up = dict(ucls); dn = dict(ucls)
+        up['TT'] = ucls['TT'].copy(); up['TT'][sl] += eps * S[sl]
+        dn['TT'] = ucls['TT'].copy(); dn['TT'][sl] -= eps * S[sl]
+        out[n] = (cross(up) - cross(dn)) / (2. * eps * (hi[j] - lo[j]))
+        if verbose and rank0 and (n % 100 == 0 or n == len(my) - 1):
+            print(f'  src-cross derivative: task {n + 1}/{len(my)} on rank 0, '
+                  f'{time.time() - t0:.1f} s elapsed', flush=True)
+    if comm is not None:
+        out = utils.allgatherv(out, comm)
+    dR, renorm = bands_to_matrix(out, lo, hi, centres, S, lmin, lmax, lmax_in)
+    dR[:2, :] = 0.
+    return {'R_src': R0, 'dR': dR, 'bands': (lo, hi, centres), 'renorm_max_dev': renorm}
+
+
+def harden_tt_row(M_tt, A_mv, A_tt, A_src, R12, dR_src):
+    """TT row of dA/dC for the profile-hardened MV estimator of
+    solenspipe.get_qfunc(est1='MV', est2='SRC', Al3=Als['TT']), which
+    hardens only the TT leg: g = A_MV [x_MV - x_TT + (x_TT - A_src R12
+    x_src) / D], D = 1 - A_TT A_src R12^2. Its response to lensing with map
+    spectra C is R_eff = A_MV [R_MV - R_TT + (R_TT - A_src R12 R_sphi) / D],
+    unity at the fiducial, so the normalization stays A_MV and only the TT
+    derivative changes:
+        dA_eff/dC^TT = [dA_MV/dC^TT + A_MV^2 A_src R12 dR_sphi/dC^TT] / D.
+    EE, TE, BB rows are unchanged (R_TT and R_sphi depend on C^TT only).
+    All inputs in phi units at the fiducial: M_tt (L, l) = dA_MV/dC^TT,
+    A_mv, A_tt (the stage_norm Als['TT'][0] used as Al3), A_src, R12 (the
+    stored R_src_tt), dR_src (L, l) from srccross_derivative_tt."""
+    A_mv, A_tt, A_src, R12 = (np.asarray(x, dtype=np.float64) for x in (A_mv, A_tt, A_src, R12))
+    D = 1. - A_tt * A_src * R12 ** 2
+    with np.errstate(divide='ignore', invalid='ignore'):
+        out = (M_tt + (A_mv ** 2 * A_src * R12)[:, None] * dR_src) / D[:, None]
+    out[~np.isfinite(out)] = 0.
+    out[:2, :] = 0.
+    return out
+
+
 def n1mv_derivative_cmb(clpp, norms, cl_fid, cl_resp, cl_total, lmin, lmax,
                         Lmin_out=2, Lmax_out=3000, Lstep=40, band=40, eps=0.05,
                         specs=_SPECS, comm=None, verbose=True):
