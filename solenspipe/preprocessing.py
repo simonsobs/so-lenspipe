@@ -333,7 +333,12 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
-        meta.kspace_mask = None
+        if hasattr(args, "planck_kspace") and args.planck_kspace:
+            print("kspace filtering Planck.")
+            meta.kspace_mask = get_kspace_mask(args)
+        else:
+            print("Not kspace filtering Planck.")
+            meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
@@ -1009,7 +1014,8 @@ class ACTNoiseMetadata:
                         'pa5a_dw': ['pa5a_dw', 'pa5b_dw'],
                         'pa5b_dw': ['pa5a_dw', 'pa5b_dw']}
 
-        qid_dict_noise_model_name = {'pa4b': 'tile_cmbmask',
+        qid_dict_noise_model_name = {'pa4a': 'tile_cmbmask',
+                                 'pa4b': 'tile_cmbmask',
                                 'pa5a': 'tile_cmbmask',
                             'pa5b': 'tile_cmbmask',
                             'pa6a': 'tile_cmbmask_ivfwhm2',
@@ -1021,7 +1027,8 @@ class ACTNoiseMetadata:
                             'pa5a_dw': 'tile_cmbmask_daywide_250513',
                             'pa5b_dw': 'tile_cmbmask_daywide_250513'}
 
-        qid_dict_config_noise_name = {'pa4b': 'act_dr6v4',
+        qid_dict_config_noise_name = {'pa4a': 'act_dr6v4',
+                                    'pa4b': 'act_dr6v4',
                                     'pa5a': 'act_dr6v4',
                                     'pa5b': 'act_dr6v4',
                                     'pa6a': 'act_dr6v4',
@@ -1324,6 +1331,10 @@ def preprocess_core(imap, mask,
 
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
+        # make sure to match data shape w/ cluster map (for Planck)
+        if imap.shape != foreground_cluster.shape:
+            imap = enmap.extract(imap, foreground_cluster.shape,
+                                 foreground_cluster.wcs)
         if imap.ndim==3:
             imap[0] = imap[0] - (foreground_cluster / cal_cluster)
         else:
@@ -1335,7 +1346,7 @@ def preprocess_core(imap, mask,
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
 
-    # CHANGING THE ORDER A BIT
+    # if cluster subtracted Planck, this will do nothing
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:

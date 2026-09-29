@@ -12,6 +12,8 @@ from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
+import warnings
+
 config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
 opath = config['data_path']
 
@@ -301,7 +303,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     return np.asarray((g,c))
             else:
                 def retfunc(X,Y):
-                    print('test bh MV')
+                    #print('test bh MV')
                     qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
                                         fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
                                         estimators=['TT'],
@@ -321,7 +323,10 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                                     cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
                     )
-                    g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
+
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=RuntimeWarning)
+                        g = cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
                     c = cs.almxfl(qmv[1],Al1[1])
 
 

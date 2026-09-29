@@ -995,7 +995,7 @@ def load_save_power(x_index, y_index, u_index, v_index,
                     qf2=None, get_kmap1=None, get_kmap2=None, get_kmap3=None,
                     out_root="", format_cl="cl_cross_s1,sp1_x_s2,sp2_shear.txt",
                     format_phi="phi_cross_s1,sp1_shear.npy", shear=False,
-                    noiseless_sims=True, verbose=True, mutex=None):
+                    skip_saving_phi=False, noiseless_sims=True, verbose=True, mutex=None):
     
     format_cl = format_cl.replace("_shear", f"_set{i_set}_shear")
     format_phi = format_phi.replace("_shear", f"_set{i_set}_shear")
@@ -1043,25 +1043,31 @@ def load_save_power(x_index, y_index, u_index, v_index,
                 return plensing.phi_to_kappa(qf2(Us[0], Vs[1]))
         else:
             def phi_xy():
-                Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x_index, y_index)
+                with bench.show(f"load maps for phi xy ({x_index}, {y_index})"):
+                    Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x_index, y_index)
                 return qa(Xs[0], Xs1[0], Xs2[0], Xs3[0], Ys[1], Ys1[1], Ys2[1], Ys3[1], qf1)
             def phi_uv():
-                Us, Us1, Us2, Us3, Vs, Vs1, Vs2, Vs3 = load_maps_split(i_set, u_index, v_index)
+                with bench.show(f"load maps for phi uv ({u_index}, {v_index})"):
+                    Us, Us1, Us2, Us3, Vs, Vs1, Vs2, Vs3 = load_maps_split(i_set, u_index, v_index)
                 return qa(Us[0], Us1[0], Us2[0], Us3[0], Vs[1], Vs1[1], Vs2[1], Vs3[1], qf2)
     else:
         if noiseless_sims:
             def phi_xy():
-                Xs, Ys = load_maps_nosplit(i_set, x_index, y_index)
+                with bench.show(f"load maps for phi xy ({x_index}, {y_index})"):
+                    Xs, Ys = load_maps_nosplit(i_set, x_index, y_index)
                 return plensing.phi_to_kappa(qf1(Xs, Ys))
             def phi_uv():
-                Us, Vs = load_maps_nosplit(i_set, u_index, v_index)
+                with bench.show(f"load maps for phi uv ({u_index}, {v_index})"):
+                    Us, Vs = load_maps_nosplit(i_set, u_index, v_index)
                 return plensing.phi_to_kappa(qf2(Us, Vs))
         else:
             def phi_xy():
-                Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x_index, y_index)
+                with bench.show(f"load maps for phi xy ({x_index}, {y_index})"):
+                    Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x_index, y_index)
                 return qa(Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3, qf1)
             def phi_uv():
-                Us, Us1, Us2, Us3, Vs, Vs1, Vs2, Vs3 = load_maps_split(i_set, u_index, v_index)            
+                with bench.show(f"load maps for phi uv ({u_index}, {v_index})"):
+                    Us, Us1, Us2, Us3, Vs, Vs1, Vs2, Vs3 = load_maps_split(i_set, u_index, v_index)            
                 return qa(Us, Us1, Us2, Us3, Vs, Vs1, Vs2, Vs3, qf2)
 
     def cl_xy_uv(p_xy_saved = None, p_uv_saved = None, to_repeat=to_repeat):
@@ -1109,9 +1115,10 @@ def load_save_power(x_index, y_index, u_index, v_index,
             p_xy, p_uv, cl = cl_xy_uv(p_xy_saved=p_xy_loaded,
                                       p_uv_saved=p_uv_loaded,
                                       to_repeat=to_repeat)
+        if not skip_saving_phi:
+            if p_xy_loaded is None: atomic_write(new_format_phi_xy, p_xy, mutex=mutex)
+            if p_uv_loaded is None: atomic_write(new_format_phi_uv, p_uv, mutex=mutex)
 
-        if p_xy_loaded is None: atomic_write(new_format_phi_xy, p_xy, mutex=mutex)
-        if p_uv_loaded is None: atomic_write(new_format_phi_uv, p_uv, mutex=mutex)
         atomic_write(new_format, cl, txt=True, mutex=mutex)
 
     return cl
@@ -1122,7 +1129,9 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
                      qfunc2=None, use_mpi=True, verbose=True, skip_rd=False,
                      shear=False, power_mcn0=None, noiseless_mcn0=False, out_root="",
                      format_cl="cl_cross_s1,sp1_x_s2,sp2_shear.txt",
-                     format_phi="phi_cross_s1,sp1_shear.npy", mutex=None):
+                     format_phi="phi_cross_s1,sp1_shear.npy",
+                     max_sims=384, skip_saving_phi=False,
+                     skip_mcn0=False, mutex=None):
     """
     This function performs the Realization-dependent N0 (RDN0) using combinations of simulations for the cross-correlation based estimator.
     This variant treats a specific simulation index "data_sim_id" as the data, and computes an average over nsims.
@@ -1144,9 +1153,12 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
     power_mcn0: An optional parameter related to power calculations.
     out_root: An output path / prefix to load/save intermediate rdn0 calculations.
     mutex: mpi4py.util.sync.Mutex object for MPI file locking.
+    skip_saving_phi: A boolean indicating whether to skip saving intermediate phi to disk.
+    skip_mcn0: A boolean indicating whether to skip the mcn0 computation over sims.
+               (The mcn0 arrays are zeros for each sim index)
 
     Returns:
-        A tuple of shape (nsims, 2, Lmax) for the gradient and the curl  modes.
+        A tuple of shape (nsims, 2, Lmax) for the gradient (index 0) and the curl (index 1) modes.
 
     """
     
@@ -1163,44 +1175,50 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
         comm,rank,my_tasks = mpi.distribute(nsims)
     else:
         comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
-        
-    for s in my_tasks:
-        s = s + start
-        
-        def rdn0_terms(xy, uv, repeat=False):
-            return load_save_power(xy[0], xy[1], uv[0], uv[1],
-                                   qa, qf1, get_kmap, power, 
-                                   repeat=repeat, i_set=i_set, 
-                                   qf2=qf2, get_kmap1=get_kmap1,
-                                   get_kmap2=get_kmap2, get_kmap3=get_kmap3,
-                                   out_root=out_root, shear=shear,
-                                   format_cl=format_cl, format_phi=format_phi,
-                                   noiseless_sims=False, mutex=mutex,
-                                   verbose=verbose)
-            
-        def mcn0_terms(xy, uv, repeat=False):
-            return load_save_power(xy[0], xy[1], uv[0], uv[1],
-                                   qa, qf1, get_kmap,
-                                   power if power_mcn0 is None else power_mcn0,
-                                   repeat=repeat, i_set=i_set, qf2=qf2,
-                                   get_kmap1=get_kmap1,
-                                   get_kmap2=get_kmap2, get_kmap3=get_kmap3,
-                                   out_root=out_root, shear=shear,
-                                   format_cl=format_cl, format_phi=format_phi,
-                                   noiseless_sims=noiseless_mcn0, mutex=mutex,
-                                   verbose=verbose)
-        
-        # mcn0 terms
-        with bench.show(f"Rank {rank}, sim index {s}, mcn0 terms"):
-            with bench.show(f"Rank {rank}, mcn0 term ss',ss' (s: {s}, s+1: {s+1})"):
-                if verbose: print(f"Rank {rank}, starting: mcn0 term ss',ss' (s: {s}, s+1: {s+1})")
-                sspssp = mcn0_terms((s,s+1), (s,s+1), repeat=True)
-            with bench.show(f"Rank {rank}, mcn0 term ss',s's (s: {s}, s+1: {s+1})"):
-                if verbose: print(f"Rank {rank}, starting: mcn0 term ss',s's (s: {s}, s+1: {s+1})")
-                sspsps = mcn0_terms((s,s+1), (s+1,s))
-        mcn0_only_term = sspssp + sspsps
 
-        mcn0evals.append(mcn0_only_term.copy())
+    def rdn0_terms(xy, uv, repeat=False):
+        return load_save_power(xy[0], xy[1], uv[0], uv[1],
+                               qa, qf1, get_kmap, power, 
+                               repeat=repeat, i_set=i_set, 
+                               qf2=qf2, get_kmap1=get_kmap1,
+                               get_kmap2=get_kmap2, get_kmap3=get_kmap3,
+                               out_root=out_root, shear=shear,
+                               format_cl=format_cl, format_phi=format_phi,
+                               noiseless_sims=False, mutex=mutex,
+                               skip_saving_phi=skip_saving_phi, verbose=verbose)
+            
+    def mcn0_terms(xy, uv, repeat=False):
+        return load_save_power(xy[0], xy[1], uv[0], uv[1],
+                               qa, qf1, get_kmap,
+                               power if power_mcn0 is None else power_mcn0,
+                               repeat=repeat, i_set=i_set, qf2=qf2,
+                               get_kmap1=get_kmap1,
+                               get_kmap2=get_kmap2, get_kmap3=get_kmap3,
+                               out_root=out_root, shear=shear,
+                               format_cl=format_cl, format_phi=format_phi,
+                               noiseless_sims=noiseless_mcn0, mutex=mutex,
+                               skip_saving_phi=skip_saving_phi, verbose=verbose)    
+    
+    for s in my_tasks:
+        s = (s + start) % max_sims
+        if s == 0: s = max_sims
+        if s == d: continue # make sure "data" index != sim's
+        
+        if skip_mcn0:
+            sspssp = 0
+            sspsps = 0
+        else:
+            # mcn0 terms
+            with bench.show(f"Rank {rank}, sim index {s}, mcn0 terms"):
+                with bench.show(f"Rank {rank}, mcn0 term ss',ss' (s: {s}, s+1: {s+1})"):
+                    if verbose: print(f"Rank {rank}, starting: mcn0 term ss',ss' (s: {s}, s+1: {s+1})")
+                    sspssp = mcn0_terms((s,s+1), (s,s+1), repeat=True)
+                with bench.show(f"Rank {rank}, mcn0 term ss',s's (s: {s}, s+1: {s+1})"):
+                    if verbose: print(f"Rank {rank}, starting: mcn0 term ss',s's (s: {s}, s+1: {s+1})")
+                    sspsps = mcn0_terms((s,s+1), (s+1,s))
+
+        mcn0_only_term = sspssp + sspsps
+        mcn0evals.append(0 if mcn0_only_term == 0 else mcn0_only_term.copy())
 
         # using notation from equation (43) of 2011.02475v2
         if not skip_rd:
@@ -1219,6 +1237,187 @@ def mcrdn0_subset_s4(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
                     sdsd = rdn0_terms((s,d), (s,d), repeat=True)
 
             rdn0_only_term = dsds + dssd + sdds + sdsd
+
+            rdn0evals.append(rdn0_only_term - mcn0_only_term)
+
+    with bench.show(f"allgather for 1 mcrdn0 run"):
+        if skip_rd:
+            avgrdn0 = None
+        else:
+            avgrdn0 = utils.allgatherv(rdn0evals,comm) if use_mpi else rdn0evals
+        avgmcn0 = utils.allgatherv(mcn0evals,comm) if use_mpi else mcn0evals
+
+    return avgrdn0, avgmcn0
+
+
+def mcrdn0_subset_s4_memory(sim_set, data_sim_id, get_kmap, power, phifunc, nsims,
+                            qfunc1, get_kmap1=None, get_kmap2=None, get_kmap3=None,
+                            qfunc2=None, use_mpi=True, verbose=True, skip_rd=False,
+                            shear=False, power_mcn0=None, noiseless_mcn0=False, out_root="",
+                            format_cl="cl_cross_s1,sp1_x_s2,sp2_shear.txt",
+                            max_sims=384, skip_mcn0=False, mutex=None):
+    """
+    This function performs the Realization-dependent N0 (RDN0) using combinations of simulations for the cross-correlation based estimator.
+    This variant treats a specific simulation index "data_sim_id" as the data, and computes an average over nsims.
+
+    Parameters:
+    sim_set: A tuple containing the simulation set and the start index used for the MC. This specifies the simulations used to estimate the RDN0
+    data_sim_id: Sim index for the data.
+    get_kmap: A function to retrieve a specific map based on the provided parameters.
+    power: A function to calculate the power spectra
+    phifunc: function that returns the different phi combinations used to produce a phi_cl without noise bias. Eq.(28)-(30) of 2011.02475
+    nsims: The number of simulations used to estimate RDN0.
+    qfunc1: QE wrapper used.
+    get_kmap1, get_kmap2, get_kmap3: Functions to retrieve the data map splits
+    qfunc2: An optional QE wrapper if the second phi used to creat clphiphi is different to the first one.
+    use_mpi: A boolean indicating whether to use MPI for distributing tasks.
+    verbose: A boolean indicating whether to print verbose messages.
+    skip_rd: A boolean indicating whether to skip certain operations.
+    shear: A boolean indicating whether to apply shear in the calculations.
+    power_mcn0: An optional parameter related to power calculations.
+    out_root: An output path / prefix to load/save intermediate rdn0 calculations.
+    mutex: mpi4py.util.sync.Mutex object for MPI file locking.
+    skip_saving_phi: A boolean indicating whether to skip saving intermediate phi to disk.
+    skip_mcn0: A boolean indicating whether to skip the mcn0 computation over sims.
+               (The mcn0 arrays are zeros for each sim index)
+
+    Returns:
+        A tuple of shape (nsims, 2, Lmax) for the gradient (index 0) and the curl (index 1) modes.
+
+    """
+    
+    d            = data_sim_id
+    i_set, start = sim_set
+    qa           = phifunc 
+    qf1, qf2     = qfunc1, qfunc2 
+
+    def verbose_print(s):
+        if verbose: print(s)
+
+    format_cl = format_cl.replace("_shear", f"_set{i_set}_shear")
+    def new_format(x,y,u,v,is_noiseless=False):
+        return out_root + format_cl.replace("s1", str(x)).replace("sp1", str(y)) \
+                                   .replace("s2", str(u)).replace("sp2", str(v)) \
+                                   .replace(".txt", "_noiseless.txt" if is_noiseless else ".txt") \
+                                   .replace("shear", "noshear" if not shear else "shear")
+
+    # lazy evaluation, don't evaluate at all if we can find the saved cls in the first place
+    def load_maps_split(i_set, i, j):
+        As, Bs   = get_kmap((0,i_set,i)), get_kmap((0,i_set,j))
+        As1, Bs1 = get_kmap1((0,i_set,i)), get_kmap1((0,i_set,j))
+        As2, Bs2 = get_kmap2((0,i_set,i)), get_kmap2((0,i_set,j))
+        As3, Bs3 = get_kmap3((0,i_set,i)), get_kmap3((0,i_set,j))
+        return As, As1, As2, As3, Bs, Bs1, Bs2, Bs3
+
+    def load_maps_nosplit(i_set, i, j):
+        As, Bs = get_kmap((0,i_set,i)), get_kmap((0,i_set,j))
+        return As, Bs
+
+    if qf2 is None: qf2 = qf1
+    
+    def phi(x,y,i_set=i_set,shear=shear,noiseless=False):
+        if shear:
+            if noiseless:
+                Xs, Ys = load_maps_nosplit(i_set, x, y)
+                return plensing.phi_to_kappa(qf1(Xs[0], Ys[1]))
+            else:
+                Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x, y)
+                return qa(Xs[0], Xs1[0], Xs2[0], Xs3[0], Ys[1], Ys1[1], Ys2[1], Ys3[1], qf1)
+
+        else:
+            if noiseless:
+                Xs, Ys = load_maps_nosplit(i_set, x, y)
+                return plensing.phi_to_kappa(qf1(Xs, Ys))
+            else:
+                Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3 = load_maps_split(i_set, x, y)
+                return qa(Xs, Xs1, Xs2, Xs3, Ys, Ys1, Ys2, Ys3, qf1)
+
+
+    mcn0evals = []
+    if not skip_rd: 
+        rdn0evals = []
+
+    if use_mpi:
+        comm,rank,my_tasks = mpi.distribute(nsims)
+    else:
+        comm,rank,my_tasks = FakeCommunicator(), 0, range(nsims)
+
+    for s in my_tasks:
+        s = (s + start) % max_sims
+        if s == 0: s = max_sims
+        if s == d: continue # make sure "data" index != sim's
+        
+        if skip_mcn0:
+            sspssp = 0
+            sspsps = 0
+        else:
+            # mcn0 terms
+            with bench.show(f"Rank {rank}, sim index {s}, mcn0 terms"):
+                with bench.show(f"Rank {rank}, mcn0 term ss',ss' (s: {s}, s+1: {s+1})"):
+                    if verbose: print(f"Rank {rank}, starting: mcn0 term ss',ss' (s: {s}, s+1: {s+1})")
+                    sspssp = mcn0_terms((s,s+1), (s,s+1), repeat=True)
+                with bench.show(f"Rank {rank}, mcn0 term ss',s's (s: {s}, s+1: {s+1})"):
+                    if verbose: print(f"Rank {rank}, starting: mcn0 term ss',s's (s: {s}, s+1: {s+1})")
+                    sspsps = mcn0_terms((s,s+1), (s+1,s))
+
+        mcn0_only_term = sspssp + sspsps
+        mcn0evals.append(0 if mcn0_only_term == 0 else mcn0_only_term.copy())
+
+        # using notation from equation (43) of 2011.02475v2
+        if not skip_rd:
+            with bench.show(f"Rank {rank}, (data {data_sim_id}, sim {s}), rdn0 terms"):
+                ds, sd = None, None
+                # compute power(phi(d,s), phi(d,s))
+                try:
+                    fmt = new_format(d,s,d,s)
+                    verbose_print(f"Looking for cls: {fmt}")
+                    dsds = np.loadtxt(fmt)
+                    verbose_print(f"Found cls: {fmt}")
+                except FileNotFoundError:
+                    verbose_print(f"Couldn't find cls: {fmt}, generating.")
+                    with bench.show(f"phi xy ({d},{s})"):
+                        ds = phi(d,s)
+                    with bench.show(f"cl (d: {d}, s: {s}) for ds x ds"):
+                        dsds = power(ds, ds)
+                    atomic_write(new_format(d,s,d,s), dsds, txt=True, mutex=mutex)
+
+                # compute power(phi(d,s), phi(s,d))
+                try:
+                    fmt = new_format(d,s,s,d)
+                    verbose_print(f"Looking for cls: {fmt}")
+                    dssd = np.loadtxt(fmt)
+                    verbose_print(f"Found cls: {fmt}")
+                except FileNotFoundError:
+                    try:
+                        fmt = new_format(s,d,d,s)
+                        verbose_print(f"Looking for cls: {fmt}")
+                        dssd = np.loadtxt(fmt)
+                        verbose_print(f"Found cls: {fmt}")
+                    except FileNotFoundError:
+                        verbose_print(f"Couldn't find cls: {fmt}, generating.")
+                        with bench.show(f"phi xy ({d},{s})"):
+                            if ds is None: ds = phi(d,s)
+                        with bench.show(f"phi uv ({s},{d})"):
+                            sd = phi(s,d)
+                        with bench.show(f"cl (d: {d}, s: {s}) for ds x sd"):
+                            dssd = power(ds, sd)
+                        atomic_write(new_format(d,s,s,d), dssd, txt=True, mutex=mutex)
+
+                # compute power(phi(s,d), phi(s,d))
+                try:
+                    fmt = new_format(s,d,s,d)
+                    verbose_print(f"Looking for cls: {fmt}")
+                    sdsd = np.loadtxt(new_format(s,d,s,d))
+                    verbose_print(f"Found cls: {fmt}")
+                except FileNotFoundError:
+                    with bench.show(f"phi xy ({s},{d})"):
+                        if sd is None: sd = phi(s,d)
+                    with bench.show(f"cl (s: {s}, d: {d}) for ds x ds"):
+                        sdsd = power(sd, sd)
+                    atomic_write(new_format(s,d,s,d), sdsd, txt=True, mutex=mutex)
+
+            # combine them all
+            rdn0_only_term = dsds + 2 * dssd + sdsd
 
             rdn0evals.append(rdn0_only_term - mcn0_only_term)
 

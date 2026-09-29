@@ -41,13 +41,13 @@ def project_mask(mask,shape,wcs,fname=None):
 #fitting functions
 
 def rolloff(ell, ell_off=None, alpha=-4, patience=2.):
-    """
+    '''
     Adapted from mapsims
     Get a transfer function T(ell) to roll off red noise at ell <
     ell_off.  ell should be an ndarray.  Above the cut-off,
     T(ell>=ell_off) = 1.  For T(ell<ell_off) will roll off smoothly,
-    approaching T(ell) \propto ell^-alpha.
-    """
+    approaching T(ell) propto ell^-alpha.
+    '''
     if ell_off is None or ell_off <= 0:
         return np.ones(ell.shape)
     L2 = ell_off
