@@ -6,7 +6,7 @@ from pixell import enmap,lensing as plensing,curvedsky as cs,reproject
 import numpy as np
 import os,sys
 import healpy as hp
-from pixell import bench
+from enlib import bench
 from falafel import qe
 from solenspipe._lensing_biases import lensingbiases as lensingbiases_f
 from solenspipe._lensing_biases import checkproc as checkproc_f
