@@ -335,11 +335,20 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
+        if hasattr(args, "nemo_calibration"):
+            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        else:
+            meta.cal_cluster = 1.
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         meta.inpaint_mask = None
-        meta.kspace_mask = None
+        if hasattr(args, "planck_kspace") and args.planck_kspace:
+            print("kspace filtering Planck.")
+            meta.kspace_mask = get_kspace_mask(args)
+        else:
+            print("Not kspace filtering Planck.")
+            meta.kspace_mask = None
         meta.maptype = 'reprojected'
         meta.noisemodel = PlanckNoiseMetadata(qid, verbose=True,
                                               config_name=meta.Name,
@@ -367,7 +376,10 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-
+        if hasattr(args, "nemo_calibration"):
+            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        else:
+            meta.cal_cluster = 1.
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
@@ -375,7 +387,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.nspecs = nspecs
         meta.specs = specs_weights['EpureB'] if args.pureEB else specs_weights['EB']
         isplit = None if coadd else splitnum
-        meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
+        try:
+            meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit,
+                                      coadd=coadd, taper_ellmin=args.taper_ellmin)
+        except AttributeError: # no taper_ellmin parameter
+            meta.Beam = ACTBeamHelper(meta.dm, args, qid, isplit, coadd=coadd)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         
@@ -465,13 +481,13 @@ def get_data_map(qid, splitnum=0, coadd=False, args=None):
                               subproduct=args.maps_subproduct,
                               maptag=maptag)
 
-def process_beam(sofind_beam, norm=True, interp=True):
+def process_beam(sofind_beam, norm=True, interp=True, ell_min_taper=None):
     '''
     normalized beam if required and then interpolate
+    ell_min_taper cosine tapers beam to 1 if not set to None
     '''
     ell_bells, bells = sofind_beam[0], sofind_beam[1]
     assert ell_bells[0] == 0
-
     if norm:
         bells /= bells[0]
         
@@ -566,7 +582,8 @@ class ACTBeamHelper:
     - get_effective_beam(): returns the effective beam (effective beam, beam, transfer function)
     """
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+    def __init__(self, datamodel, args, qid, isplit=0,
+                 coadd=False, taper_ellmin=None):
         
         default_values = {'tf_subproduct': 'dummy',
                           'beam_subproduct': 'dummy',
@@ -583,6 +600,7 @@ class ACTBeamHelper:
         self.coadd = coadd
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
+        self.taper_ellmin = taper_ellmin
         if hasattr(args, "beam_subproduct_kwargs"):
             self.beam_subproduct_kwargs = args.beam_subproduct_kwargs
         else:
@@ -638,6 +656,9 @@ class ACTBeamHelper:
         fkbeam = np.empty((nspecs, self.mlmax+1)) + np.nan
         
         tf = self.get_tf()(np.arange(self.mlmax+1))
+        if self.taper_ellmin is not None:
+            tf = taper_replace(tf, self.taper_ellmin,
+                               delta_ell=(self.taper_ellmin // 2))
         
         # if self.daynight != 'night': #if self.beam_subproduct == 'beams_v4_20230130_snfit':
             
@@ -652,6 +673,9 @@ class ACTBeamHelper:
             
         # else:
         beam = self.get_beam()(np.arange(self.mlmax+1))
+        if self.taper_ellmin is not None:
+            beam = taper_replace(beam, self.taper_ellmin,
+                                 delta_ell=(self.taper_ellmin // 2))
         
         fkbeam[0] = beam * tf
         fkbeam[1] = beam # / self.datamodel.read_calibration(self.qid.split('_')[0], subproduct=self.poleff_subproduct)
@@ -795,7 +819,7 @@ class PlanckNoiseMetadata:
                                     'p05': '143',
                                     'p06': '217',
                                     'p07': '353',
-                                    'p08': '547',
+                                    'p08': '545',
                                     'p09': '857'}
         
         self.planck_config_name = config_name
@@ -816,7 +840,7 @@ class PlanckNoiseMetadata:
                                     subproduct="noise_sims",
                                     maptag=maptag)
     
-    def read_in_sim(self, isplit, index, lmax=4000):
+    def read_in_sim(self, isplit, index, lmax=4000, return_map=False):
         # REQUIRES MODIFICATION TO PIXELL (ask Frank/Joshua)
         try:
             residual_map = hp.read_map(self.noise_map_path(isplit, index),
@@ -828,8 +852,13 @@ class PlanckNoiseMetadata:
             residual_map = np.array([residual_map,
                                      residual_map*0.,
                                      residual_map*0.])
-        return reproject.healpix2map(residual_map, lmax=lmax,
-                                     rot='gal,equ',save_alm=True)*10**6
+        
+        if return_map:
+            return reproject.healpix2map(residual_map, lmax=lmax,
+                                         rot='gal,equ') * 1e6
+        else:
+            return reproject.healpix2map(residual_map, lmax=lmax,
+                                        rot='gal,equ',save_alm=True)*10**6
 
 
 class SOLATNoiseMetadata:
@@ -995,19 +1024,21 @@ class ACTNoiseMetadata:
                         'pa5a_dw': ['pa5a_dw', 'pa5b_dw'],
                         'pa5b_dw': ['pa5a_dw', 'pa5b_dw']}
 
-        qid_dict_noise_model_name = {'pa4b': 'tile_cmbmask',
+        qid_dict_noise_model_name = {'pa4a': 'tile_cmbmask',
+                                 'pa4b': 'tile_cmbmask',
                                 'pa5a': 'tile_cmbmask',
                             'pa5b': 'tile_cmbmask',
                             'pa6a': 'tile_cmbmask_ivfwhm2',
                             'pa6b': 'tile_cmbmask_ivfwhm2',
-                            'pa5a_dd': 'tile_cmbmask_daydeep',
-                            'pa5b_dd': 'tile_cmbmask_daydeep',
-                            'pa6a_dd': 'tile_cmbmask_daydeep',
-                            'pa6b_dd': 'tile_cmbmask_daydeep',
-                            'pa5a_dw': 'tile_cmbmask_daywide',
-                            'pa5b_dw': 'tile_cmbmask_daywide'}
+                            'pa5a_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa5b_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa6a_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa6b_dd': 'tile_cmbmask_daydeep_250513',
+                            'pa5a_dw': 'tile_cmbmask_daywide_250513',
+                            'pa5b_dw': 'tile_cmbmask_daywide_250513'}
 
-        qid_dict_config_noise_name = {'pa4b': 'act_dr6v4',
+        qid_dict_config_noise_name = {'pa4a': 'act_dr6v4',
+                                    'pa4b': 'act_dr6v4',
                                     'pa5a': 'act_dr6v4',
                                     'pa5b': 'act_dr6v4',
                                     'pa6a': 'act_dr6v4',
@@ -1293,11 +1324,12 @@ def depix_map(imap,maptype='native',dfact=None,kspace_mask=None):
 
 def preprocess_core(imap, mask,
                     calibration, pol_eff, ivar=None,
+                    ivar_inpaint=None,
                     maptype='native',
                     dfact = None,
                     inpaint_mask=None,
                     kspace_mask=None, 
-                    foreground_cluster=None):
+                    foreground_cluster=None, cal_cluster=1.):
     """
     This function will load a rectangular pixel map and pre-process it.
     This involves inpainting, masking in real and Fourier space
@@ -1309,10 +1341,14 @@ def preprocess_core(imap, mask,
 
     # Subtract cluster model first, accounting for calibration
     if foreground_cluster is not None:
+        # make sure to match data shape w/ cluster map (for Planck)
+        if imap.shape != foreground_cluster.shape:
+            imap = enmap.extract(imap, foreground_cluster.shape,
+                                 foreground_cluster.wcs)
         if imap.ndim==3:
-            imap[0] = imap[0] - (foreground_cluster / calibration)
+            imap[0] = imap[0] - (foreground_cluster / cal_cluster)
         else:
-            imap = imap - (foreground_cluster / calibration)
+            imap = imap - (foreground_cluster / cal_cluster)
 
     # Then downgrade
     if dfact!=1 and (dfact is not None):
@@ -1320,11 +1356,7 @@ def preprocess_core(imap, mask,
         if ivar is not None:
             ivar = enmap.downgrade(ivar,dfact,op=np.sum)
 
-    # Then inpaint
-    if inpaint_mask is not None:
-        # assert ivar is not None, "need ivar for inpainting" -- not true, random noise ivar
-        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar)
-
+    # if cluster subtracted Planck, this will do nothing
     # for Planck, assert that we extract the RA DEC of the ACT footprint only
     oshape = (3,) + mask.shape if imap.ndim==3 else mask.shape
     if imap[0].shape != mask.shape:
@@ -1337,6 +1369,12 @@ def preprocess_core(imap, mask,
     imap[~np.isfinite(imap)] = 0
 
     imap = imap * mask
+
+    # Then inpaint
+    if inpaint_mask is not None:
+        # setting ivar = None for inpainting ACT by
+        imap = maps.gapfill_edge_conv_flat(imap, inpaint_mask, ivar=ivar_inpaint)
+
     imap = depix_map(imap,maptype=maptype,dfact=dfact,kspace_mask=kspace_mask)
 
     imap = imap * calibration
@@ -1563,6 +1601,44 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
         noise_mod *= mult
 
     return noise_mod
+
+def taper_replace(cls, ellmin, delta_ell=15, final_value=1.0):
+    """
+    Apply a cosine taper from cls[ellmin] to (cls[0], final_value).
+    
+    Parameters
+    ----------
+    cls : np.ndarray
+        Input array of shape (Nell,), indexed by ell.
+    ellmin : int
+        ℓmin cutoff (array-specific).
+    delta_ell : int, optional
+        Width of smooth transition (default=15). Set to 0 for a hard cut.
+    final_value : float, optional
+        Final value of taper at cls[0].
+    
+    Returns
+    -------
+    cls_mod : np.ndarray
+        Modified cls with tapered values below ellmin.
+    """
+    ell = np.arange(len(cls))
+    cls_mod = cls.copy()
+
+    if delta_ell == 0:
+        # Hard cut: multiply by huge number below ellmin
+        mask = ell < ellmin
+        cls_mod[:mask] = final_value
+    else:
+        # Smooth from (ellmin - 2 * delta_ell) → normal at ellmin
+        x = (ell - (ellmin - 2 * delta_ell)) / (2 * delta_ell)
+        # window goes from 0 to 1 smoothly
+        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
+        # rescale window from final_value to cls_mod[ellmin]
+        window = final_value + window * (cls[ellmin] - final_value)
+        cls_mod[:ellmin] = window[:ellmin]
+
+    return cls_mod
 
 def read_weights(args, use_ps_cut=False):
     

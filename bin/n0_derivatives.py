@@ -4,7 +4,7 @@ from pixell import enmap,lensing as plensing,curvedsky as cs,reproject
 import numpy as np
 import os,sys
 import healpy as hp
-from enlib import bench
+from pixell import bench
 from mapsims import noise,SOChannel
 from mapsims import SO_Noise_Calculator_Public_20180822 as sonoise
 from falafel import qe

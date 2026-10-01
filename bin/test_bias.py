@@ -4,7 +4,7 @@ from pixell import enmap
 import numpy as np
 import os,sys
 import solenspipe
-from enlib import bench
+from pixell import bench
 from falafel import qe
 import healpy as hp
 from solenspipe import bias
