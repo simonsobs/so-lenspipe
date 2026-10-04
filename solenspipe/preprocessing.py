@@ -52,16 +52,19 @@ class MetadataUnifier(object):
     """
     def __init__(self,yaml_file='metadata.yaml'):
         self.c = io.config_from_yaml(yaml_file)
+        # Approximate white-noise levels, only for classes that list rms_uk_approx
         self._rmsdict = {}
         for key in self.c.keys():
-            try:
-                rms = self.c[key]['rms_uk_approx']
-            except KeyError:
-                pass
+            rms = self.c[key].get('rms_uk_approx')
+            if rms is None: continue
+            if len(rms)!=len(self.c[key]['possible_qids']):
+                raise ValueError(f"rms_uk_approx and possible_qids of {key} have different lengths")
             self._rmsdict[key] = dict(zip(self.c[key]['possible_qids'], rms))
-        
+
     def get_rms(self,qid):
         cls = self._get_class(qid)
+        if cls not in self._rmsdict:
+            raise ValueError(f"No rms_uk_approx given for class {cls} (qid {qid})")
         return self._rmsdict[cls][qid]
     
     def _get_class(self,qid):
