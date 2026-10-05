@@ -461,10 +461,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        # if hasattr(args, "nemo_calibration"):
+        #     meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        # else:
+        #     meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
