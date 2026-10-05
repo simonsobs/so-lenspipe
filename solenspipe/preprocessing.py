@@ -361,7 +361,7 @@ def get_inpaint_mask(args, datamodel, planck=False, larger=False):
     - larger: bool, False by default, toggle when inpainting Planck with larger holes
     '''
     
-    if args.inpaint:
+    if hasattr(args, 'inpaint') and args.inpaint:
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
