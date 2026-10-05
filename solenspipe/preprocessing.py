@@ -52,18 +52,27 @@ class MetadataUnifier(object):
     """
     def __init__(self,yaml_file='metadata.yaml'):
         self.c = io.config_from_yaml(yaml_file)
+        # Approximate white-noise levels, only for classes that list rms_uk_approx
         self._rmsdict = {}
         for key in self.c.keys():
-            try:
-                rms = self.c[key]['rms_uk_approx']
-            except KeyError:
-                pass
+            rms = self.c[key].get('rms_uk_approx')
+            if rms is None: continue
+            if len(rms)!=len(self.c[key]['possible_qids']):
+                raise ValueError(f"rms_uk_approx and possible_qids of {key} have different lengths")
             self._rmsdict[key] = dict(zip(self.c[key]['possible_qids'], rms))
-        
+        self._inpaint_masks = {}
+
     def get_rms(self,qid):
         cls = self._get_class(qid)
+        if cls not in self._rmsdict:
+            raise ValueError(f"No rms_uk_approx given for class {cls} (qid {qid})")
         return self._rmsdict[cls][qid]
     
+    @staticmethod
+    def _opt(args,key,default=None):
+        """Optional entry of a metadata class (a pixell Bunch), or default if absent."""
+        return args[key] if key in args else default
+
     def _get_class(self,qid):
         config_dict = self.c
         found = []
@@ -100,7 +109,96 @@ class MetadataUnifier(object):
             return 1.
         else:
             return dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        
+
+    def get_inpaint_catalogs(self,qid):
+        """
+        Inpainting catalogs of a qid, from the inpaint, inpaint_catalogs and
+        inpaint_radius_qid entries of its class.
+
+        inpaint_catalogs is a list of [SOFind catalog subproduct, catalog file,
+        hole radius in arcmin]; inpaint_radius_qid optionally maps qids to a radius
+        that replaces the catalog radii for that qid.
+
+        Returns
+        -------
+        list of (coords, radius)
+            coords is a (2, N) array of (dec, ra) in degrees; radius is the hole
+            radius in arcmin. Empty if the class has inpaint False.
+        """
+        args = self.get_args(qid)
+        if not(self._opt(args,'inpaint',False)): return []
+        cats = self._opt(args,'inpaint_catalogs')
+        if not(cats): raise ValueError(f"inpaint is True for {qid} but its class has no inpaint_catalogs")
+        radius_qid = (self._opt(args,'inpaint_radius_qid') or {}).get(qid)
+        dm = DataModel.from_config(args.dm_name)
+        # read_catalog returns (dec, ra) in radians
+        return [(np.rad2deg(dm.read_catalog(fn,subproduct=subp)), radius if radius_qid is None else radius_qid)
+                for subp,fn,radius in cats]
+
+    def get_inpaint_mask(self,qid,shape,wcs):
+        """
+        Inpainting mask of a qid on the geometry (shape, wcs): a boolean map that is
+        True inside the source holes, as expected by maps.gapfill_edge_conv_flat.
+        Returns None if the qid is not inpainted. Masks are cached, so qids with the
+        same catalogs and radii share one mask.
+        """
+        args = self.get_args(qid)
+        if not(self._opt(args,'inpaint',False)): return None
+        radius_qid = (self._opt(args,'inpaint_radius_qid') or {}).get(qid)
+        key = (args.dm_name, str(self._opt(args,'inpaint_catalogs')), radius_qid, tuple(shape), wcs.to_header_string())
+        if key not in self._inpaint_masks:
+            keep = np.ones(shape[-2:],dtype=bool)
+            for cat,radius in self.get_inpaint_catalogs(qid):
+                print(f"Inpainting mask for {qid}: {cat.shape[1]} sources with {radius} arcmin holes")
+                keep &= maps.mask_srcs(shape[-2:],wcs,cat,radius).astype(bool)
+            self._inpaint_masks[key] = enmap.enmap(~keep,wcs)
+        return self._inpaint_masks[key]
+
+    def get_cluster_map(self,qid,split_num,shape,wcs):
+        """
+        Cluster (tSZ) model map to subtract from a qid, cut to the geometry (shape, wcs).
+
+        Uses the cluster_subproduct and cluster_qids entries of the qid's class.
+        If cluster_split_models is True (e.g. Planck), there is one model per split
+        and the coadd gets the mean of the split models; otherwise the coadd model of
+        the qid is used for the coadd and for every split.
+
+        Parameters
+        ----------
+        qid : str
+        split_num : int or None
+            Split index starting at 0, or None for the coadd.
+        shape, wcs : tuple, astropy.wcs.WCS
+            Geometry of the map the model is subtracted from.
+
+        Returns
+        -------
+        enmap.ndmap or None
+            Temperature model map, or None if the qid is not in cluster_qids.
+        """
+        args = self.get_args(qid)
+        if qid not in (self._opt(args,'cluster_qids') or []): return None
+        dm = DataModel.from_config(args.dm_name)
+        subp = args.cluster_subproduct
+        print(f"Loading {subp} cluster model for {qid}")
+        if self._opt(args,'cluster_split_models',False):
+            splits = range(args.nsplits) if split_num is None else [split_num]
+            cmaps = [dm.read_map(qid,split_num=s+args.split_start,subproduct=subp) for s in splits]
+        else:
+            cmaps = [dm.read_map(qid,coadd=True,subproduct=subp)]
+        cmap = sum(cmaps)/len(cmaps)
+        if cmap.ndim==3: cmap = cmap[0] # temperature only
+        return enmap.extract(cmap,shape,wcs)
+
+    def get_noise_model(self,qid):
+        """(SOFind noise_models config, mnms noise model name) of a qid, from the
+        noise_dm_name and noise_models entries of its class."""
+        args = self.get_args(qid)
+        models = self._opt(args,'noise_models') or {}
+        if self._opt(args,'noise_dm_name') is None or qid not in models:
+            raise ValueError(f"No noise_dm_name or noise_models entry for {qid}")
+        return args.noise_dm_name, models[qid]
+
     def get_map_fname(self,qid,map_type='srcfree', # srcfull, srcfree, ivar
                       coadd=True,split_num=None):
         args = self.get_args(qid)
@@ -352,10 +450,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
@@ -396,10 +491,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        # if hasattr(args, "nemo_calibration"):
+        #     meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        # else:
+        #     meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
