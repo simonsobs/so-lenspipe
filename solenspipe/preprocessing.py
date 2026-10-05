@@ -423,10 +423,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
