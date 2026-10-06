@@ -299,11 +299,16 @@ class ForegroundHandler:
         self.alms_f = None
 
     def split_qids(self):
-        # may be more generalized?
-        if isinstance(self.args.qids, str):
-            return self.args.qids.split(" ")
+        '''
+        qids defining the foreground covariance cube: args.fg_qids if set, else args.qids.
+        Runs that must share a foreground realization (e.g. ACT and Planck splits/coadds)
+        need the same fg_qids, in the same order.
+        '''
+        qids = getattr(self.args, 'fg_qids', None) or self.args.qids
+        if isinstance(qids, str):
+            return qids.split()
         else:
-            return self.args.qids
+            return qids
 
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
