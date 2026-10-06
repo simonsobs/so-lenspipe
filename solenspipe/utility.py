@@ -1481,7 +1481,7 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax,
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
                     cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None,
                     Dl=None,Sl=None,smd=None,Dl_sxs=None,return_terms=False):
     """Curvedsky dumb N0 for MV
