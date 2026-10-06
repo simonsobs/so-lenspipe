@@ -466,7 +466,7 @@ def get_inpaint_mask(args, datamodel, planck=False, larger=False):
 
 
 
-def get_metadata(qid, splitnum=0, coadd=False, args=None):
+def get_metadata(qid, splitnum=0, coadd=False, coadd_mean_planck=False, args=None):
     """
     Retrieves metadata for a specific qid (split/coadd).
     
@@ -498,7 +498,8 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
         meta.cal_cluster = meta.calibration
-        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
+        meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit,
+                                     coadd=coadd, coadd_mean=coadd_mean_planck)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
         # meta.inpaint_mask = None (we're inpainting Planck now)
@@ -575,7 +576,6 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         meta.splits = np.arange(meta.nsplits)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-       
 
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
@@ -878,7 +878,8 @@ class ACTBeamHelper:
 
 class PlanckBeamHelper:
 
-    def __init__(self, datamodel, args, qid, isplit=0, coadd=False):
+    def __init__(self, datamodel, args, qid, isplit=0,
+                 coadd=False, coadd_mean=False):
         default_values = {'tf_subproduct': 'dummy',
                           'beam_subproduct': 'dummy',
                           'mlmax': 4000}
@@ -891,7 +892,8 @@ class PlanckBeamHelper:
         self.mlmax = args.mlmax
         self.qid = qid
         self.isplit = isplit
-        self.coadd = coadd
+        self.coadd = coadd or (self.isplit is None)
+        self.coadd_mean = coadd_mean
         self.beam_subproduct = args.beam_subproduct
         self.tf_subproduct = args.tf_subproduct
         if hasattr(args, "beam_subproduct_kwargs"):
@@ -913,15 +915,33 @@ class PlanckBeamHelper:
         if isplit is None: isplit = self.isplit
         if qid is None: qid = self.qid
 
-        # Determine split letter (coadd case doesn't matter)
-        sl = 'A' if isplit == 1 else 'B'
+        # the split coadd case where we want the coadd beam
+        # to be the mean of the two split beams
+        if self.coadd_mean and self.coadd:
+            ell_b, bl_A = self.datamodel.read_beam(qid,
+                            subproduct=self.beam_subproduct,
+                            split_num='A',
+                            coadd=(self.isplit is None),
+                            **self.beam_subproduct_kwargs)
+            
+            ell_b, bl_B = self.datamodel.read_beam(qid,
+                            subproduct=self.beam_subproduct,
+                            split_num='B',
+                            coadd=(self.isplit is None),
+                            **self.beam_subproduct_kwargs)
+                    
+            bl = 0.5 * (bl_A + bl_B)
+        
+        else:
+            # Determine split letter (coadd case doesn't matter)
+            sl = 'A' if isplit == 1 else 'B'
 
-        # Load and interpolate the beam
-        ell_b, bl = self.datamodel.read_beam(qid,
-                        subproduct=self.beam_subproduct,
-                        split_num=sl,
-                        coadd=(self.isplit is None),
-                        **self.beam_subproduct_kwargs)
+            # Load and interpolate the beam
+            ell_b, bl = self.datamodel.read_beam(qid,
+                            subproduct=self.beam_subproduct,
+                            split_num=sl,
+                            coadd=(self.isplit is None),
+                            **self.beam_subproduct_kwargs)
         
         # process_beam essentially but with pixwin
         beam_f = maps.interp(ell_b, bl, fill_value='extrapolate')
