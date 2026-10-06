@@ -1287,6 +1287,7 @@ class ForegroundHandler:
         args.lmax_signal: int, maximum ell of signal sims
         args.maps_subproduct: str, subproduct name for maps
         args.qids: str, qids delimited by spaces, e.g., "pa5a pa5b pa6a pa6b"
+        args.fg_qids: str, optional, qids defining the foreground covariance cube (default: args.qids)
         debug: bool, print foreground debug messages
         '''
 
@@ -1301,11 +1302,16 @@ class ForegroundHandler:
         self.alms_f = None
 
     def split_qids(self):
-        # may be more generalized?
-        if isinstance(self.args.qids, str):
-            return self.args.qids.split(" ")
+        '''
+        qids defining the foreground covariance cube: args.fg_qids if set, else args.qids.
+        Runs that must share a foreground realization (e.g. ACT and Planck splits/coadds)
+        need the same fg_qids, in the same order.
+        '''
+        qids = getattr(self.args, 'fg_qids', None) or self.args.qids
+        if isinstance(qids, str):
+            return qids.split()
         else:
-            return self.args.qids
+            return qids
 
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
