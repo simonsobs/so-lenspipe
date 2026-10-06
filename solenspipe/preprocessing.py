@@ -350,7 +350,7 @@ def get_kspace_mask(args):
     else:
         return np.array(maps.mask_kspace(args.shape, args.wcs, lxcut=args.khfilter, lycut=args.kvfilter), dtype=bool)
 
-def get_inpaint_mask(args, datamodel):
+def get_inpaint_mask(args, datamodel, planck=False, larger=False):
     
     '''
     Generates a mask where to inpaint the map.
@@ -363,22 +363,49 @@ def get_inpaint_mask(args, datamodel):
         args.cat_date: str, date of inpaint catalog, e.g. '20241002'
         args.regular_hole: float, radius of hole [arcmin] for regular sources
         args.large_hole: float, radius of hole [arcmin] for large sources
+        args.[regular|large]_hole_planck: float, radius of hole [arcmin] for sources
+                                          when inpainting Planck qids.
         args.shape: tuple, shape of mask
         args.wcs: wcs object, wcs of mask
+    - planck: bool, False by default, toggle when inpainting Planck qids
+    - larger: bool, False by default, toggle when inpainting Planck with larger holes
     '''
     
-    if args.inpaint:
+    if hasattr(args, 'inpaint') and args.inpaint:
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
-        # read catalog coordinates
-        rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
-        ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+        if planck:
+            cat_date = args.cat_date_planck if hasattr(args, "cat_date_planck") \
+                                            else args.cat_date
+            inpaint_subproduct = args.inpaint_subproduct_planck if hasattr(args, "inpaint_subproduct_planck") \
+                                                                else args.inpaint_subproduct
+            # read catalog coordinates
+            rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{cat_date}.csv',
+                                     subproduct = inpaint_subproduct))
+            # only one catalog for Planck, just decide on size
+            if larger:
+                if hasattr(args, "large_hole_planck"):
+                    hole_size = args.large_hole_planck
+                else:
+                    hole_size = args.large_hole
+            else:
+                if hasattr(args, "regular_hole_planck"):
+                    hole_size = args.regular_hole_planck
+                else:
+                    hole_size = args.regular_hole
 
-        # Make masks for gapfill
-        mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-        mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
-        jmask = mask1 & mask2
+            mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)), hole_size)
+            jmask = mask1
+        else:                        
+            # read catalog coordinates
+            rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+            ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+
+            # Make masks for gapfill
+            mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+            mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+            jmask = mask1 & mask2
         if jmask.dtype!=np.bool_: raise ValueError
         jmask = ~jmask
         
@@ -406,7 +433,7 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
     """
     Retrieves metadata for a specific qid (split/coadd).
     
-    ### Paramters:
+    ### Parameters:
     - qid: str, unique identifier for the data (must be in sofind)
     - splitnum: int, split of data to be used, will be ignored if coadd is True
     - coadd: bool, if True, coadd the data (ignore splitnum)
@@ -433,14 +460,14 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         isplit = None if coadd else (splitnum // 2 + 1)
         meta.calibration = meta.dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
         meta.pol_eff = meta.dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.Beam = PlanckBeamHelper(meta.dm, args, qid, isplit)
         meta.beam_fells = meta.Beam.get_effective_beam()[1]
         meta.transfer_fells = meta.Beam.get_effective_beam()[2]
-        meta.inpaint_mask = None
+        # meta.inpaint_mask = None (we're inpainting Planck now)
+        meta.inpaint_mask = get_inpaint_mask(args, meta.dm,
+                                             planck=True,
+                                             larger=(qid in ['p01','p02','p03']))
         if hasattr(args, "planck_kspace") and args.planck_kspace:
             print("kspace filtering Planck.")
             meta.kspace_mask = get_kspace_mask(args)
@@ -474,10 +501,11 @@ def get_metadata(qid, splitnum=0, coadd=False, args=None):
         
         # if meta.daynight != 'night':
         #     meta.calibration /= meta.dm.read_calibration(qid.split('_')[0], subproduct='dr6v4_calday', which='cals')
-        if hasattr(args, "nemo_calibration"):
-            meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
-        else:
-            meta.cal_cluster = 1.
+        # if hasattr(args, "nemo_calibration"):
+        #     meta.cal_cluster = meta.dm.read_calibration(qid, subproduct=args.nemo_calibration, which='cals')
+        # else:
+        #     meta.cal_cluster = 1.
+        meta.cal_cluster = meta.calibration
         meta.inpaint_mask = get_inpaint_mask(args, meta.dm)
         meta.kspace_mask = get_kspace_mask(args)
         meta.maptype = 'native'
@@ -1093,7 +1121,7 @@ class ACTNoiseMetadata:
     '''
     A class to handle the noise metadata for ACT
     
-    ### Initialization paramters:
+    ### Initialization Parameters:
     - qid: str, unique identifier for the data (must be in sofind)
     - verbose: bool, if True, print additional information during initialization
 
