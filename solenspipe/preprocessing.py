@@ -102,10 +102,15 @@ class MetadataUnifier(object):
             return dm.read_calibration(qid, subproduct=args.cal_subproduct, which='cals')
 
     def get_poleff(self,qid):
+        """
+        Polarization efficiency of a qid (a single number applied to Q and U), from the
+        poleff_subproduct of its class. Returns 1 if the class has no poleff_subproduct
+        or lists the qid in temperature_only_qids (maps whose polarization is not used,
+        for which the product may have no entry).
+        """
         args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
-        # Pol eff. for Q,U. A single number.
-        if args.poleff_subproduct is None:
+        if args.poleff_subproduct is None or qid in (self._opt(args,'temperature_only_qids') or []):
             return 1.
         else:
             return dm.read_calibration(qid, subproduct=args.poleff_subproduct, which='poleffs')
@@ -235,19 +240,51 @@ class MetadataUnifier(object):
                            get_breakdown=False,
                            transfer=True,
                            pixwin=True):
-        #if coadd and split_num: raise ValueError # TODO: Implement splits
+        """
+        Effective T, E, B beams of a qid: the SOFind beam (normalized and sanitized),
+        with the optional low-ell taper (beam_taper_ellmin), transfer function and
+        HEALPix pixel window (hp_pixwin_nside) of its class.
+
+        If the class lists beam_splits (e.g. [A, B] for Planck), the beam is the mean
+        of the SOFind beams of those splits, each normalized at ell = 0, for maps made
+        as the mean of those splits. Otherwise it is the SOFind coadd beam.
+
+        Returns ells and the (3, nells) beam, and with get_breakdown also a dict of
+        its factors.
+        """
         args = self.get_args(qid)
         dm = DataModel.from_config(args.dm_name)
 
-        # TODO: Handle daytime
-        # TODO: handle args.normalize_beam
-        lbeam,vbeam = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=None, coadd=True)
+        beam_splits = self._opt(args,'beam_splits')
+        if beam_splits:
+            beams = [dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=s, coadd=False)
+                     for s in beam_splits]
+            lbeam = beams[0][0]
+            vbeam = np.mean([np.interp(lbeam,l,b/b[0]) for l,b in beams],axis=0)
+        else:
+            lbeam,vbeam = dm.read_beam(subproduct=args.beam_subproduct, qid=qid, split_num=None, coadd=True)
         # The following normalizes the beam, and then "sanitizes" it if this is not a simulation
         if ells is not None:
-            obeam = maps.sanitize_beam(ells,maps.interp(lbeam,vbeam)(ells),sval=1e-3 if not(simulation) else None,verbose=True)
+            ibeam = maps.interp(lbeam,vbeam)(ells)
         else:
             ells = lbeam.copy()
-            obeam = maps.sanitize_beam(ells,vbeam,sval=1e-3 if not(simulation) else None,verbose=True)
+            ibeam = vbeam
+        if not(ibeam[0] > 0):  # sanitize_beam normalizes by the ell = 0 value
+            raise ValueError(f"Beam of {qid} is {ibeam[0]} at ell = 0; it must be positive")
+        obeam = maps.sanitize_beam(ells,ibeam,sval=1e-3 if not(simulation) else None,verbose=True)
+        # Beams with normalize_beam False (e.g. day beams, which include the transfer
+        # function) keep their own amplitude
+        if not(self._opt(args,'normalize_beam',True)):
+            obeam = obeam * ibeam[0]
+        # Optional low-ell taper (beam_taper_ellmin): below it the beam is replaced by a
+        # cosine taper to 1 at ell = 0, over ellmin // 2 (as in ACTBeamHelper)
+        taper_ellmin = self._opt(args,'beam_taper_ellmin')
+        if taper_ellmin is not None:
+            # >= 2 keeps delta_ell > 0 (taper_replace's cosine taper; its delta_ell = 0
+            # branch fails); below the largest ell so that beam[ellmin] exists
+            if not(isinstance(taper_ellmin,int) and 2 <= taper_ellmin < obeam.size):
+                raise ValueError(f"beam_taper_ellmin of {qid} must be an integer in [2, {obeam.size}), got {taper_ellmin!r}")
+            obeam = taper_replace(obeam, taper_ellmin, delta_ell=taper_ellmin // 2)
 
         final_beam = np.ones((3,obeam.size))
         final_beam[0] = obeam.copy()
