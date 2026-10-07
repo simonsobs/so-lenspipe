@@ -1029,6 +1029,12 @@ class PlanckNoiseMetadata:
 
     def noise_realization(self, cmb_set, sim_id):
         # raw (cmb_set, sim_id) -> NPIPE maptag string, stride-300 packing
+        # Outside these ranges the maptag is missing on disk or repeats another
+        # set's realization (e.g. set 0 sim_id 301 = set 1 sim_id 1).
+        if cmb_set not in (0, 1):
+            raise ValueError(f"Planck NPIPE noise has 2 sets of {self.NPIPE_STRIDE} realizations; got cmb_set={cmb_set}")
+        if not (1 <= sim_id <= self.NPIPE_STRIDE):
+            raise ValueError(f"Planck NPIPE noise sim_id must be in [1, {self.NPIPE_STRIDE}]; got sim_id={sim_id}")
         return str(sim_id + cmb_set * self.NPIPE_STRIDE + self.NPIPE_BASE).zfill(4)
 
     # moved Frank's residual noise alm function here...
