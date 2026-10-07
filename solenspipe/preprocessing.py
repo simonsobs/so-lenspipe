@@ -412,14 +412,12 @@ def get_inpaint_mask(args, datamodel, planck=False, larger=False):
         print('inpainting')
         assert args.cat_date is not None, "cat_date must be provided for inpaint"
 
+        # a hole radius of 0 skips that catalog (no holes from it)
         if planck:
             cat_date = args.cat_date_planck if hasattr(args, "cat_date_planck") \
                                             else args.cat_date
             inpaint_subproduct = args.inpaint_subproduct_planck if hasattr(args, "inpaint_subproduct_planck") \
                                                                 else args.inpaint_subproduct
-            # read catalog coordinates
-            rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{cat_date}.csv',
-                                     subproduct = inpaint_subproduct))
             # only one catalog for Planck, just decide on size
             if larger:
                 if hasattr(args, "large_hole_planck"):
@@ -432,16 +430,25 @@ def get_inpaint_mask(args, datamodel, planck=False, larger=False):
                 else:
                     hole_size = args.regular_hole
 
-            mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)), hole_size)
-            jmask = mask1
-        else:                        
-            # read catalog coordinates
-            rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
-            ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+            jmask = enmap.ones(args.shape, args.wcs, dtype=bool)
+            if not np.isclose(hole_size, 0.):
+                # read catalog coordinates
+                rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{cat_date}.csv',
+                                         subproduct = inpaint_subproduct))
+                jmask = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)), hole_size)
+        else:
+            mask1 = enmap.ones(args.shape, args.wcs, dtype=bool)
+            mask2 = enmap.ones(args.shape, args.wcs, dtype=bool)
 
-            # Make masks for gapfill
-            mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
-            mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+            # read catalog coordinates, make masks for gapfill
+            if not np.isclose(args.regular_hole, 0.):
+                rdecs, rras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_regular_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+                mask2 = maps.mask_srcs(args.shape,args.wcs,np.asarray((rdecs,rras)),args.regular_hole)
+
+            if not np.isclose(args.large_hole, 0.):
+                ldecs, lras = np.rad2deg(datamodel.read_catalog(cat_fn = f'union_catalog_large_{args.cat_date}.csv', subproduct = args.inpaint_subproduct))
+                mask1 = maps.mask_srcs(args.shape,args.wcs,np.asarray((ldecs,lras)),args.large_hole)
+
             jmask = mask1 & mask2
         if jmask.dtype!=np.bool_: raise ValueError
         jmask = ~jmask
