@@ -9,6 +9,7 @@ from falafel import qe
 import os
 import traceback,warnings
 from . import bias
+from .utility import convert_seeds
 from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
@@ -426,24 +427,6 @@ def initialize_args(args):
                                  use_cmblensplus=use_cmblensplus,label=args.label)
     Nl = Als[polcomb]*Als['L']*(Als['L']+1.)/4.
     return solint,Als,Als_curl,Nl,comm,rank,my_tasks,sindex,debug_cmb,lmin,lmax,polcomb,nsims,channel,isostr
-
-def convert_seeds(seed,nsims=2000,ndiv=4):
-    # Convert the solenspipe convention to the Alex convention
-    icov,cmb_set,i = seed
-    assert icov==0, "Covariance from sims not yet supported."
-    nstep = nsims//ndiv
-    if i>=nstep: 
-        warnings.warn("i>=nstep: If more than one CMB set is being used (e.g for RDN0 and MCN1), you might be re-using sims.")
-    if cmb_set==0 or cmb_set==1:
-        s_i = i + cmb_set*nstep
-        s_set = 0
-        noise_seed = (icov,cmb_set,i)+(2,)
-    elif cmb_set==2 or cmb_set==3:
-        s_i = i + nstep*2
-        s_set = cmb_set - 2
-        noise_seed = (icov,cmb_set,i)+(2,)
-
-    return s_i,s_set,noise_seed
 
 
 
