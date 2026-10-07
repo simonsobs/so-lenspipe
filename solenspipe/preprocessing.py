@@ -1753,10 +1753,14 @@ def get_mask_tag(mask_fn, mask_subproduct):
 
     return f'{daynight}_{skyfrac}'
 
-def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
+def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=None):
     """
     Apply an ℓmin taper to a noise power spectrum.
-    
+
+    The taper acts on the inverse noise (the coadd weight): 1/noise_mod = window/noise,
+    with window = 0 below ellmin and a cosine ramp 0 → 1 over [ellmin, ellmin + 2*delta_ell].
+    The array therefore has exactly zero weight below ellmin and enters the coadd smoothly.
+
     Parameters
     ----------
     noise : np.ndarray
@@ -1764,30 +1768,28 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
     ellmin : int
         ℓmin cutoff (array-specific).
     delta_ell : int, optional
-        Width of smooth transition (default=15). Set to 0 for a hard cut.
-    blowup : float, optional
-        Factor to inflate the noise below cutoff (default=1e10).
-    
+        Half-width of smooth transition (default=15). Set to 0 for a hard cut.
+    blowup : unused
+        Kept for backwards compatibility; the noise is set to np.inf below ellmin.
+
     Returns
     -------
     noise_mod : np.ndarray
-        Modified noise array with inflated values below ellmin.
+        Modified noise array, np.inf below ellmin (zero weight in the kspace coadd).
     """
     ell = np.arange(len(noise))
-    noise_mod = noise.copy()
 
     if delta_ell == 0:
-        # Hard cut: multiply by huge number below ellmin
-        mask = ell < ellmin
-        noise_mod[mask] *= blowup
+        window = (ell >= ellmin).astype(np.float64)
     else:
-        # Smooth taper from blowup at (ellmin - delta_ell) → normal at (ellmin + delta_ell)
-        x = (ell - (ellmin - delta_ell)) / (2 * delta_ell)
-        # window goes from 0 to 1 smoothly
-        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
-        # effective multiplier: blowup below cutoff, ~1 above
-        mult = blowup * (1 - window) + 1.0 * window
-        noise_mod *= mult
+        x = (ell - ellmin + 1) / (2 * delta_ell)
+        window = 0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1)))
+
+    with np.errstate(divide='ignore'):
+        noise_mod = noise / window
+    # Use inf rather than a finite blowup: where every array is inflated by the same
+    # factor, the normalized coadd weights cancel it and the cut arrays leak back in.
+    noise_mod[ell < ellmin] = np.inf
 
     return noise_mod
 
