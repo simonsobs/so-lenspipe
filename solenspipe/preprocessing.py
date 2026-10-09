@@ -61,6 +61,7 @@ class MetadataUnifier(object):
                 raise ValueError(f"rms_uk_approx and possible_qids of {key} have different lengths")
             self._rmsdict[key] = dict(zip(self.c[key]['possible_qids'], rms))
         self._inpaint_masks = {}
+        self._fg_cubes = {}
 
     def get_rms(self,qid):
         cls = self._get_class(qid)
@@ -203,6 +204,66 @@ class MetadataUnifier(object):
         if self._opt(args,'noise_dm_name') is None or qid not in models:
             raise ValueError(f"No noise_dm_name or noise_models entry for {qid}")
         return args.noise_dm_name, models[qid]
+
+    def get_fg_qid(self,qid):
+        """
+        Qid whose foreground model a qid uses: the qid itself, or, for a class with
+        fg_alias_class (e.g. daytime ACT, fg_alias_class: act_night), the qid at the
+        same position in the possible_qids of that class, which must have the same
+        frequency (e.g. pa5a for pa5a_dd).
+        """
+        args = self.get_args(qid)
+        alias_class = self._opt(args,'fg_alias_class')
+        if alias_class is None: return qid
+        fqid = self.c[alias_class]['possible_qids'][args.possible_qids.index(qid)]
+        if self.get_args(fqid).freq != args.freq:
+            raise ValueError(f"{qid} ({args.freq}) and its foreground alias {fqid} have different frequencies")
+        return fqid
+
+    def get_fg_alms(self,qids,subproduct,fsky,lmax,seed=None,dm_name='act_dr6v4'):
+        """
+        Gaussian foreground alms of qids from a SOFind foreground model (fg_models
+        product).
+
+        One realization of all the qids of the model is drawn jointly from its
+        covariance cube with pixell.curvedsky.rand_alm, so the realization of a qid
+        depends only on the model and the seed, not on the other requested qids. A
+        qid then gets the alms of the qid whose model it uses (get_fg_qid), so qids
+        with the same foreground qid (e.g. pa5a and pa5a_dd) get identical alms.
+
+        Parameters
+        ----------
+        qids : sequence of str
+            Qids to return alms for.
+        subproduct : str
+            SOFind fg_models subproduct, e.g. 'fg_models_20261008'.
+        fsky : int or str
+            Sky-fraction tag of the foreground model file, e.g. 70.
+        lmax : int
+            Maximum multipole of the alms; the model must reach it.
+        seed : int or tuple of int, optional
+            Seed of the realization (as for rand_alm).
+        dm_name : str, optional
+            SOFind data model serving the foreground model, by default 'act_dr6v4'.
+
+        Returns
+        -------
+        dict
+            qid -> alms (complex128, up to lmax). Qids with the same foreground qid
+            share one array.
+        """
+        key = (dm_name,subproduct,str(fsky))
+        if key not in self._fg_cubes:
+            self._fg_cubes[key] = DataModel.from_config(dm_name).read_fg_model(
+                subproduct=subproduct,fsky=fsky,return_qids=True)
+        cube,mqids = self._fg_cubes[key]
+        if cube.shape[-1] < lmax+1:
+            raise ValueError(f"Foreground model {subproduct} reaches lmax {cube.shape[-1]-1} < {lmax}")
+        fqids = {qid: self.get_fg_qid(qid) for qid in qids}
+        missing = sorted({f for f in fqids.values() if f not in mqids})
+        if missing: raise ValueError(f"Foreground model {subproduct} has no {missing} (qids {list(qids)})")
+        alms = cs.rand_alm(cube[...,:lmax+1],seed=seed,lmax=lmax)
+        return {qid: alms[mqids.index(f)] for qid,f in fqids.items()}
 
     def get_map_fname(self,qid,map_type='srcfree', # srcfull, srcfree, ivar
                       coadd=True,split_num=None):
