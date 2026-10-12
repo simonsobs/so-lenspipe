@@ -1819,7 +1819,7 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=30, blowup=None):
     Apply an ℓmin taper to a noise power spectrum.
     
     The taper acts on the inverse noise (the coadd weight): 1/noise_mod = window/noise,
-    with window = 0 below ellmin and a cosine ramp 0 → 1 over [ellmin, ellmin + 2*delta_ell].
+    with window = 0 below ellmin and a cosine ramp 0 → 1 over [ellmin, ellmin + delta_ell].
     The array therefore has exactly zero weight below ellmin and enters the coadd smoothly.
     
     Parameters
