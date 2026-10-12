@@ -1424,7 +1424,7 @@ class ForegroundHandler:
         fgs_path: str, path to foreground sims
         lmax: int, maximum ell of fg power spectrum
         '''
-        
+        import yaml
         wfacs_file= fgs_path + "wfacs.yml"
         with open(wfacs_file, "rb") as f:
             wfacs = yaml.load(f, yaml.Loader)
