@@ -1840,7 +1840,8 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=30, blowup=None):
         Modified noise array, np.inf below ellmin (zero weight in the kspace coadd).
     """
     ell = np.arange(len(noise))
-
+    noise_mod = noise.copy()
+    
     if delta_ell == 0:
         window = (ell >= ellmin).astype(np.float64)
     else:
