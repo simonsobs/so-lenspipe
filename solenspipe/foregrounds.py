@@ -295,8 +295,10 @@ class ForegroundHandler:
         assert self.args.fg_type in ['sims', 'theory', 'sims_actplanck'] 
         self.debug = debug
         self.fgcov_func = self._define_fgcov_func()
-        # defined from compute_fg_alms(), but set to None by default 
+        # defined from compute_fg_alms(), but set to None by default
         self.alms_f = None
+        # (cmb_set, sim_indices) used to generate the stored alms_f
+        self._alms_seed = None
 
     def split_qids(self):
         '''
@@ -310,6 +312,20 @@ class ForegroundHandler:
         else:
             return qids
 
+    @staticmethod
+    def resolve_qid(qid):
+        ''' daytime qids (<qid>_dw, <qid>_dd) map to their nighttime counterpart <qid> '''
+        return qid[:-3] if qid.endswith(('_dw', '_dd')) else qid
+
+    def base_qids(self):
+        '''
+        qids actually present in the foreground cube: split_qids() with daytime qids replaced
+        by their nighttime counterpart, duplicates removed (order of first appearance kept).
+        Daytime arrays receive a copy of the nighttime fg alms instead of being aliased in
+        the covariance cube (which would make it singular).
+        '''
+        return list(dict.fromkeys(self.resolve_qid(q) for q in self.split_qids()))
+
     def _define_fgcov_func(self):
         ''' load foreground covariance matrix (power spectra)'''
         # lmax conditioned by max ell of signal sims (van Engelen)
@@ -322,13 +338,10 @@ class ForegroundHandler:
         elif self.args.fg_type == 'sims_actplanck':
             assert self.args.fgs_path.endswith(".npz"), \
                    "Unsupported format for fgs file (should be <filename>.npz)"
-            qids_split = self.split_qids()
-            if self.debug: print("qids_split: ", qids_split)
-            qid_aliases = { qid: qid[:-3] for qid in qids_split
-                                          if '_dw' in qid or '_dd' in qid }
-            if self.debug: print("qid_aliases: ", qid_aliases)
-            return lambda: fg_covariance_cube(self.args.fgs_path, qids_split,
-                                              qid_aliases=qid_aliases)
+            # build the cube on Planck + nighttime qids only; daytime alms are copied in get_map_fgs
+            base_qids = self.base_qids()
+            if self.debug: print("fg cube qids: ", base_qids)
+            return lambda: fg_covariance_cube(self.args.fgs_path, base_qids)
         return None
 
     def generate_cov_fgs(self, fgs_path, lmax):
@@ -381,41 +394,41 @@ class ForegroundHandler:
             index_fg = qid_freq_dict[qid_dict['freq']]
             return alms_f[index_fg]
         else:
-            qids_split = self.split_qids()
-            return alms_f[qids_split.index(qid)]
+            # daytime qids get a copy of their nighttime counterpart's alms
+            return alms_f[self.base_qids().index(self.resolve_qid(qid))].copy()
 
     def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
         '''
         generate alm from cl and store in object
         
         fgcov: np.ndarray, foreground covariance matrix (2pt)
-        qid: str, qid of the map
-        cmb_set: int, set of cmb sim (for seed, optional)
-        sim_indices: int, index of the sim (for seed, optional)
+        cmb_set: int, set of cmb sim (for seed, required)
+        sim_indices: int, index of the sim (for seed, required)
         '''
-        # no seed info provided or theory fg
-        if None in [cmb_set, sim_indices] or self.args.fg_type == 'theory':
-            self.alms_f = cs.rand_alm(fgcov, lmax=self.args.lmax_signal)
-        else:
-            assert 'sims' in self.args.fg_type, \
-                "need fgcov from sims to generate fg alms with a seed"
-            self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices),
-                                      lmax=self.args.lmax_signal)
+        # unseeded draws are not reproducible and not shared across runs (e.g. ACT and Planck)
+        if cmb_set is None or sim_indices is None:
+            raise ValueError("fg alms need a seed: cmb_set and sim_indices must both be set, "
+                             f"got cmb_set={cmb_set}, sim_indices={sim_indices}")
+        self.alms_f = cs.rand_alm(fgcov, seed=(0, cmb_set, sim_indices),
+                                  lmax=self.args.lmax_signal)
 
         return None
 
     def get_fg_alms(self, fgcov, qid, cmb_set=None,
                     sim_indices=None, rerun=False):
         '''
-        generate alm from cl (if not generated) and return
-        
+        generate alm from cl (if not generated for this seed) and return
+
         fgcov: np.ndarray, foreground covariance matrix (2pt)
         qid: str, qid of the map
-        cmb_set: int, set of cmb sim (for seed, optional)
-        sim_indices: int, index of the sim (for seed, optional)
+        cmb_set: int, set of cmb sim (for seed, required)
+        sim_indices: int, index of the sim (for seed, required)
+        rerun: bool, force a new draw even if alms for this seed are stored
         '''
-        if self.alms_f is None or rerun:
+        seed = (cmb_set, sim_indices)
+        if self.alms_f is None or rerun or seed != self._alms_seed:
             self.compute_fg_alms(fgcov, cmb_set, sim_indices)
+            self._alms_seed = seed
 
         if self.debug: print("fg alms shape: ", self.alms_f.shape)
         return self.get_map_fgs(qid, self.alms_f)
