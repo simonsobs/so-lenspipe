@@ -1358,7 +1358,7 @@ class ForegroundHandler:
         Generates alm from cl for the given qid, cmb_set, and sim_indices (the latter 2 are used in the seed).
     '''
 
-    def __init__(self, datamodel, args, debug=False):
+    def __init__(self, datamodel, args, remove_daytime=False, debug=False):
         
         '''
         datamodel: DataModel, sofind datamodel
@@ -1369,11 +1369,14 @@ class ForegroundHandler:
         args.maps_subproduct: str, subproduct name for maps
         args.qids: str, qids delimited by spaces, e.g., "pa5a pa5b pa6a pa6b"
         args.fg_qids: str, optional, qids defining the foreground covariance cube (default: args.qids)
+        remove_daytime: bool, if True, generate covariance cube without daytime arrays and
+                        assign their fgs to equal that of the equivalent night array
         debug: bool, print foreground debug messages
         '''
 
         self.datamodel = datamodel
         self.args = args
+        self.remove_daytime = remove_daytime
         # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
         # 'sims_actplanck' loads from expanded foreground 2pt covariance estimated from ACT+Planck fits
         assert self.args.fg_type in ['sims', 'theory', 'sims_actplanck'] 
@@ -1408,6 +1411,14 @@ class ForegroundHandler:
                    "Unsupported format for fgs file (should be <filename>.npz)"
             qids_split = self.split_qids()
             if self.debug: print("qids_split: ", qids_split)
+            if self.remove_daytime:
+                # remove all daytime qids from the covariance,
+                # alias them later when drawing from the covariance
+                qids_split_noday = [qid for qid in qids_split
+                                    if not ('_dw' in qid or '_dd' in qid)]
+                return lambda: fg_covariance_cube(self.args.fgs_path,
+                                                  qids_split_noday)
+                
             qid_aliases = { qid: qid[:-3] for qid in qids_split
                                           if '_dw' in qid or '_dd' in qid }
             if self.debug: print("qid_aliases: ", qid_aliases)
@@ -1466,6 +1477,11 @@ class ForegroundHandler:
             return alms_f[index_fg]
         else:
             qids_split = self.split_qids()
+            if self.remove_daytime:
+                # remove all daytime qids from the covariance,
+                # alias them later when drawing from the covariance
+                qids_split = [qid for qid in qids_split
+                              if not ('_dw' in qid or '_dd' in qid)]
             return alms_f[qids_split.index(qid)]
 
     def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
@@ -1501,8 +1517,14 @@ class ForegroundHandler:
         if self.alms_f is None or rerun:
             self.compute_fg_alms(fgcov, cmb_set, sim_indices)
 
+        if self.remove_daytime:
+            # do the aliasing of daytime qids here
+            return self.get_map_fgs(qid[:-3] if '_dw' in qid or '_dd' in qid else qid,
+                                    self.alms_f)
+
         if self.debug: print("fg alms shape: ", self.alms_f.shape)
         return self.get_map_fgs(qid, self.alms_f)
+
 """
 Some subtleties when applying this to different experiments:
 
