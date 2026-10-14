@@ -1402,7 +1402,7 @@ class ForegroundHandler:
         Generates alm from cl for the given qid, cmb_set, and sim_indices (the latter 2 are used in the seed).
     '''
 
-    def __init__(self, datamodel, args, debug=False):
+    def __init__(self, datamodel, args, remove_daytime=False, debug=False):
         
         '''
         datamodel: DataModel, sofind datamodel
@@ -1413,11 +1413,14 @@ class ForegroundHandler:
         args.maps_subproduct: str, subproduct name for maps
         args.qids: str, qids delimited by spaces, e.g., "pa5a pa5b pa6a pa6b"
         args.fg_qids: str, optional, qids defining the foreground covariance cube (default: args.qids)
+        remove_daytime: bool, if True, generate covariance cube without daytime arrays and
+                        assign their fgs to equal that of the equivalent night array
         debug: bool, print foreground debug messages
         '''
 
         self.datamodel = datamodel
         self.args = args
+        self.remove_daytime = remove_daytime
         # 'sims' loads from foreground 2pt file (measured in sims), 'theory' estimates analytically
         # 'sims_actplanck' loads from expanded foreground 2pt covariance estimated from ACT+Planck fits
         assert self.args.fg_type in ['sims', 'theory', 'sims_actplanck'] 
@@ -1452,6 +1455,14 @@ class ForegroundHandler:
                    "Unsupported format for fgs file (should be <filename>.npz)"
             qids_split = self.split_qids()
             if self.debug: print("qids_split: ", qids_split)
+            if self.remove_daytime:
+                # remove all daytime qids from the covariance,
+                # alias them later when drawing from the covariance
+                qids_split_noday = [qid for qid in qids_split
+                                    if not ('_dw' in qid or '_dd' in qid)]
+                return lambda: fg_covariance_cube(self.args.fgs_path,
+                                                  qids_split_noday)
+                
             qid_aliases = { qid: qid[:-3] for qid in qids_split
                                           if '_dw' in qid or '_dd' in qid }
             if self.debug: print("qid_aliases: ", qid_aliases)
@@ -1468,7 +1479,7 @@ class ForegroundHandler:
         fgs_path: str, path to foreground sims
         lmax: int, maximum ell of fg power spectrum
         '''
-        
+        import yaml
         wfacs_file= fgs_path + "wfacs.yml"
         with open(wfacs_file, "rb") as f:
             wfacs = yaml.load(f, yaml.Loader)
@@ -1510,6 +1521,11 @@ class ForegroundHandler:
             return alms_f[index_fg]
         else:
             qids_split = self.split_qids()
+            if self.remove_daytime:
+                # remove all daytime qids from the covariance,
+                # alias them later when drawing from the covariance
+                qids_split = [qid for qid in qids_split
+                              if not ('_dw' in qid or '_dd' in qid)]
             return alms_f[qids_split.index(qid)]
 
     def compute_fg_alms(self, fgcov, cmb_set=None, sim_indices=None):
@@ -1545,8 +1561,14 @@ class ForegroundHandler:
         if self.alms_f is None or rerun:
             self.compute_fg_alms(fgcov, cmb_set, sim_indices)
 
+        if self.remove_daytime:
+            # do the aliasing of daytime qids here
+            return self.get_map_fgs(qid[:-3] if '_dw' in qid or '_dd' in qid else qid,
+                                    self.alms_f)
+
         if self.debug: print("fg alms shape: ", self.alms_f.shape)
         return self.get_map_fgs(qid, self.alms_f)
+
 """
 Some subtleties when applying this to different experiments:
 
@@ -1858,10 +1880,14 @@ def get_mask_tag(mask_fn, mask_subproduct):
 
     return f'{daynight}_{skyfrac}'
 
-def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
+def apply_ellmin_taper(noise, ellmin, delta_ell=30, blowup=None):
     """
     Apply an ℓmin taper to a noise power spectrum.
-    
+
+    The taper acts on the inverse noise (the coadd weight): 1/noise_mod = window/noise,
+    with window = 0 below ellmin and a cosine ramp 0 → 1 over [ellmin, ellmin + delta_ell].
+    The array therefore has exactly zero weight below ellmin and enters the coadd smoothly.
+
     Parameters
     ----------
     noise : np.ndarray
@@ -1869,30 +1895,28 @@ def apply_ellmin_taper(noise, ellmin, delta_ell=15, blowup=1e10):
     ellmin : int
         ℓmin cutoff (array-specific).
     delta_ell : int, optional
-        Width of smooth transition (default=15). Set to 0 for a hard cut.
-    blowup : float, optional
-        Factor to inflate the noise below cutoff (default=1e10).
-    
+        Width of smooth transition (default=30). Set to 0 for a hard cut.
+    blowup : unused
+        Kept for backwards compatibility; the noise is set to np.inf below ellmin.
+
     Returns
     -------
     noise_mod : np.ndarray
-        Modified noise array with inflated values below ellmin.
+        Modified noise array, np.inf below ellmin (zero weight in the kspace coadd).
     """
     ell = np.arange(len(noise))
-    noise_mod = noise.copy()
 
     if delta_ell == 0:
-        # Hard cut: multiply by huge number below ellmin
-        mask = ell < ellmin
-        noise_mod[mask] *= blowup
+        window = (ell >= ellmin).astype(np.float64)
     else:
-        # Smooth taper from blowup at (ellmin - delta_ell) → normal at (ellmin + delta_ell)
-        x = (ell - (ellmin - delta_ell)) / (2 * delta_ell)
-        # window goes from 0 to 1 smoothly
-        window = np.clip(0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1))), 0, 1)
-        # effective multiplier: blowup below cutoff, ~1 above
-        mult = blowup * (1 - window) + 1.0 * window
-        noise_mod *= mult
+        x = (ell - ellmin + 1) / (delta_ell)
+        window = 0.5 * (1 - np.cos(np.pi * np.clip(x, 0, 1)))
+
+    with np.errstate(divide='ignore'):
+        noise_mod = noise / window
+    # Use inf rather than a finite blowup: where every array is inflated by the same
+    # factor, the normalized coadd weights cancel it and the cut arrays leak back in.
+    noise_mod[ell < ellmin] = np.inf
 
     return noise_mod
 
