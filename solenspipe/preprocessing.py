@@ -205,6 +205,50 @@ class MetadataUnifier(object):
             raise ValueError(f"No noise_dm_name or noise_models entry for {qid}")
         return args.noise_dm_name, models[qid]
 
+    def get_noise_sim_alms(self,qid,split_num,index,lmax):
+        """
+        Alms in uK of a noise simulation stored as HEALPix maps (e.g. the Planck
+        NPIPE residual maps), for a class with noise_sims_subproduct.
+
+        The alms are those of the maps as stored: they are in the coordinates of
+        the files (Galactic for NPIPE) and are not rotated to those of an analysis
+        (see pixell.curvedsky.rotate_alm and pixell.reproject.rot2euler).
+        Optional entries of the class: noise_sims_splits, the SOFind split names of
+        the simulations in split order (e.g. [A, B]; by default the split numbers of
+        the maps); noise_sims_start, the file number of simulation 0 (default 0);
+        noise_sims_to_uk, the factor from file units to uK (default 1e6, for K).
+
+        Parameters
+        ----------
+        qid : str
+        split_num : int or None
+            Split index starting at 0, or None for the mean of the splits (the
+            noise of a map that is the mean of the split maps).
+        index : int
+            Simulation index starting at 0.
+        lmax : int
+            Maximum multipole of the alms.
+
+        Returns
+        -------
+        numpy.ndarray
+            T, E, B alms of shape (3, nalm) for files with I, Q, U maps, and a
+            single alm of shape (nalm,) for temperature-only files.
+        """
+        from astropy.io import fits
+        args = self.get_args(qid)
+        subp = self._opt(args,'noise_sims_subproduct')
+        if subp is None: raise ValueError(f"No noise_sims_subproduct for {qid}")
+        dm = DataModel.from_config(args.dm_name)
+        names = self._opt(args,'noise_sims_splits') or [s+args.split_start for s in range(args.nsplits)]
+        maptag = str(index+self._opt(args,'noise_sims_start',0)).zfill(4)
+        def alm(name):
+            fn = dm.get_map_fn(qid=qid,coadd=False,split_num=name,subproduct=subp,maptag=maptag)
+            field = (0,1,2) if fits.getheader(fn,1)['TFIELDS']>=3 else 0
+            return cs.map2alm_healpix(np.asarray(hp.read_map(fn,field=field)),lmax=lmax)
+        alms = [alm(name) for name in (names if split_num is None else [names[split_num]])]
+        return sum(alms)/len(alms)*self._opt(args,'noise_sims_to_uk',1e6)
+
     def get_fg_qid(self,qid):
         """
         Qid whose foreground model a qid uses: the qid itself, or, for a class with
@@ -405,7 +449,7 @@ class MetadataUnifier(object):
         else:
             return ells,final_beam
 
-    
+
 
 # leaving this for archival purposes for now
 # function called in v5 preprocessing is in PlanckNoiseMetadata
