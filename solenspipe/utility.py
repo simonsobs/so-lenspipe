@@ -1619,7 +1619,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         #need see and ste if possible
         #(data-sim) x (data-sim)
         cl=ffl**2/((smd_ocl)*profile)
-        AxTT1=pytempura.norm_lens.stt(lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
+        AxTT1=pytempura.norm_lens.stt(Lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
         n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
         prefactor=1/(1-nlpp*nlss*response**2)**2
         n0TTg=prefactor*(n0TTg+n0TTs+n0TTx)
