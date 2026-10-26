@@ -296,7 +296,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     q2 = qfunc2(X,Y)
                     g = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al1[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                     )
                     c = cs.almxfl(q1[1],Al1[1])
@@ -320,7 +320,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     qmv=qfuncmv(X,Y)
                     g_bh_TT = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al3[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al3[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
                     )
 
@@ -339,12 +339,12 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                 q2 = qfunc2(X,Y)
                 g = cs.almxfl( \
                                (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                 )
                 c = cs.almxfl( \
                                (cs.almxfl(q1[1],Al1[1]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                                cs.almxfl(q2,Al1[1] * Al2 * R12[1])) , \
                                1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
                 )
                 return np.asarray((g,c))
