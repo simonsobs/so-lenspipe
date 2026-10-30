@@ -12,7 +12,14 @@ from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 
-config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+def config_file():
+    """input/config.yml next to the package (source tree, editable install) or inside it (regular install)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    paths = [os.path.join(here, os.pardir, "input", "config.yml"), os.path.join(here, "input", "config.yml")]
+    return next((p for p in paths if os.path.exists(p)), paths[0])
+
+
+config = io.config_from_yaml(config_file())
 opath = config['data_path']
 
 def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
@@ -397,7 +404,7 @@ def initialize_args(args):
 
     isostr = "isotropic_" if args.isotropic else "classical"
 
-    config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+    config = io.config_from_yaml(config_file())
     opath = config['data_path']
 
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
