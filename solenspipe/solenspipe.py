@@ -11,10 +11,16 @@ import traceback,warnings
 from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
-
 import warnings
 
-config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+def config_file():
+    """input/config.yml next to the package (source tree, editable install) or inside it (regular install)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    paths = [os.path.join(here, os.pardir, "input", "config.yml"), os.path.join(here, "input", "config.yml")]
+    return next((p for p in paths if os.path.exists(p)), paths[0])
+
+
+config = io.config_from_yaml(config_file())
 opath = config['data_path']
 
 def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
@@ -296,7 +302,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     q2 = qfunc2(X,Y)
                     g = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al1[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                     )
                     c = cs.almxfl(q1[1],Al1[1])
@@ -320,7 +326,7 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     qmv=qfuncmv(X,Y)
                     g_bh_TT = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al3[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al3[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
                     )
 
@@ -339,12 +345,12 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                 q2 = qfunc2(X,Y)
                 g = cs.almxfl( \
                                (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                 )
                 c = cs.almxfl( \
                                (cs.almxfl(q1[1],Al1[1]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                                cs.almxfl(q2,Al1[1] * Al2 * R12[1])) , \
                                1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
                 )
                 return np.asarray((g,c))
@@ -402,7 +408,7 @@ def initialize_args(args):
 
     isostr = "isotropic_" if args.isotropic else "classical"
 
-    config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+    config = io.config_from_yaml(config_file())
     opath = config['data_path']
 
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)

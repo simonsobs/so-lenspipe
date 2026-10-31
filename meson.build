@@ -101,3 +101,6 @@ install_subdir(
   'solenspipe',
   install_dir: py.get_install_dir(),    # site-packages location for this interpreter
 )
+
+# input/ (config.yml) inside the package, for regular installs (solenspipe.config_file)
+install_subdir('input', install_dir: py.get_install_dir() / 'solenspipe')
