@@ -1132,7 +1132,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
             #AgTTTE1[np.where(AgTTTE1==0)] = 1e30
             #AcTTTE1[np.where(AcTTTE1==0)] = 1e30
             ng=AgTT*AgTE*(AgTTTE0+AgTTTE1)
@@ -1373,7 +1373,7 @@ def diagonal_RDN0_TTTE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
     n0TTTEg=AgTT*AgTE*(AgTTTE0+AgTTTE1)
     n0TTTEc=AcTT*AcTE*(AcTTTE0+AcTTTE1)
 
@@ -1484,9 +1484,9 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
     AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
     AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
     AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
     AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
-    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
+    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (s_ocl[1,:]-d_ocl[1,:])/ocl[1,:]*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
     AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
 
     nlist=[AgTT0,AgTT1,AgEE0,AgEE1,AgEB0,AgEB1,AgTE0,AgTE1,AgTTTE0,AgTTTE1,AgTTEE0,AgTTEE1,AgTEEE0,AgTEEE1,AgTBEB0,AgTBEB1]
