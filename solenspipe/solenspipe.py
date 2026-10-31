@@ -13,7 +13,6 @@ from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
 import warnings
 
-
 def config_file():
     """input/config.yml next to the package (source tree, editable install) or inside it (regular install)."""
     here = os.path.dirname(os.path.abspath(__file__))
