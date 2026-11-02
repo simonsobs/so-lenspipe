@@ -11,8 +11,16 @@ import traceback,warnings
 from . import bias
 from falafel.utils import get_cmb_alm, get_kappa_alm
 from falafel import utils as futils
+import warnings
 
-config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+def config_file():
+    """input/config.yml next to the package (source tree, editable install) or inside it (regular install)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    paths = [os.path.join(here, os.pardir, "input", "config.yml"), os.path.join(here, "input", "config.yml")]
+    return next((p for p in paths if os.path.exists(p)), paths[0])
+
+
+config = io.config_from_yaml(config_file())
 opath = config['data_path']
 
 def four_split_phi(Xdat_0,Xdat_1,Xdat_2,Xdat_3,Xdatp_0=None,Xdatp_1=None,Xdatp_2=None,Xdatp_3=None,q_func1=None):
@@ -294,14 +302,14 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     q2 = qfunc2(X,Y)
                     g = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al1[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                     )
                     c = cs.almxfl(q1[1],Al1[1])
                     return np.asarray((g,c))
             else:
                 def retfunc(X,Y):
-                    print('test bh MV')
+                    #print('test bh MV')
                     qfuncTT= lambda X,Y: qe.qe_all(px,ucls,mlmax,
                                         fTalm=Y[0],fEalm=Y[1],fBalm=Y[2],
                                         estimators=['TT'],
@@ -318,10 +326,13 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                     qmv=qfuncmv(X,Y)
                     g_bh_TT = cs.almxfl( \
                                 (cs.almxfl(q1[0],Al3[0]) - \
-                                    cs.almxfl(qfunc2(X,Y),Al3[0] * Al2 * R12[0])) , \
+                                    cs.almxfl(q2,Al3[0] * Al2 * R12[0])) , \
                                 1. / (1. - Al3[0] * Al2 * R12[0]**2.) \
                     )
-                    g= cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
+
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=RuntimeWarning)
+                        g = cs.almxfl(qmv[0]-q1[0]+cs.almxfl(g_bh_TT,1/Al3[0]),Al1[0])
                     c = cs.almxfl(qmv[1],Al1[1])
 
 
@@ -334,12 +345,12 @@ def get_qfunc(px,ucls,mlmax,est1,Al1=None,est2=None,Al2=None,Al3=None,R12=None,p
                 q2 = qfunc2(X,Y)
                 g = cs.almxfl( \
                                (cs.almxfl(q1[0],Al1[0]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[0] * Al2 * R12[0])) , \
+                                cs.almxfl(q2,Al1[0] * Al2 * R12[0])) , \
                                1. / (1. - Al1[0] * Al2 * R12[0]**2.) \
                 )
                 c = cs.almxfl( \
                                (cs.almxfl(q1[1],Al1[1]) - \
-                                cs.almxfl(qfunc2(X,Y),Al1[1] * Al2 * R12[1])) , \
+                                cs.almxfl(q2,Al1[1] * Al2 * R12[1])) , \
                                1. / (1. - Al1[1] * Al2 * R12[1]**2.) \
                 )
                 return np.asarray((g,c))
@@ -397,7 +408,7 @@ def initialize_args(args):
 
     isostr = "isotropic_" if args.isotropic else "classical"
 
-    config = io.config_from_yaml(os.path.dirname(os.path.abspath(__file__)) + "/../input/config.yml")
+    config = io.config_from_yaml(config_file())
     opath = config['data_path']
 
     mask = get_mask(healpix=args.healpix,lmax=lmax,no_mask=args.no_mask,car_deg=2,hp_deg=4)
@@ -1485,7 +1496,7 @@ def get_labels():
 
 
 class LensingSandbox(object):
-    def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res, # simulation
+    def __init__(self,fwhm_arcmin,noise_uk,dec_min,dec_max,res_arcmin, # simulation
                  lmin,lmax,mlmax,ests, # reconstruction
                  add_noise = False, mask = None,
                  verbose = False):  # whether to add noise (it will still be in the filters)
@@ -1494,11 +1505,11 @@ class LensingSandbox(object):
         # Specify geometry
         if mask is None:
             if (dec_min is None) and (dec_max is None):
-                self.shape,self.wcs = enmap.fullsky_geometry(res=res * utils.arcmin,variant='fejer1')
+                self.shape,self.wcs = enmap.fullsky_geometry(res=res_arcmin * utils.arcmin,variant='fejer1')
             else:
                 if dec_min is None: dec_min = -90.
                 if dec_max is None: dec_max = 90. 
-                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res * utils.arcmin, variant='fejer1')
+                self.shape,self.wcs = enmap.band_geometry((dec_min * utils.degree, dec_max  * utils.degree),res=res_arcmin * utils.arcmin, variant='fejer1')
             mask = enmap.ones(self.shape,self.wcs)
         else:
             self.shape = mask.shape
