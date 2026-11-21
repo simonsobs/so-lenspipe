@@ -427,7 +427,7 @@ def convert_seeds(seed,nsims=2000,ndiv=4):
     icov,cmb_set,i = seed
     assert icov==0, "Covariance from sims not yet supported."
     nstep = nsims//ndiv
-    if i>=nstep: 
+    if i>=nstep:
         warnings.warn("i>=nstep: If more than one CMB set is being used (e.g for RDN0 and MCN1), you might be re-using sims.")
     if cmb_set==0 or cmb_set==1:
         s_i = i + cmb_set*nstep

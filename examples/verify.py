@@ -74,7 +74,7 @@ with bench.show("NORM"):
     if bh:
         est_norm_list.append('src')
         R_src_tt = pytempura.get_cross('SRC','TT',ucls,tcls,lmin,lmax,k_ellmax=mlmax)
-    Als = pytempura.get_norms(est_norm_list,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
+    Als = pytempura.get_norms(est_norm_list,ucls,ucls,tcls,lmin,lmax,k_ellmax=mlmax)
     ls = np.arange(Als[args.est1][0].size)
 
     # Convert to noise per mode on lensing convergence
