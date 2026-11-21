@@ -1173,7 +1173,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,est2=None,c
 
             #sxs
             cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+            AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
             #AgTTTE1[np.where(AgTTTE1==0)] = 1e30
             #AcTTTE1[np.where(AcTTTE1==0)] = 1e30
             ng=AgTT*AgTE*(AgTTTE0+AgTTTE1)
@@ -1414,7 +1414,7 @@ def diagonal_RDN0_TTTE(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     #sxs
     cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d_ocl[0,:]/ocl[0,:])*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
     n0TTTEg=AgTT*AgTE*(AgTTTE0+AgTTTE1)
     n0TTTEc=AcTT*AcTE*(AcTTTE0+AcTTTE1)
 
@@ -1515,16 +1515,14 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
     # sxs spectra: per-realization S-D by default, ensemble-mean override via smd
     smd_ocl = np.asarray(smd)[:, :ls.size] if smd is not None else (s_ocl - d_ocl)
-    # D entering the "1"-type (sxs-family) terms' (1 - D/ffl) factors. When the
-    # filter matches the legs' true power (ffl ~= D_TT, e.g. the nokmask ILC
-    # coadd80 filter), the per-realization factor is zero to within the D jitter
-    # and flips sign realization to realization; the norm evaluated on that
-    # near-null cl diverges with random sign (the rogue-row mechanism). Passing
-    # the ensemble-mean D here (Dl_sxs) makes every 1-term a stable per-set
-    # constant; constant offsets do not affect the scatter covariance.
-    d1_ocl = np.array([np.asarray(Dl_sxs)[0][:ls.size], np.asarray(Dl_sxs)[1][:ls.size],
-                       np.asarray(Dl_sxs)[2][:ls.size], np.asarray(Dl_sxs)[3][:ls.size]]) \
-        if Dl_sxs is not None else d_ocl
+    # The TTTE/TEEE "1"-type (sxs-family) terms take (S-D)/ffl*ffl in the TE-leg
+    # slot (upstream PR #59, simonsobs/so-lenspipe 36a7797, ported 2026-11-19);
+    # the former (1 - D/ffl)*ffl factor multiplied the TE leg by
+    # (S-D)/(ffl-D), which diverges with random sign when the filter matches the
+    # legs' power (ffl ~= D_TT), the rogue-row mechanism. The factor now involves
+    # only smd, so Dl_sxs (the ensemble-mean D that used to stabilize the old
+    # factor) is INERT and accepted only so existing callers keep working; with
+    # smd set to an ensemble mean every 1-term is still a constant.
     #dataxdata
 
     cl=ocl**2/(d_ocl)
@@ -1547,9 +1545,9 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     AgTB1,AcTB1=pytempura.norm_lens.qtb(lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
     AgEE1,AcEE1=pytempura.norm_lens.qee(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
     AgEB1,AcEB1=pytempura.norm_lens.qeb(lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(1-d1_ocl[0,:]/ocl[0,:])*ocl[1,:] , smd_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,smd_ocl[0,:]/ocl[0,:]*ocl[1,:] , smd_ocl[3,:])
     AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], smd_ocl[3,:])
-    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d1_ocl[1,:]/ocl[1,:])*ocl[0,:],cl[1,:],smd_ocl[3,:])
+    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], smd_ocl[1,:]/ocl[1,:]*ocl[0,:],cl[1,:],smd_ocl[3,:])
     AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], smd_ocl[3,:])
 
     nlist=[AgTT0,AgTT1,AgEE0,AgEE1,AgEB0,AgEB1,AgTE0,AgTE1,AgTTTE0,AgTTTE1,AgTTEE0,AgTTEE1,AgTEEE0,AgTEEE1,AgTBEB0,AgTBEB1]
@@ -1560,19 +1558,20 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,cross=True,bh=False
     n0TBg = AgTB**2*(1./AgTB0-1./AgTB1)  
     n0EEg = AgEE**2*(1./AgEE0-1./AgEE1)
     n0EBg = AgEB**2*(1./AgEB0-1./AgEB1)
-    n0TTTE=AgTT*AgTE*(AgTTTE0+AgTTTE1)
-    n0TTEE=AgTT*AgEE*(AgTTEE0+AgTTEE1)
-    n0TEEE=AgTE*AgEE*(AgTEEE0+AgTEEE1)
-    n0TBEB=AgTB*AgEB*(AgTBEB0+AgTBEB1)
+    # cross pairs: dxd minus sxs, as in the auto terms (upstream PR #59, d4f5495)
+    n0TTTE=AgTT*AgTE*(AgTTTE0-AgTTTE1)
+    n0TTEE=AgTT*AgEE*(AgTTEE0-AgTTEE1)
+    n0TEEE=AgTE*AgEE*(AgTEEE0-AgTEEE1)
+    n0TBEB=AgTB*AgEB*(AgTBEB0-AgTBEB1)
     n0TTc = AcTT**2*(1./AcTT0-1./AcTT1)
     n0TEc = AcTE**2*(1./AcTE0-1./AcTE1)
     n0TBc = AcTB**2*(1./AcTB0-1./AcTB1)  
     n0EEc = AcEE**2*(1./AcEE0-1./AcEE1)
     n0EBc = AcEB**2*(1./AcEB0-1./AcEB1)
-    n0TTTEc=AcTT*AcTE*(AcTTTE0+AcTTTE1)
-    n0TTEEc=AcTT*AcEE*(AcTTEE0+AcTTEE1)
-    n0TEEEc=AcTE*AcEE*(AcTEEE0+AcTEEE1)
-    n0TBEBc=AcTB*AcEB*(AcTBEB0+AcTBEB1)
+    n0TTTEc=AcTT*AcTE*(AcTTTE0-AcTTTE1)
+    n0TTEEc=AcTT*AcEE*(AcTTEE0-AcTTEE1)
+    n0TEEEc=AcTE*AcEE*(AcTEEE0-AcTEEE1)
+    n0TBEBc=AcTB*AcEB*(AcTBEB0-AcTBEB1)
 
     if bh:
         #second term get the source
