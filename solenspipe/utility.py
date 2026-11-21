@@ -1007,10 +1007,11 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             -(shared noise), smooth and one-signed, while the per-realization
             difference adds zero-mean split-noise cross terms that make the sxs
             term heavy-tailed when the legs hold loud few-mode noise (cf. the
-            nokmask HILC T covariance investigation, 2026-07-29). Wired for
-            est1='MV' and est1='MVPOL' (passed through to diagonal_RDN0mv and
-            diagonal_RDN0mvpol); the single-estimator branches above use the
-            per-realization S_l - D_l.
+            nokmask HILC T covariance investigation, 2026-07-29). Used by the
+            single-estimator branches (TT incl. bh, TE, EE, TB, EB) and passed
+            through to diagonal_RDN0mv / diagonal_RDN0mvpol for est1='MV' /
+            'MVPOL'. The est2 pair branches still use per-realization S_l - D_l.
+            Dl_sxs only matters for MV (single estimators have no lone-D factor).
 
     Returns:
         _type_: _description_
@@ -1048,6 +1049,9 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
     # MV/MVPOL paths rebuild their own arrays from the full D_l/S_l.
     d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
     s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
+    # sxs spectra for the single-estimator branches: per-realization S-D by
+    # default, ensemble-mean override via smd (same convention as diagonal_RDN0mv)
+    smd_ocl = np.asarray(smd)[:, :ls.size] if smd is not None else (s_ocl - d_ocl)
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
     if est2 is None:
@@ -1063,7 +1067,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             AcTT0[np.where(AcTT0==0)] = 1e30
 
             #sxs
-            cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
+            cl=ocl**2/(smd_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
             AgTT1,AcTT1=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:])
             AgTT1[np.where(AgTT1==0)] = 1e30
             AcTT1[np.where(AcTT1==0)] = 1e30
@@ -1079,14 +1083,14 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
                 ocl= ffl
                 cl=ffl**2/(d_ocl*profile**2)
                 AsTT0=pytempura.norm_src.qtt(Lmax, rlmin, rlmax,cl[0,:])*profile**2
-                cl=ocl**2/((s_ocl-d_ocl)*profile**2)
+                cl=ocl**2/((smd_ocl)*profile**2)
                 AsTT1=pytempura.norm_src.qtt(Lmax, rlmin, rlmax,cl[0,:])*profile**2
                 n0TTs = AsTT**2*(1./AsTT0-1./AsTT1)*(AgTT*response)**2
                 #get the cross term
                 cl=ffl**2/(d_ocl*profile)
                 AxTT0=pytempura.norm_lens.stt(Lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
                 #(data-sim) x (data-sim)
-                cl=ffl**2/((s_ocl-d_ocl)*profile)
+                cl=ffl**2/((smd_ocl)*profile)
                 AxTT1=pytempura.norm_lens.stt(Lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
                 n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
                 prefactor=1/(1-nlpp*nlss*response**2)**2
@@ -1102,7 +1106,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             AcTE0[np.where(AcTE0==0)] = 1e30
 
             #sxs
-            cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
+            cl=ocl**2/(smd_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
             AgTE1,AcTE1=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
             AgTE1[np.where(AgTE1==0)] = 1e30
             AcTE1[np.where(AcTE1==0)] = 1e30
@@ -1121,7 +1125,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             AcEE0[np.where(AcEE0==0)] = 1e30
 
             #sxs
-            cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
+            cl=ocl**2/(smd_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
             AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:])
             AgEE1[np.where(AgEE1==0)] = 1e30
             AcEE1[np.where(AcEE1==0)] = 1e30
@@ -1137,7 +1141,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             AcTB0[np.where(AcTB0==0)] = 1e30
 
             #sxs
-            cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
+            cl=ocl**2/(smd_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
             AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
             AgTB1[np.where(AgTB1==0)] = 1e30
             AcTB1[np.where(AcTB1==0)] = 1e30
@@ -1154,7 +1158,7 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,
             AcEB0[np.where(AcEB0==0)] = 1e30
 
             #sxs
-            cl=ocl**2/(s_ocl-d_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
+            cl=ocl**2/(smd_ocl) #the larger the difference, the smaller the actt1 and hence the larger 1/actt1
             AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],cl[1,:],cl[2,:])
             AgEB1[np.where(AgEB1==0)] = 1e30
             AcEB1[np.where(AcEB1==0)] = 1e30
