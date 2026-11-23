@@ -946,7 +946,9 @@ def get_theory_for_response(lmax=9000):
     lcl=np.array([ucls['TT'], ucls['EE'], ucls['BB'], ucls['TE']])
     return lcl
 
-def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,est2=None,cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
+def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,est2=None,
+                       cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None,
+                       Dl=None, Sl=None, smd=None, Dl_sxs=None):
     """Generate beloved dumb N0s for both gradient and curl.
 
     Args:
@@ -968,7 +970,18 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         nlss (_type_, optional): _description_. Defaults to None.
         response (_type_, optional): _description_. Defaults to None.
         profile (_type_, optional): _description_. Defaults to None.
-
+        Dl (list, optional): precomputed get_Dpower spectra; skips the alm2cl
+            of X/U so the N0 can be re-evaluated from saved spectra.
+        Sl (list, optional): precomputed get_Spower spectra.
+        smd (array, optional): override for the S_l - D_l spectra entering the
+            sxs terms, shape (4, >=nl) [TT,EE,BB,TE]. Pass the ENSEMBLE MEAN of
+            (S-D) to recondition the per-realization dumb N0: the mean is
+            -(shared noise), smooth and one-signed, while the per-realization
+            difference adds zero-mean split-noise cross terms that make the sxs
+            term heavy-tailed when the legs hold loud few-mode noise (cf. the
+            nokmask HILC T covariance investigation, 2026-07-29). Only wired
+            for est1='MV' (passed through to diagonal_RDN0mv).
+        Dl_sxs (array, optional): Ensemble mean of D_l spectra.
     Returns:
         _type_: _description_
     """
@@ -994,10 +1007,17 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         nlss=nlss[:Lmax+1]
         response=response[:Lmax+1]
 
-    D_l=get_Dpower(X,U,mask,m=4)
-    S_l=get_Spower(coaddX,coaddU,mask)
-    d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[0][:ls.size]])
-    s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[0][:ls.size]])
+    D_l = get_Dpower(X,U,mask,m=4) if Dl is None else Dl
+    S_l = get_Spower(coaddX,coaddU,mask) if Sl is None else Sl
+
+    # shorthand
+    def spectra_as_arr(cl):
+        return np.array([cl[0][:ls.size], cl[1][:ls.size],
+                         cl[2][:ls.size], cl[3][:ls.size]])
+
+    d_ocl = spectra_as_arr(D_l)
+    s_ocl = spectra_as_arr(S_l)
+
     ocl=ffl
     ocl[np.where(ocl==0)] = 1e30
     if est2 is None:
@@ -1114,10 +1134,13 @@ def diagonal_RDN0cross(est1,X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         
         elif est1 =='MV':
             print("use mv")
-            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,profile=profile)
+            return diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax,
+                                   cross=cross,bh=bh,nlpp=nlpp,nlss=nlss,response=response,
+                                   profile=profile,Dl=D_l,Sl=S_l,smd=smd,Dl_sxs=Dl_sxs)
         elif est1 == 'MVPOL':
             print("use mvpol")
-            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
+            return diagonal_RDN0mvpol(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=mlmax,
+                                      cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None)
     if est2 is not None:
         ("est 2 not none")
         if est1=='TT' and est2=='TE':
@@ -1422,8 +1445,18 @@ def diagonal_RDN0_TBEB(X,U,coaddX,coaddU,nltt,nlee,nlbb,theory,theory_cross,lmin
 
     return n0TBEBg*fac**2*0.25,n0TBEBc*fac**2*0.25
 
-def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=True,bh=False,nlpp=None,nlss=None,response=None,profile=None):
-    """Curvedsky dumb N0 for MV"""
+def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
+                    cross=True,bh=False,nlpp=None,nlss=None,response=None,
+                    profile=None,Dl=None,Sl=None,smd=None,Dl_sxs=None):
+    """Curvedsky dumb N0 for MV.
+
+    The QE weight spectra are the all-gradient lcl from
+    get_theory_for_response (matches the falafel QE and pytempura norm).
+
+    Dl/Sl: precomputed get_Dpower/get_Spower spectra (skips the alm2cl; X/U/
+    coaddX/coaddU are then unused). smd: override for the S_l - D_l spectra in
+    every sxs term, shape (4, >=nl) [TT,EE,BB,TE]; pass the ensemble mean of
+    (S-D) to recondition the per-realization N0 (see diagonal_RDN0cross)."""
     if mlmax is not None:
         Lmax = mlmax
     else:
@@ -1434,6 +1467,10 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
     ls = np.arange(0,Lmax+1)
     fac=ls*(ls+1)
     QDO = [True,True,True,True,True,False]
+
+    if bh and (nlpp is None or nlss is None or response is None):
+        raise ValueError("diagonal_RDN0mv: bh=True requires nlpp (Als['TT']), "
+                         "nlss (Als['src']) and response (R_src_tt)")
   
     lcl=get_theory_for_response(lmax=Lmax)
     ffl=np.array([filters[0][:Lmax+1],filters[1][:Lmax+1],filters[2][:Lmax+1],filters[3][:Lmax+1]])
@@ -1458,10 +1495,28 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
 
     #prepare the sim total power spectrum
     #prepare the data total power spectrum
-    D_l=get_Dpower(X,U,mask,m=4)
-    S_l=get_Spower(coaddX,coaddU,mask)
-    d_ocl=np.array([D_l[0][:ls.size],D_l[1][:ls.size],D_l[2][:ls.size],D_l[3][:ls.size]])
-    s_ocl=np.array([S_l[0][:ls.size],S_l[1][:ls.size],S_l[2][:ls.size],S_l[3][:ls.size]])
+    D_l = get_Dpower(X,U,mask,m=4) if Dl is None else Dl
+    S_l = get_Spower(coaddX,coaddU,mask) if Sl is None else Sl
+
+    # shorthand
+    def spectra_as_arr(cl):
+        return np.array([cl[0][:ls.size], cl[1][:ls.size],
+                         cl[2][:ls.size], cl[3][:ls.size]])
+
+    d_ocl = spectra_as_arr(D_l)
+    s_ocl = spectra_as_arr(S_l)
+
+    # sxs spectra: per-realization S-D by default, ensemble-mean override via smd
+    smd_ocl = np.asarray(smd)[:, :ls.size] if smd is not None else (s_ocl - d_ocl)
+    # D entering the "1"-type (sxs-family) terms' (1 - D/ffl) factors. When the
+    # filter matches the legs' true power (ffl ~= D_TT, e.g. the nokmask ILC
+    # coadd80 filter), the per-realization factor is zero to within the D jitter
+    # and flips sign realization to realization; the norm evaluated on that
+    # near-null cl diverges with random sign (the rogue-row mechanism). Passing
+    # the ensemble-mean D here (Dl_sxs) makes every 1-term a stable per-set
+    # constant; constant offsets do not affect the scatter covariance.
+    d1_ocl = d_ocl if Dl_sxs is None else spectra_as_arr(np.asarray(Dl_sxs))
+
     #dataxdata
 
     cl=ocl**2/(d_ocl)
@@ -1478,16 +1533,16 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None, cross=T
 
 
 
-    cl=ocl**2/(s_ocl-d_ocl)
+    cl=ocl**2/(smd_ocl)
     AgTT1,AcTT1=pytempura.norm_lens.qtt(Lmax, rlmin, rlmax, lcl[0,:],lcl[0,:],cl[0,:] )
     AgTE1,AcTE1=pytempura.norm_lens.qte(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[1,:])
     AgTB1,AcTB1=pytempura.norm_lens.qtb(Lmax, rlmin, rlmax, lcl[3,:],lcl[3,:],cl[0,:],cl[2,:])
     AgEE1,AcEE1=pytempura.norm_lens.qee(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:])
     AgEB1,AcEB1=pytempura.norm_lens.qeb(Lmax, rlmin, rlmax, lcl[1,:],lcl[1,:],cl[1,:],cl[2,:])
-    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:],cl[0,:] ,(s_ocl[0,:]-d_ocl[0,:])/ocl[0,:]*ocl[1,:] , s_ocl[3,:]-d_ocl[3,:])
-    AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], s_ocl[3,:]-d_ocl[3,:])
-    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (s_ocl[1,:]-d_ocl[1,:])/ocl[1,:]*ocl[0,:],cl[1,:],s_ocl[3,:]-d_ocl[3,:])
-    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], s_ocl[3,:]-d_ocl[3,:])
+    AgTTTE1,AcTTTE1=pytempura.norm_lens.qttte(Lmax, rlmin, rlmax, lcl[0,:], lcl[3,:], cl[0,:], (1-d1_ocl[0,:])/ocl[0,:]*ocl[1,:], smd_ocl[3:])
+    AgTTEE1,AcTTEE1=pytempura.norm_lens.qttee(Lmax, rlmin, rlmax, lcl[0,:], lcl[1,:], cl[0,:], cl[1,:], smd_ocl[3:])
+    AgTEEE1,AcTEEE1=pytempura.norm_lens.qteee(Lmax, rlmin, rlmax, lcl[1,:], lcl[3,:], (1-d1_ocl[1,:])/ocl[1,:]*ocl[0,:],cl[1,:], smd_ocl[3:])
+    AgTBEB1,AcTBEB1=pytempura.norm_lens.qtbeb(Lmax, rlmin, rlmax, lcl[1,:], lcl[2,:], lcl[3,:], cl[0,:], cl[1,:], cl[2,:], smd_ocl[3:])
 
     nlist=[AgTT0,AgTT1,AgEE0,AgEE1,AgEB0,AgEB1,AgTE0,AgTE1,AgTTTE0,AgTTTE1,AgTTEE0,AgTTEE1,AgTEEE0,AgTEEE1,AgTBEB0,AgTBEB1]
     for i in range(len(nlist)):
