@@ -1576,7 +1576,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         cl=ffl**2/(d_ocl*profile**2)
         AsTT0=pytempura.norm_src.qtt(Lmax, rlmin, rlmax,cl[0,:])*profile**2
 
-        cl=ocl**2/((s_ocl-d_ocl)*profile**2)
+        cl=ocl**2/((smd_ocl)*profile**2)
         AsTT1=pytempura.norm_src.qtt(Lmax, rlmin, rlmax,cl[0,:])*profile**2
         n0TTs = AsTT**2*(1./AsTT0-1./AsTT1)*(AgTT*response)**2
 
@@ -1586,7 +1586,7 @@ def diagonal_RDN0mv(X,U,coaddX,coaddU,filters,mask,lmin,lmax,mlmax=None,
         AxTT0=pytempura.norm_lens.stt(Lmax,rlmin,rlmax, lcl[0,:],cl[0,:])/profile
         #need see and ste if possible
         #(data-sim) x (data-sim)
-        cl=ffl**2/((s_ocl-d_ocl)*profile)
+        cl=ffl**2/((smd_ocl)*profile)
         AxTT1=pytempura.norm_lens.stt(Lmax, rlmin, rlmax, lcl[0,:],cl[0,:])/profile
         n0TTx = -1*AgTT*AsTT*(AxTT0-AxTT1)*2*nlpp*response
         prefactor=1/(1-nlpp*nlss*response**2)**2
